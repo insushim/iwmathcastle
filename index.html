@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>수학 성 수호자 V2</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Orbitron:wght@400;700;900&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-content">
+        <!-- ===== 메인 메뉴 ===== -->
+        <div id="difficultyModal">
+            <canvas id="menuParticleCanvas"></canvas>
+            <div class="menu-container">
+                <div class="menu-logo">
+                    <span class="logo-castle">🏰</span>
+                    <h1 class="brand-title">INsuworlD</h1>
+                    <h2 class="main-title">수학 성 수호자</h2>
+                    <p class="main-subtitle">MATH CASTLE GUARDIAN</p>
+                    <div class="version-badge">V2.0</div>
+                </div>
+                <div class="difficulty-section">
+                    <h3 class="section-label">학년을 선택하세요</h3>
+                    <div class="difficulty-options">
+                        <button class="difficulty-btn" data-difficulty="3">
+                            <span class="diff-grade">3</span>
+                            <span class="diff-label">학년</span>
+                        </button>
+                        <button class="difficulty-btn" data-difficulty="4">
+                            <span class="diff-grade">4</span>
+                            <span class="diff-label">학년</span>
+                        </button>
+                        <button class="difficulty-btn" data-difficulty="5">
+                            <span class="diff-grade">5</span>
+                            <span class="diff-label">학년</span>
+                        </button>
+                        <button class="difficulty-btn" data-difficulty="6">
+                            <span class="diff-grade">6</span>
+                            <span class="diff-label">학년</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="menu-actions">
+                    <button class="menu-btn" id="loadGameBtn" disabled>
+                        <span class="btn-icon">💾</span> 이어하기
+                    </button>
+                    <button class="menu-btn" id="showRankingBtn" disabled>
+                        <span class="btn-icon">🏆</span> 랭킹 보기
+                    </button>
+                    <button class="menu-btn" id="showAchievementsBtn">
+                        <span class="btn-icon">🎖️</span> 업적
+                    </button>
+                    <button class="menu-btn" id="settingsBtn">
+                        <span class="btn-icon">⚙️</span> 설정
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== 게임 캔버스 영역 ===== -->
+        <div id="gameCanvas">
+            <canvas id="dynamicLayerCanvas"></canvas>
+            <div id="rangeIndicator"></div>
+            <div id="tower-info-tooltip"></div>
+            <div class="castle">
+                <div class="castle-body"></div>
+                <div class="castle-health">❤️ <span id="castleHealth">100</span></div>
+            </div>
+            <div class="wizard" id="wizard"></div>
+        </div>
+
+        <!-- ===== 게임 UI 오버레이 ===== -->
+        <div id="gameUI">
+            <!-- 상단 정보 바 -->
+            <div id="info-bar">
+                <div class="info-left">
+                    <div class="info-item wave-info">
+                        <span class="info-icon">🌊</span>
+                        <span class="info-label">웨이브</span>
+                        <span class="info-value" id="currentWave">1</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-icon">👹</span>
+                        <span class="info-label">몬스터</span>
+                        <span class="info-value" id="monstersLeft">0</span>
+                    </div>
+                    <div class="info-item gold-info">
+                        <span class="info-icon">💰</span>
+                        <span class="info-label">골드</span>
+                        <span class="info-value" id="gold">100</span>
+                    </div>
+                    <div class="info-item score-info">
+                        <span class="info-icon">⭐</span>
+                        <span class="info-label">점수</span>
+                        <span class="info-value" id="score">0</span>
+                    </div>
+                </div>
+                <div class="info-right">
+                    <div class="wizard-info">
+                        <span class="info-icon">🧙‍♂️</span>
+                        <span>Lv.<span id="wizardLevel">1</span></span>
+                        <button class="icon-btn" id="spellbook-btn" title="스펠북">📖</button>
+                        <button class="icon-btn upgrade-btn" id="upgradeWizardBtn" title="마법사 업그레이드">⬆️</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 콤보 디스플레이 -->
+            <div id="combo-display" class="combo-display hidden">
+                <div class="combo-count"><span id="comboCount">0</span></div>
+                <div class="combo-label">COMBO</div>
+                <div class="combo-multiplier">x<span id="comboMultiplier">1</span></div>
+            </div>
+
+            <!-- 하단 컨트롤 바 -->
+            <div id="control-bar">
+                <div class="control-left">
+                    <button class="ctrl-btn primary" id="startWaveBtn">🚀 시작</button>
+                    <button class="ctrl-btn" id="pauseBtn">⏸️</button>
+                    <button class="ctrl-btn" id="forceNextWaveBtn">⏭️</button>
+                </div>
+                <div class="control-right">
+                    <button class="ctrl-btn" id="submitAndQuitBtn" title="랭킹 등록 후 종료">🏆</button>
+                    <button class="ctrl-btn" id="settingsBtnInGame" title="설정">⚙️</button>
+                    <button class="ctrl-btn" id="fullscreenBtn" title="전체화면">🖼️</button>
+                </div>
+            </div>
+
+            <!-- 타워 선택기 -->
+            <div class="tower-selector" id="towerSelector"></div>
+            <div id="spellSelector"></div>
+
+            <!-- 타워 업그레이드 패널 -->
+            <div class="tower-upgrade-selector" id="towerUpgradeSelector">
+                <h3 class="panel-title">타워 업그레이드</h3>
+                <div id="towerInfo" class="tower-detail-info"></div>
+                <div class="upgrade-actions">
+                    <button class="action-btn upgrade" id="upgradeTowerBtn">업그레이드</button>
+                    <button class="action-btn sell" id="sellTowerBtn">판매</button>
+                    <button class="action-btn close" id="closeTowerUpgradeBtn">닫기</button>
+                </div>
+            </div>
+
+            <!-- 업적 알림 영역 -->
+            <div id="achievement-toast-container"></div>
+        </div>
+
+        <!-- ===== 수학 문제 모달 ===== -->
+        <div class="modal" id="mathModal">
+            <div class="modal-content math-modal">
+                <div class="modal-header">
+                    <h2>🏅 웨이브 클리어!</h2>
+                    <div class="combo-badge" id="mathCombo"></div>
+                </div>
+                <div class="math-question" id="mathQuestion"></div>
+                <div class="math-options" id="mathOptions"></div>
+                <div id="mathResult" class="math-result"></div>
+            </div>
+        </div>
+
+        <!-- ===== 게임 오버 모달 ===== -->
+        <div class="modal" id="gameOverModal">
+            <div class="modal-content gameover-modal">
+                <div class="gameover-icon">💀</div>
+                <h2 class="gameover-title">게임 오버</h2>
+                <div class="gameover-stats">
+                    <div class="stat-row">
+                        <span class="stat-label">최종 점수</span>
+                        <span class="stat-value" id="finalScore">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">클리어 웨이브</span>
+                        <span class="stat-value" id="finalWave">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">최대 콤보</span>
+                        <span class="stat-value" id="finalCombo">0</span>
+                    </div>
+                </div>
+                <input type="text" id="playerNameInput" class="name-input" placeholder="이름을 입력하세요 (10자 이내)" maxlength="10">
+                <div class="modal-actions">
+                    <button class="modal-btn primary" id="submitScoreBtn">점수 등록</button>
+                    <button class="modal-btn" id="restartGameBtn">다시 시작</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== 랭킹 모달 ===== -->
+        <div class="modal" id="rankingModal">
+            <div class="modal-content ranking-modal">
+                <h2 class="modal-title">🏆 랭킹</h2>
+
+                <div class="hall-of-fame-container">
+                    <h3 class="hof-title">✨ 명예의 전당 ✨</h3>
+                    <div class="hall-of-fame" id="hallOfFame"></div>
+                </div>
+
+                <div class="ranking-tabs">
+                    <button class="tab-btn active" data-tab="today">오늘의 랭킹</button>
+                    <button class="tab-btn" data-tab="yesterday">어제의 랭킹</button>
+                </div>
+
+                <div id="ranking-timer" class="ranking-timer"></div>
+
+                <div id="todayRanking" class="ranking-content active">
+                    <ul id="todayRankingList" class="ranking-list"></ul>
+                </div>
+                <div id="yesterdayRanking" class="ranking-content">
+                    <ul id="yesterdayRankingList" class="ranking-list"></ul>
+                </div>
+                <button class="modal-btn" id="restartFromRankingBtn">게임 다시하기</button>
+            </div>
+        </div>
+
+        <!-- ===== 업적 모달 ===== -->
+        <div class="modal" id="achievementModal">
+            <div class="modal-content achievement-modal">
+                <h2 class="modal-title">🎖️ 업적</h2>
+                <div id="achievementList" class="achievement-list"></div>
+                <button class="modal-btn" id="closeAchievementBtn">닫기</button>
+            </div>
+        </div>
+
+        <!-- ===== 설정 모달 ===== -->
+        <div class="modal" id="settingsModal">
+            <div class="modal-content settings-modal">
+                <h2 class="modal-title">⚙️ 설정</h2>
+                <div class="settings-group">
+                    <label class="setting-label">
+                        <span>🎵 배경 음악</span>
+                        <input type="range" id="musicVolume" min="0" max="100" value="50" class="volume-slider">
+                        <span class="volume-value" id="musicVolumeValue">50%</span>
+                    </label>
+                    <label class="setting-label">
+                        <span>🔊 효과음</span>
+                        <input type="range" id="sfxVolume" min="0" max="100" value="70" class="volume-slider">
+                        <span class="volume-value" id="sfxVolumeValue">70%</span>
+                    </label>
+                </div>
+                <button class="modal-btn" id="closeSettingsBtn">닫기</button>
+            </div>
+        </div>
+
+        <!-- ===== 웨이브 시작 알림 ===== -->
+        <div id="wave-announce" class="wave-announce hidden">
+            <div class="wave-announce-content">
+                <div class="wave-number">WAVE <span id="announceWaveNum">1</span></div>
+                <div class="wave-enemies" id="announceEnemies"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,113 @@
+// gameData.js
+
+export const TOWER_STATS = {
+    // 기본 타워
+    plus: 	{ name: '더하기', symbol: '+', 	damage: 35, range: 85, cost: 50, targetType: 'ground', cooldown: 950 },
+    minus: 	{ name: '빼기', 	symbol: '−', 	damage: 42, range: 100, cost: 65, targetType: 'ground', cooldown: 950 },
+    multiply: { name: '곱하기', symbol: '×', 	damage: 50, range: 115, cost: 90, targetType: 'ground', cooldown: 1100 },
+    divide: 	{ name: '나누기', symbol: '÷', 	damage: 55, range: 120, cost: 100, targetType: 'ground', cooldown: 1150 },
+    ice: 		{ name: '얼음', 	symbol: '❄️', damage: 20, range: 90, cost: 110, targetType: 'ground', cooldown: 1500, slow: { factor: 0.5, duration: 2000 } },
+    poison: 	{ name: '독', 		symbol: '☠️', damage: 11, 	range: 90, cost: 135, targetType: 'ground', cooldown: 1200, poison: { dps: 22, duration: 5000 } },
+    stun: 	{ name: '기절', 	symbol: '⚡', damage: 20, range: 100, cost: 170, targetType: 'all', cooldown: 2000, stun: { chance: 0.2, duration: 1500 } },
+    meteor: 	{ name: '메테오', symbol: '☄️', damage: 140, range: 195, cost: 250, targetType: 'ground', splashRadius: 60, cooldown: 5000 },
+    cannon: 	{ name: '대공포', symbol: '💣', damage: 80, range: 145, cost: 130, targetType: 'air', cooldown: 1800 },
+    skyDestroyer: { name: '하늘 파괴자', symbol: '🚀', damage: 220, range: 225, cost: 250, targetType: 'air', splashRadius: 65, cooldown: 6000 },
+    net: 		{ name: '그물', 	symbol: '🕸️', damage: 9, 	range: 125, cost: 130, targetType: 'air', cooldown: 2200, stun: { chance: 0.15, duration: 2500 } },
+    laser:    { name: '레이저', symbol: '⚡', dps: 42, range: 115, cost: 200, targetType: 'all' },
+    'multi-shot': { name: '멀티샷', symbol: '🎯', damage: 28, range: 135, cost: 200, targetType: 'all', cooldown: 1300, numTargets: 2 },
+    
+    // --- 신규 중급 타워 3종 ---
+    goldMine: { name: '금광', symbol: '💰', damage: 30, range: 110, cost: 220, targetType: 'ground', cooldown: 1500, goldPerHit: 2 },
+    shredder: { name: '파쇄기', symbol: '💥', damage: 35, range: 120, cost: 180, targetType: 'all', cooldown: 1200, shred: { factor: 0.5, duration: 5000 } },
+    repairStation: { name: '수리소', symbol: '🛠️', damage: 0, range: 150, cost: 200, targetType: 'none', cooldown: 10000, repair: { amount: 1, range: 150 } },
+
+    // 특수 타워
+    ultimate: { name: '궁극 수호자', symbol: '🌟', damage: 255, range: 265, cost: 1500, targetType: 'all', cooldown: 1500, splashRadius: 85, slow: { factor: 0.4, duration: 3000 }, poison: { dps: 25, duration: 6000 }, stun: { chance: 0.25, duration: 2000 } },
+    golden: { name: '황금 왕관', symbol: '💎', damage: 125, range: 165, cost: 0, targetType: 'all', cooldown: 600, splashRadius: 65 },
+    silver: { name: '은빛 달', symbol: '🌙', damage: 85, range: 135, cost: 0, targetType: 'all', cooldown: 800, slow: { factor: 0.5, duration: 2000 } },
+    copper: { name: '구리빛 불꽃', symbol: '🔥', damage: 65, range: 105, cost: 0, targetType: 'ground', cooldown: 1000, poison: { dps: 20, duration: 5000 } },
+
+    // 랜덤 타워 3종
+    random_cheap:     { name: '하급 랜덤 상자', symbol: '❓', cost: 150, isRandom: true },
+    random_medium:    { name: '중급 랜덤 상자', symbol: '❔', cost: 200, isRandom: true },
+    random_expensive: { name: '상급 랜덤 상자', symbol: '❗', cost: 300, isRandom: true },
+    
+    // 전설 타워 (랜덤 전용)
+    transcendent: { name: '초월 수호자', symbol: '🌌', damage: 350, range: 300, cost: 0, targetType: 'all', cooldown: 1200, splashRadius: 100, stun: { chance: 0.3, duration: 2500 }, poison: { dps: 50, duration: 7000 }, slow: { factor: 0.3, duration: 4000 } }
+};
+
+export const MONSTER_STATS = {
+    // --- 기본 몬스터 ---
+    normal: { name: '일반', hp: 75, speed: 0.25, gold: 6, type: 'ground', size: 30 },
+    tank: { name: '탱커', hp: 600, speed: 0.18, gold: 6, type: 'ground', size: 45 },
+    speed: { name: '스피드', hp: 45, speed: 0.6, gold: 4, type: 'ground', size: 30 },
+    healer: { name: '힐러', hp: 150, speed: 0.25, gold: 8, type: 'ground', healAmount: 12, healRadius: 60, healCooldown: 2000, size: 30 },
+    bat: { name: '박쥐', hp: 60, speed: 0.5, gold: 5, type: 'air', size: 30 },
+    dragon: { name: '드래곤', hp: 800, speed: 0.35, gold: 20, type: 'air', size: 50 },
+    ghost: { name: '유령', hp: 90, speed: 0.35, gold: 7, type: 'ground', evasionChance: 0.3, size: 30 },
+    shielder: { name: '실더', hp: 180, speed: 0.22, gold: 10, type: 'ground', shieldRadius: 70, shieldCooldown: 5000, size: 30 },
+    teleporter: { name: '텔레포터', hp: 105, speed: 0.28, gold: 9, type: 'ground', teleportChance: 0.18, teleportDistance: 150, teleportCooldown: 7000, size: 30 },
+    splitter: { name: '스플리터', hp: 150, speed: 0.22, gold: 8, type: 'ground', splitsInto: 'mini-splitter', splitCount: 3, size: 30 },
+    'mini-splitter': { name: '미니 스플리터', hp: 45, speed: 0.35, gold: 2, type: 'ground', size: 20 },
+    mimic: { name: '미믹', hp: 450, speed: 0.12, gold: 40, type: 'ground', size: 30 },
+    summoner: { name: '소환사', hp: 150, speed: 0.22, gold: 12, type: 'ground', summonCooldown: 5000, summonType: 'bat', size: 30 },
+    
+    // --- 기존 중급 몬스터 5종 ---
+    general: { name: '장군', hp: 900, speed: 0.2, gold: 17, type: 'ground', defenseAuraRadius: 80, defenseAuraBoost: 0.3, size: 40 },
+    plaguebearer: { name: '역병 운반자', hp: 225, speed: 0.2, gold: 10, type: 'ground', size: 35, plague: { dps: 18, duration: 4000, radius: 40 } },
+    assassin: { name: '암살자', hp: 105, speed: 0.7, gold: 11, type: 'ground', size: 28, stealth: { duration: 2500, cooldown: 6000 } },
+    disruptor: { name: '방해자', hp: 300, speed: 0.22, gold: 14, type: 'ground', size: 40, disruption: { range: 120, duration: 3500, cooldown: 7000 } },
+    
+    // [수정] 대악마 데이터 보완
+    archfiend: { name: '대악마', hp: 1500, speed: 0.14, gold: 30, type: 'ground', size: 55, isBoss: true, 
+        timeWarp: { range: 100, slowFactor: 0.4, duration: 5000, cooldown: 10000 }, 
+        damageReflect: { chance: 0.3, reflectRatio: 0.25, stunDuration: 1000 }, 
+        soulDrain: { healAmount: 60, healRadius: 100 } 
+    },
+
+    // --- 🚨 신규 중급 몬스터 5종 (2차) 🚨 ---
+    chronomancer: { name: '시간술사', hp: 180, speed: 0.28, gold: 15, type: 'ground', size: 32,
+        timeBomb: { cooldown: 8000, delay: 3000, radius: 70, stunDuration: 2500 }
+    },
+    golem: { name: '골렘', hp: 1200, speed: 0.15, gold: 18, type: 'ground', size: 48,
+        phase2: { newSpeed: 0.4, hpRestoreRatio: 0.4 }
+    },
+    mirage: { name: '신기루', hp: 250, speed: 0.3, gold: 13, type: 'ground', size: 30,
+        illusion: { cooldown: 7000, count: 2, duration: 5000 }
+    },
+    leech: { name: '흡혈충', hp: 100, speed: 0.8, gold: 9, type: 'air', size: 28,
+        siphonRatio: 0.5
+    },
+    collector: { name: '수집가', hp: 90, speed: 0.9, gold: 5, type: 'ground', size: 30,
+        goldIncrease: { interval: 3000, amount: 2 },
+        goldPenalty: 100
+    },
+
+    // --- 기존 보스 몬스터 ---
+    boss: { name: '보스', hp: 2000, speed: 0.18, gold: 40, type: 'ground', size: 60, isBoss: true },
+    finalBoss: { name: '최종보스', hp: 7000, speed: 0.12, gold: 160, type: 'ground', size: 80, isBoss: true },
+    ancientDragon: { name: '고대 용', hp: 4000, speed: 0.14, gold: 80, type: 'air', size: 70, isBoss: true,
+        fireBreath: { range: 150, damage: 100, aoe: 60, cooldown: 6000 },
+        regeneration: { amount: 25, interval: 3000 },
+        wingStorm: { range: 200, knockback: 50, cooldown: 10000 } },
+    
+    voidLord: { name: '공허의 군주', hp: 3500, speed: 0.16, gold: 70, type: 'ground', size: 65, isBoss: true,
+        voidRift: { range: 120, duration: 5000, cooldown: 12000 },
+        darkAura: { range: 100, damageBoost: 0.6 },
+        phaseShift: { duration: 3000, cooldown: 15000 } },
+    
+    titanGolem: { name: '타이탄 골렘', hp: 5000, speed: 0.1, gold: 100, type: 'ground', size: 75, isBoss: true,
+        armor: { reduction: 0.5 },
+        earthquake: { range: 180, damage: 80, cooldown: 8000 },
+        rockThrow: { range: 250, damage: 120, cooldown: 5000 } }
+};
+
+export const WIZARD_SPELLS = {
+    fireball: { name: "파이어볼", symbol: "🔥", level: 1, cooldown: 6000, damage: 60, aoe: 80 },
+    frostNova: { name: "서리 고리", symbol: "❄️", level: 2, cooldown: 8000, damage: 23, aoe: 100, freezeDuration: 5500 },
+    chainLightning: { name: "연쇄 번개", symbol: "⚡", level: 3, cooldown: 8000, damage: 30, chains: 4, chainRange: 120, chainRangeSq: 120*120 },
+    teleport: { name: "순간이동", symbol: "🌀", level: 4, cooldown: 12000, damage: 100, aoe: 70 },
+    blackHole: { name: "블랙홀", symbol: "⚫", level: 5, cooldown: 18000, dps: 50, aoe: 130, duration: 2500 }
+};
+
+export const WIZARD_AUTO_ATTACK_STATS = { range: 120, rangeSq: 120*120, initialDamage: 1.5, damage: 1.5, cooldown: 600, cooldownUntil: 0 };
