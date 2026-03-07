@@ -100,7 +100,6 @@ export class ProjectileRenderer {
     ctx.globalAlpha = prevAlpha;
   }
 
-
   // ==========================================================
   // Main API: renderProjectile
   // ==========================================================
@@ -401,13 +400,21 @@ export class ProjectileRenderer {
 
     // Impact flash at target
     ctx.globalAlpha = 0.5 + p * 0.3;
-    const impactGrad = ctx.createRadialGradient(x2, y2, 0, x2, y2, 10 + p * 5);
-    impactGrad.addColorStop(0, "#FFFFFF");
-    impactGrad.addColorStop(0.4, "#FF6666");
-    impactGrad.addColorStop(1, "rgba(255,0,0,0)");
-    ctx.fillStyle = impactGrad;
+    const impactR = 10 + p * 5;
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = hexToRgba("#FF0000", 0.3);
     ctx.beginPath();
-    ctx.arc(x2, y2, 10 + p * 5, 0, TWO_PI);
+    ctx.arc(x2, y2, impactR, 0, TWO_PI);
+    ctx.fill();
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = "#FF6666";
+    ctx.beginPath();
+    ctx.arc(x2, y2, impactR * 0.5, 0, TWO_PI);
+    ctx.fill();
+    ctx.globalAlpha = 0.6 + p * 0.3;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.beginPath();
+    ctx.arc(x2, y2, impactR * 0.25, 0, TWO_PI);
     ctx.fill();
 
     ctx.restore();
@@ -417,35 +424,26 @@ export class ProjectileRenderer {
   // MATH TOWER PROJECTILES
   // ==========================================================
 
-  /** Generic glowing energy bolt with gradient sphere + sparkle ring */
+  /** Generic glowing energy bolt with solid sphere + sparkle ring */
   _drawEnergyBolt(ctx, x, y, r, angle, ts, color, lightColor, darkColor) {
-    // Glow aura
-    ctx.globalAlpha = 0.35;
-    const auraGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2.5);
-    auraGrad.addColorStop(0, lightColor);
-    auraGrad.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = auraGrad;
-    ctx.beginPath();
-    ctx.arc(x, y, r * 2.5, 0, TWO_PI);
-    ctx.fill();
+    // Glow aura - layered circles instead of gradient
+    this._glow(ctx, x, y, r * 2.5, color, 0.25);
 
-    // Main sphere
+    // Main sphere - solid 2-tone instead of radial gradient
     ctx.globalAlpha = 1;
-    const mainGrad = ctx.createRadialGradient(
-      x - r * 0.3,
-      y - r * 0.3,
-      0,
-      x,
-      y,
-      r,
-    );
-    mainGrad.addColorStop(0, "#FFFFFF");
-    mainGrad.addColorStop(0.3, lightColor);
-    mainGrad.addColorStop(0.7, color);
-    mainGrad.addColorStop(1, darkColor);
-    ctx.fillStyle = mainGrad;
+    ctx.fillStyle = darkColor;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, TWO_PI);
+    ctx.fill();
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = lightColor;
+    ctx.beginPath();
+    ctx.arc(x - r * 0.2, y - r * 0.2, r * 0.7, 0, TWO_PI);
+    ctx.fill();
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.beginPath();
+    ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.3, 0, TWO_PI);
     ctx.fill();
 
     // Sparkle ring
@@ -509,11 +507,7 @@ export class ProjectileRenderer {
       const alpha = 0.5 - i * 0.12;
 
       ctx.globalAlpha = alpha;
-      const grad = ctx.createRadialGradient(fx, fy, 0, fx, fy, fSize);
-      grad.addColorStop(0, "#FFD700");
-      grad.addColorStop(0.5, color);
-      grad.addColorStop(1, "rgba(255,109,0,0)");
-      ctx.fillStyle = grad;
+      ctx.fillStyle = "#FFD700";
       ctx.beginPath();
       ctx.arc(fx, fy, fSize, 0, TWO_PI);
       ctx.fill();
@@ -525,10 +519,7 @@ export class ProjectileRenderer {
   _drawSpinningStar(ctx, x, y, r, angle, ts, color, lightColor, darkColor) {
     // Aura
     ctx.globalAlpha = 0.3;
-    const auraGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
-    auraGrad.addColorStop(0, lightColor);
-    auraGrad.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = auraGrad;
+    ctx.fillStyle = "rgba(0,0,0,0)";
     ctx.beginPath();
     ctx.arc(x, y, r * 2, 0, TWO_PI);
     ctx.fill();
@@ -551,11 +542,7 @@ export class ProjectileRenderer {
     }
     ctx.closePath();
 
-    const starGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, outerR);
-    starGrad.addColorStop(0, "#FFFFFF");
-    starGrad.addColorStop(0.3, lightColor);
-    starGrad.addColorStop(1, darkColor);
-    ctx.fillStyle = starGrad;
+    ctx.fillStyle = "#FFFFFF";
     ctx.fill();
     ctx.restore();
   }
@@ -623,11 +610,7 @@ export class ProjectileRenderer {
     ctx.quadraticCurveTo(r * 0.6, 0, 0, 0);
     ctx.closePath();
 
-    const crescGrad = ctx.createLinearGradient(-r, 0, r, 0);
-    crescGrad.addColorStop(0, darkColor);
-    crescGrad.addColorStop(0.5, "#FFFFFF");
-    crescGrad.addColorStop(1, lightColor);
-    ctx.fillStyle = crescGrad;
+    ctx.fillStyle = "#FFFFFF";
     ctx.fill();
 
     // Edge highlight
@@ -646,21 +629,14 @@ export class ProjectileRenderer {
   _drawMagicMissile(ctx, x, y, r, angle, ts) {
     // Glow
     ctx.globalAlpha = 0.3;
-    const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
-    glowGrad.addColorStop(0, "#82AAFF");
-    glowGrad.addColorStop(1, "rgba(0,229,255,0)");
-    ctx.fillStyle = glowGrad;
+    ctx.fillStyle = "#82AAFF";
     ctx.beginPath();
     ctx.arc(x, y, r * 2, 0, TWO_PI);
     ctx.fill();
 
     // Core
     ctx.globalAlpha = 1;
-    const coreGrad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    coreGrad.addColorStop(0, "#FFFFFF");
-    coreGrad.addColorStop(0.5, "#82AAFF");
-    coreGrad.addColorStop(1, "#4488CC");
-    ctx.fillStyle = coreGrad;
+    ctx.fillStyle = "#82AAFF";
     ctx.beginPath();
     ctx.arc(x, y, r, 0, TWO_PI);
     ctx.fill();
@@ -704,18 +680,7 @@ export class ProjectileRenderer {
 
     // Main cannonball body
     ctx.globalAlpha = 1;
-    const bodyGrad = ctx.createRadialGradient(
-      x - r * 0.3,
-      y - r * 0.3,
-      0,
-      x,
-      y,
-      r,
-    );
-    bodyGrad.addColorStop(0, "#5A5A5A");
-    bodyGrad.addColorStop(0.5, "#333333");
-    bodyGrad.addColorStop(1, "#1A1A1A");
-    ctx.fillStyle = bodyGrad;
+    ctx.fillStyle = "#333333";
     ctx.beginPath();
     ctx.arc(x, y, r, 0, TWO_PI);
     ctx.fill();
@@ -766,17 +731,7 @@ export class ProjectileRenderer {
     const flameLen = r * 2 + Math.sin(ts * 0.02) * r * 0.5;
 
     ctx.globalAlpha = 0.8;
-    const flameGrad = ctx.createLinearGradient(
-      ex,
-      ey,
-      ex + nx * flameLen,
-      ey + ny * flameLen,
-    );
-    flameGrad.addColorStop(0, "#FFFFFF");
-    flameGrad.addColorStop(0.2, "#FFDD00");
-    flameGrad.addColorStop(0.5, "#FF6600");
-    flameGrad.addColorStop(1, "rgba(255,0,0,0)");
-    ctx.strokeStyle = flameGrad;
+    ctx.strokeStyle = "#FF6600";
     ctx.lineWidth = r * 0.8;
     ctx.lineCap = "round";
     ctx.beginPath();
@@ -840,593 +795,7 @@ export class ProjectileRenderer {
     ctx.rotate(ts * 0.005);
 
     // Crystal shape: elongated hexagon
-    const bodyGrad = ctx.createLinearGradient(-r, -r, r, r);
-    bodyGrad.addColorStop(0, "rgba(200,240,255,0.9)");
-    bodyGrad.addColorStop(0.3, "rgba(100,200,255,0.8)");
-    bodyGrad.addColorStop(0.6, "rgba(0,191,255,0.7)");
-    bodyGrad.addColorStop(1, "rgba(0,100,200,0.6)");
-    ctx.fillStyle = bodyGrad;
-
-    ctx.beginPath();
-    ctx.moveTo(0, -r);
-    ctx.lineTo(r * 0.5, -r * 0.3);
-    ctx.lineTo(r * 0.5, r * 0.3);
-    ctx.lineTo(0, r);
-    ctx.lineTo(-r * 0.5, r * 0.3);
-    ctx.lineTo(-r * 0.5, -r * 0.3);
-    ctx.closePath();
-    ctx.fill();
-
-    // Internal refraction highlight
-    ctx.globalAlpha = 0.5;
-    ctx.fillStyle = "#FFFFFF";
-    ctx.beginPath();
-    ctx.moveTo(-r * 0.1, -r * 0.6);
-    ctx.lineTo(r * 0.2, -r * 0.1);
-    ctx.lineTo(-r * 0.1, r * 0.1);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.restore();
-    ctx.globalAlpha = 1;
-  }
-
-  /** Flaming rock with molten trail */
-  _drawMeteor(ctx, x, y, r, angle, ts) {
-    // Ember particle trail
-    const nx = -Math.cos(angle);
-    const ny = -Math.sin(angle);
-    for (let i = 0; i < 6; i++) {
-      const dist = r * (1.0 + i * 1.0);
-      const jx = Math.sin(ts * 0.009 + i * 2.7) * r * 0.6;
-      const jy = Math.cos(ts * 0.008 + i * 1.9) * r * 0.6;
-      const ex = x + nx * dist + jx;
-      const ey = y + ny * dist + jy;
-      const eSize = r * (0.4 - i * 0.05);
-      ctx.globalAlpha = 0.5 - i * 0.07;
-      ctx.fillStyle = i < 3 ? "#FF6600" : "#FF3300";
-      ctx.beginPath();
-      ctx.arc(ex, ey, Math.max(0.5, eSize), 0, TWO_PI);
-      ctx.fill();
-    }
-
-    // Molten trail streak
-    ctx.globalAlpha = 0.4;
-    const trailGrad = ctx.createLinearGradient(
-      x,
-      y,
-      x + nx * r * 4,
-      y + ny * r * 4,
-    );
-    trailGrad.addColorStop(0, "#FF8800");
-    trailGrad.addColorStop(1, "rgba(255,68,0,0)");
-    ctx.strokeStyle = trailGrad;
-    ctx.lineWidth = r * 1.2;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + nx * r * 4, y + ny * r * 4);
-    ctx.stroke();
-
-    // Rock body
-    ctx.globalAlpha = 1;
-    const rockGrad = ctx.createRadialGradient(
-      x - r * 0.2,
-      y - r * 0.2,
-      0,
-      x,
-      y,
-      r,
-    );
-    rockGrad.addColorStop(0, "#FFB366");
-    rockGrad.addColorStop(0.4, "#CC4400");
-    rockGrad.addColorStop(0.8, "#662200");
-    rockGrad.addColorStop(1, "#331100");
-    ctx.fillStyle = rockGrad;
-
-    // Irregular rock shape
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(ts * 0.003);
-    ctx.beginPath();
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * TWO_PI;
-      const rr = r * (0.8 + seededValue(i * 13) * 0.4);
-      if (i === 0) ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
-      else ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
-    }
-    ctx.closePath();
-    ctx.fill();
-
-    // Molten cracks on surface
-    ctx.strokeStyle = "#FF8800";
-    ctx.lineWidth = 0.8;
-    ctx.globalAlpha = 0.7;
-    ctx.beginPath();
-    ctx.moveTo(-r * 0.3, -r * 0.4);
-    ctx.lineTo(r * 0.2, r * 0.1);
-    ctx.lineTo(r * 0.5, r * 0.4);
-    ctx.stroke();
-
-    ctx.restore();
-    ctx.globalAlpha = 1;
-  }
-
-  /** Green bubbling toxic sphere with dripping trail */
-  _drawToxicGlob(ctx, x, y, r, angle, ts) {
-    // Dripping trail
-    const nx = -Math.cos(angle);
-    const ny = -Math.sin(angle);
-    for (let i = 0; i < 4; i++) {
-      const dist = r * (1.2 + i * 1.0);
-      const dx = x + nx * dist;
-      const dy = y + ny * dist + i * r * 0.3; // drips downward
-      const dropR = r * (0.35 - i * 0.06);
-      ctx.globalAlpha = 0.4 - i * 0.08;
-      ctx.fillStyle = "#8BC34A";
-      ctx.beginPath();
-      ctx.arc(dx, dy, Math.max(0.5, dropR), 0, TWO_PI);
-      ctx.fill();
-    }
-
-    // Gas wisps
-    for (let i = 0; i < 3; i++) {
-      const wAngle = ts * 0.004 + i * 2.1;
-      const wd = r * 1.8;
-      const wx = x + Math.cos(wAngle) * wd;
-      const wy = y + Math.sin(wAngle) * wd - r * 0.5;
-      ctx.globalAlpha = 0.15 + 0.1 * Math.sin(ts * 0.006 + i);
-      ctx.fillStyle = "#CDDC39";
-      ctx.beginPath();
-      ctx.arc(wx, wy, r * 0.5, 0, TWO_PI);
-      ctx.fill();
-    }
-
-    // Main glob
-    ctx.globalAlpha = 0.9;
-    const globGrad = ctx.createRadialGradient(
-      x - r * 0.2,
-      y - r * 0.2,
-      0,
-      x,
-      y,
-      r,
-    );
-    globGrad.addColorStop(0, "#DCEDC8");
-    globGrad.addColorStop(0.3, "#8BC34A");
-    globGrad.addColorStop(0.7, "#558B2F");
-    globGrad.addColorStop(1, "#33691E");
-    ctx.fillStyle = globGrad;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, TWO_PI);
-    ctx.fill();
-
-    // Bubbles on surface
-    ctx.globalAlpha = 0.6;
-    const bubblePhase = ts * 0.008;
-    for (let i = 0; i < 4; i++) {
-      const ba = bubblePhase + i * 1.5;
-      const br = r * 0.6;
-      const bx = x + Math.cos(ba) * br;
-      const by = y + Math.sin(ba) * br;
-      const bSize = r * 0.15 + Math.sin(ts * 0.012 + i) * r * 0.05;
-      ctx.fillStyle = "#DCEDC8";
-      ctx.beginPath();
-      ctx.arc(bx, by, bSize, 0, TWO_PI);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  /** Branching electric bolt with flash */
-  _drawLightningBolt(ctx, x, y, r, angle, ts) {
-    // Bright flash aura
-    ctx.globalAlpha = 0.3 + 0.2 * Math.sin(ts * 0.03);
-    const flashGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2.5);
-    flashGrad.addColorStop(0, "#FFFFFF");
-    flashGrad.addColorStop(0.5, "#FFFF88");
-    flashGrad.addColorStop(1, "rgba(255,255,0,0)");
-    ctx.fillStyle = flashGrad;
-    ctx.beginPath();
-    ctx.arc(x, y, r * 2.5, 0, TWO_PI);
-    ctx.fill();
-
-    // Lightning bolt shape
-    ctx.globalAlpha = 1;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-
-    ctx.fillStyle = "#FFEB3B";
-    ctx.strokeStyle = "#FFFFFF";
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    // Zig-zag bolt shape
-    ctx.moveTo(r * 1.0, 0);
-    ctx.lineTo(r * 0.2, -r * 0.4);
-    ctx.lineTo(r * 0.4, -r * 0.1);
-    ctx.lineTo(-r * 0.6, -r * 0.3);
-    ctx.lineTo(-r * 0.1, 0);
-    ctx.lineTo(-r * 0.6, r * 0.3);
-    ctx.lineTo(r * 0.4, r * 0.1);
-    ctx.lineTo(r * 0.2, r * 0.4);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.restore();
-
-    // Spark particles
-    for (let i = 0; i < 4; i++) {
-      const sa = ts * 0.015 + i * 1.8;
-      const sd = r * 1.5;
-      const sx = x + Math.cos(sa) * sd;
-      const sy = y + Math.sin(sa) * sd;
-      ctx.globalAlpha = 0.6 + 0.4 * Math.sin(ts * 0.025 + i);
-      ctx.fillStyle = "#FFFF88";
-      ctx.beginPath();
-      ctx.arc(sx, sy, r * 0.15, 0, TWO_PI);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  /** Spinning silk ball with web strand trail */
-  _drawWebBall(ctx, x, y, r, angle, ts) {
-    // Trailing web strands
-    const nx = -Math.cos(angle);
-    const ny = -Math.sin(angle);
-    ctx.strokeStyle = "rgba(200,200,200,0.4)";
-    ctx.lineWidth = 0.8;
-    for (let i = 0; i < 3; i++) {
-      const dist = r * (1.5 + i * 1.2);
-      const tx = x + nx * dist;
-      const ty = y + ny * dist;
-      const wave = Math.sin(ts * 0.006 + i * 2) * r * 0.5;
-      ctx.globalAlpha = 0.35 - i * 0.08;
-      ctx.beginPath();
-      ctx.moveTo(x + nx * r, y + ny * r);
-      ctx.quadraticCurveTo(tx + ny * wave, ty + -nx * wave, tx, ty);
-      ctx.stroke();
-    }
-
-    // Main web ball
-    ctx.globalAlpha = 0.9;
-    const webGrad = ctx.createRadialGradient(
-      x - r * 0.2,
-      y - r * 0.2,
-      0,
-      x,
-      y,
-      r,
-    );
-    webGrad.addColorStop(0, "#FFFFFF");
-    webGrad.addColorStop(0.5, "#DDDDDD");
-    webGrad.addColorStop(1, "#AAAAAA");
-    ctx.fillStyle = webGrad;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, TWO_PI);
-    ctx.fill();
-
-    // Web cross-hatch pattern on surface
-    ctx.strokeStyle = "rgba(150,150,150,0.5)";
-    ctx.lineWidth = 0.5;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(ts * 0.004);
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI;
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * r * 0.8, Math.sin(a) * r * 0.8);
-      ctx.lineTo(
-        Math.cos(a + Math.PI) * r * 0.8,
-        Math.sin(a + Math.PI) * r * 0.8,
-      );
-      ctx.stroke();
-    }
-    ctx.restore();
-    ctx.globalAlpha = 1;
-  }
-
-  // ==========================================================
-  // SPECIAL PROJECTILES
-  // ==========================================================
-
-  /** Blue energy arrow */
-  _drawBlueArrow(ctx, x, y, r, angle, ts) {
-    // Energy trail
-    const nx = -Math.cos(angle);
-    const ny = -Math.sin(angle);
-    for (let i = 0; i < 3; i++) {
-      const dist = r * (1.2 + i * 1.0);
-      const tx = x + nx * dist;
-      const ty = y + ny * dist;
-      ctx.globalAlpha = 0.35 - i * 0.1;
-      const tGrad = ctx.createRadialGradient(tx, ty, 0, tx, ty, r * 0.5);
-      tGrad.addColorStop(0, "#64B5F6");
-      tGrad.addColorStop(1, "rgba(100,181,246,0)");
-      ctx.fillStyle = tGrad;
-      ctx.beginPath();
-      ctx.arc(tx, ty, r * 0.5, 0, TWO_PI);
-      ctx.fill();
-    }
-
-    // Arrow body
-    ctx.globalAlpha = 1;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-
-    // Shaft
-    ctx.fillStyle = "#1565C0";
-    ctx.fillRect(-r * 0.8, -r * 0.12, r * 1.4, r * 0.24);
-
-    // Arrowhead
-    const headGrad = ctx.createLinearGradient(r * 0.5, 0, r * 1.3, 0);
-    headGrad.addColorStop(0, "#2196F3");
-    headGrad.addColorStop(1, "#E3F2FD");
-    ctx.fillStyle = headGrad;
-    ctx.beginPath();
-    ctx.moveTo(r * 1.3, 0);
-    ctx.lineTo(r * 0.5, -r * 0.45);
-    ctx.lineTo(r * 0.5, r * 0.45);
-    ctx.closePath();
-    ctx.fill();
-
-    // Fletching
-    ctx.fillStyle = "#0D47A1";
-    ctx.beginPath();
-    ctx.moveTo(-r * 0.8, 0);
-    ctx.lineTo(-r * 1.1, -r * 0.3);
-    ctx.lineTo(-r * 0.6, 0);
-    ctx.lineTo(-r * 1.1, r * 0.3);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.restore();
-    ctx.globalAlpha = 1;
-  }
-
-  /** Spinning gold coin with sparkles */
-  _drawGoldCoin(ctx, x, y, r, angle, ts) {
-    // Sparkle trail
-    for (let i = 0; i < 5; i++) {
-      const a = ts * 0.004 + i * 1.3;
-      const dist = r * (1.5 + i * 0.6);
-      const sx = x - Math.cos(angle) * dist + Math.sin(a) * r * 0.3;
-      const sy = y - Math.sin(angle) * dist + Math.cos(a) * r * 0.3;
-      ctx.globalAlpha = 0.5 - i * 0.09;
-      ctx.fillStyle = "#FFD700";
-      ctx.beginPath();
-      ctx.arc(sx, sy, r * 0.12, 0, TWO_PI);
-      ctx.fill();
-    }
-
-    // Coin body (simulated 3D spin by varying width)
-    ctx.globalAlpha = 1;
-    const spinPhase = Math.cos(ts * 0.008);
-    const coinWidth = r * Math.abs(spinPhase);
-
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(Math.max(0.15, Math.abs(spinPhase)), 1);
-
-    const coinGrad = ctx.createRadialGradient(-r * 0.2, -r * 0.2, 0, 0, 0, r);
-    coinGrad.addColorStop(0, "#FFF8DC");
-    coinGrad.addColorStop(0.3, "#FFD700");
-    coinGrad.addColorStop(0.7, "#DAA520");
-    coinGrad.addColorStop(1, "#B8860B");
-    ctx.fillStyle = coinGrad;
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, TWO_PI);
-    ctx.fill();
-
-    // Dollar sign / emblem
-    if (Math.abs(spinPhase) > 0.3) {
-      ctx.fillStyle = "#B8860B";
-      ctx.font = `bold ${Math.round(r * 1.2)}px sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("$", 0, 0);
-    }
-
-    // Rim
-    ctx.strokeStyle = "#DAA520";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 0.85, 0, TWO_PI);
-    ctx.stroke();
-
-    ctx.restore();
-    ctx.globalAlpha = 1;
-  }
-
-  /** Spinning circular sawblade with metal sparks */
-  _drawSawblade(ctx, x, y, r, angle, ts) {
-    // Metal spark trail
-    for (let i = 0; i < 4; i++) {
-      const a = ts * 0.012 + i * 1.5;
-      const sd = r * 1.3;
-      const sx = x + Math.cos(a) * sd;
-      const sy = y + Math.sin(a) * sd;
-      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(ts * 0.02 + i);
-      ctx.fillStyle = "#FFD700";
-      ctx.beginPath();
-      ctx.arc(sx, sy, r * 0.1, 0, TWO_PI);
-      ctx.fill();
-    }
-
-    // Main sawblade
-    ctx.globalAlpha = 1;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(ts * 0.015);
-
-    // Blade teeth
-    const teeth = 10;
-    ctx.beginPath();
-    for (let i = 0; i < teeth; i++) {
-      const a1 = (i / teeth) * TWO_PI;
-      const a2 = ((i + 0.5) / teeth) * TWO_PI;
-      const outerR = r;
-      const innerR = r * 0.7;
-      if (i === 0) ctx.moveTo(Math.cos(a1) * outerR, Math.sin(a1) * outerR);
-      else ctx.lineTo(Math.cos(a1) * outerR, Math.sin(a1) * outerR);
-      ctx.lineTo(Math.cos(a2) * innerR, Math.sin(a2) * innerR);
-    }
-    ctx.closePath();
-
-    const bladeGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
-    bladeGrad.addColorStop(0, "#E0E0E0");
-    bladeGrad.addColorStop(0.6, "#9E9E9E");
-    bladeGrad.addColorStop(1, "#616161");
-    ctx.fillStyle = bladeGrad;
-    ctx.fill();
-
-    // Center hub
-    ctx.fillStyle = "#424242";
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 0.25, 0, TWO_PI);
-    ctx.fill();
-
-    // Hub hole
-    ctx.fillStyle = "#212121";
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 0.1, 0, TWO_PI);
-    ctx.fill();
-
-    ctx.restore();
-    ctx.globalAlpha = 1;
-  }
-
-  // ==========================================================
-  // EPIC / LEGENDARY PROJECTILES
-  // ==========================================================
-
-  /** Prismatic rainbow orb with multi-color trail and lens flare */
-  _drawRainbowOrb(ctx, x, y, r, angle, ts) {
-    // Multi-color particle trail
-    const nx = -Math.cos(angle);
-    const ny = -Math.sin(angle);
-    for (let i = 0; i < 6; i++) {
-      const dist = r * (1.0 + i * 0.8);
-      const jx = Math.sin(ts * 0.007 + i * 1.5) * r * 0.5;
-      const jy = Math.cos(ts * 0.006 + i * 1.2) * r * 0.5;
-      const tx = x + nx * dist + jx;
-      const ty = y + ny * dist + jy;
-      ctx.globalAlpha = 0.5 - i * 0.07;
-      ctx.fillStyle = RAINBOW[i % RAINBOW.length];
-      ctx.beginPath();
-      ctx.arc(tx, ty, r * (0.35 - i * 0.03), 0, TWO_PI);
-      ctx.fill();
-    }
-
-    // Glow aura (rainbow gradient)
-    ctx.globalAlpha = 0.3;
-    const auraGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2.5);
-    auraGrad.addColorStop(0, "#FFFFFF");
-    auraGrad.addColorStop(0.3, "#FF88FF");
-    auraGrad.addColorStop(0.6, "#8888FF");
-    auraGrad.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = auraGrad;
-    ctx.beginPath();
-    ctx.arc(x, y, r * 2.5, 0, TWO_PI);
-    ctx.fill();
-
-    // Main prismatic sphere (cycling hue via conic segments)
-    ctx.globalAlpha = 1;
-    const segments = RAINBOW.length;
-    const rotOffset = ts * 0.003;
-    for (let i = 0; i < segments; i++) {
-      const startA = rotOffset + (i / segments) * TWO_PI;
-      const endA = rotOffset + ((i + 1) / segments) * TWO_PI;
-      ctx.fillStyle = RAINBOW[i];
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.arc(x, y, r, startA, endA);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // White core highlight
-    ctx.globalAlpha = 0.7;
-    ctx.fillStyle = "#FFFFFF";
-    ctx.beginPath();
-    ctx.arc(x - r * 0.2, y - r * 0.2, r * 0.4, 0, TWO_PI);
-    ctx.fill();
-
-    // Lens flare cross
-    ctx.globalAlpha = 0.35;
-    ctx.strokeStyle = "#FFFFFF";
-    ctx.lineWidth = r * 0.15;
-    ctx.lineCap = "round";
-    const flareLen = r * 2;
-    const flareAngle = ts * 0.002;
-    ctx.beginPath();
-    ctx.moveTo(
-      x - Math.cos(flareAngle) * flareLen,
-      y - Math.sin(flareAngle) * flareLen,
-    );
-    ctx.lineTo(
-      x + Math.cos(flareAngle) * flareLen,
-      y + Math.sin(flareAngle) * flareLen,
-    );
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(
-      x - Math.cos(flareAngle + HALF_PI) * flareLen * 0.6,
-      y - Math.sin(flareAngle + HALF_PI) * flareLen * 0.6,
-    );
-    ctx.lineTo(
-      x + Math.cos(flareAngle + HALF_PI) * flareLen * 0.6,
-      y + Math.sin(flareAngle + HALF_PI) * flareLen * 0.6,
-    );
-    ctx.stroke();
-
-    ctx.globalAlpha = 1;
-  }
-
-  /** Ornate golden bolt with golden sparkle trail */
-  _drawGoldenBolt(ctx, x, y, r, angle, ts) {
-    // Golden sparkle trail
-    const nx = -Math.cos(angle);
-    const ny = -Math.sin(angle);
-    for (let i = 0; i < 5; i++) {
-      const dist = r * (1.0 + i * 0.9);
-      const jx = Math.sin(ts * 0.008 + i * 2) * r * 0.3;
-      const jy = Math.cos(ts * 0.007 + i * 1.5) * r * 0.3;
-      const tx = x + nx * dist + jx;
-      const ty = y + ny * dist + jy;
-      ctx.globalAlpha = 0.55 - i * 0.09;
-      ctx.fillStyle = "#FFD700";
-      // Star-shaped sparkle
-      this._drawTinyStar(ctx, tx, ty, r * 0.25, ts * 0.01 + i);
-    }
-
-    // Glow
-    ctx.globalAlpha = 0.3;
-    const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
-    glowGrad.addColorStop(0, "#FFF8DC");
-    glowGrad.addColorStop(1, "rgba(255,215,0,0)");
-    ctx.fillStyle = glowGrad;
-    ctx.beginPath();
-    ctx.arc(x, y, r * 2, 0, TWO_PI);
-    ctx.fill();
-
-    // Main bolt body
-    ctx.globalAlpha = 1;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-
-    // Ornate elongated shape
-    const bodyGrad = ctx.createLinearGradient(-r, 0, r, 0);
-    bodyGrad.addColorStop(0, "#B8860B");
-    bodyGrad.addColorStop(0.3, "#FFD700");
-    bodyGrad.addColorStop(0.5, "#FFF8DC");
-    bodyGrad.addColorStop(0.7, "#FFD700");
-    bodyGrad.addColorStop(1, "#B8860B");
-    ctx.fillStyle = bodyGrad;
+    ctx.fillStyle = "#CC4400";
     ctx.beginPath();
     ctx.moveTo(r * 1.2, 0);
     ctx.quadraticCurveTo(r * 0.5, -r * 0.6, -r * 0.8, -r * 0.2);
@@ -1469,10 +838,7 @@ export class ProjectileRenderer {
 
     // Glow
     ctx.globalAlpha = 0.25;
-    const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
-    glowGrad.addColorStop(0, "#FFFFFF");
-    glowGrad.addColorStop(1, "rgba(192,192,192,0)");
-    ctx.fillStyle = glowGrad;
+    ctx.fillStyle = "#FFFFFF";
     ctx.beginPath();
     ctx.arc(x, y, r * 2, 0, TWO_PI);
     ctx.fill();
@@ -1483,11 +849,7 @@ export class ProjectileRenderer {
     ctx.translate(x, y);
     ctx.rotate(angle + HALF_PI);
 
-    const crescGrad = ctx.createLinearGradient(-r, -r, r, r);
-    crescGrad.addColorStop(0, "#F5F5F5");
-    crescGrad.addColorStop(0.5, "#C0C0C0");
-    crescGrad.addColorStop(1, "#808080");
-    ctx.fillStyle = crescGrad;
+    ctx.fillStyle = "#C0C0C0";
 
     // Crescent: outer circle minus shifted inner circle
     ctx.beginPath();
@@ -1512,29 +874,14 @@ export class ProjectileRenderer {
 
     // Glow
     ctx.globalAlpha = 0.3;
-    const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
-    glowGrad.addColorStop(0, "#DEB887");
-    glowGrad.addColorStop(1, "rgba(184,115,51,0)");
-    ctx.fillStyle = glowGrad;
+    ctx.fillStyle = "#DEB887";
     ctx.beginPath();
     ctx.arc(x, y, r * 2, 0, TWO_PI);
     ctx.fill();
 
     // Main copper sphere
     ctx.globalAlpha = 1;
-    const bodyGrad = ctx.createRadialGradient(
-      x - r * 0.3,
-      y - r * 0.3,
-      0,
-      x,
-      y,
-      r,
-    );
-    bodyGrad.addColorStop(0, "#FFD4A0");
-    bodyGrad.addColorStop(0.3, "#DEB887");
-    bodyGrad.addColorStop(0.6, "#B87333");
-    bodyGrad.addColorStop(1, "#8B4513");
-    ctx.fillStyle = bodyGrad;
+    ctx.fillStyle = "#DEB887";
     ctx.beginPath();
     ctx.arc(x, y, r, 0, TWO_PI);
     ctx.fill();
@@ -1590,12 +937,7 @@ export class ProjectileRenderer {
 
     // Glow aura
     ctx.globalAlpha = 0.35;
-    const auraGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2.5);
-    auraGrad.addColorStop(0, "#FFFFFF");
-    auraGrad.addColorStop(0.3, "#00FFFF");
-    auraGrad.addColorStop(0.6, "#8B00FF");
-    auraGrad.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = auraGrad;
+    ctx.fillStyle = "#00FFFF";
     ctx.beginPath();
     ctx.arc(x, y, r * 2.5, 0, TWO_PI);
     ctx.fill();
@@ -1604,11 +946,7 @@ export class ProjectileRenderer {
     ctx.globalAlpha = 1;
 
     // Base dark sphere
-    const baseGrad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    baseGrad.addColorStop(0, "#1A0040");
-    baseGrad.addColorStop(0.5, "#0D0020");
-    baseGrad.addColorStop(1, "#000010");
-    ctx.fillStyle = baseGrad;
+    ctx.fillStyle = "#0D0020";
     ctx.beginPath();
     ctx.arc(x, y, r, 0, TWO_PI);
     ctx.fill();
@@ -1638,10 +976,7 @@ export class ProjectileRenderer {
 
     // Bright core
     ctx.globalAlpha = 0.8;
-    const coreGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 0.3);
-    coreGrad.addColorStop(0, "#FFFFFF");
-    coreGrad.addColorStop(1, "rgba(0,255,255,0)");
-    ctx.fillStyle = coreGrad;
+    ctx.fillStyle = "#FFFFFF";
     ctx.beginPath();
     ctx.arc(x, y, r * 0.3, 0, TWO_PI);
     ctx.fill();
@@ -1651,10 +986,7 @@ export class ProjectileRenderer {
   /** Fallback simple glowing projectile */
   _drawDefaultProjectile(ctx, x, y, r, ts) {
     ctx.globalAlpha = 0.3;
-    const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
-    glowGrad.addColorStop(0, "#FFFFFF");
-    glowGrad.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = glowGrad;
+    ctx.fillStyle = "#FFFFFF";
     ctx.beginPath();
     ctx.arc(x, y, r * 2, 0, TWO_PI);
     ctx.fill();
@@ -1685,13 +1017,7 @@ export class ProjectileRenderer {
 
     // Inner fire fill
     ctx.globalAlpha = alpha * 0.3;
-    const fireGrad = ctx.createRadialGradient(x, y, 0, x, y, currentR);
-    fireGrad.addColorStop(0, "#FFFFFF");
-    fireGrad.addColorStop(0.2, "#FFD700");
-    fireGrad.addColorStop(0.5, "#FF6600");
-    fireGrad.addColorStop(0.8, "#FF2200");
-    fireGrad.addColorStop(1, "rgba(255,0,0,0)");
-    ctx.fillStyle = fireGrad;
+    ctx.fillStyle = "#FF6600";
     ctx.beginPath();
     ctx.arc(x, y, currentR, 0, TWO_PI);
     ctx.fill();
@@ -1801,11 +1127,7 @@ export class ProjectileRenderer {
     for (let i = 0; i < points.length; i++) {
       const p = points[i];
       ctx.globalAlpha = alpha * (0.4 + 0.3 * Math.sin(ts * 0.02 + i));
-      const flashGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 15);
-      flashGrad.addColorStop(0, "#FFFFFF");
-      flashGrad.addColorStop(0.5, "#FFFF88");
-      flashGrad.addColorStop(1, "rgba(255,255,0,0)");
-      ctx.fillStyle = flashGrad;
+      ctx.fillStyle = "#FFFF88";
       ctx.beginPath();
       ctx.arc(p.x, p.y, 15, 0, TWO_PI);
       ctx.fill();
@@ -1920,11 +1242,7 @@ export class ProjectileRenderer {
 
     // Central portal glow
     ctx.globalAlpha = alpha * 0.4;
-    const portalGrad = ctx.createRadialGradient(x, y, 0, x, y, currentR * 0.6);
-    portalGrad.addColorStop(0, "#FFFFFF");
-    portalGrad.addColorStop(0.3, "#CC88FF");
-    portalGrad.addColorStop(1, "rgba(75,0,130,0)");
-    ctx.fillStyle = portalGrad;
+    ctx.fillStyle = "#CC88FF";
     ctx.beginPath();
     ctx.arc(x, y, currentR * 0.6, 0, TWO_PI);
     ctx.fill();
@@ -1997,13 +1315,14 @@ export class ProjectileRenderer {
 
     // Central darkness
     ctx.globalAlpha = alpha * 0.9;
-    const darkGrad = ctx.createRadialGradient(x, y, 0, x, y, currentR * 0.4);
-    darkGrad.addColorStop(0, "rgba(0,0,0,1)");
-    darkGrad.addColorStop(0.6, "rgba(10,0,20,0.9)");
-    darkGrad.addColorStop(1, "rgba(20,0,40,0)");
-    ctx.fillStyle = darkGrad;
+    ctx.fillStyle = "rgba(10,0,20,0.8)";
     ctx.beginPath();
-    ctx.arc(x, y, currentR * 0.4, 0, TWO_PI);
+    ctx.arc(x, y, currentR * 0.35, 0, TWO_PI);
+    ctx.fill();
+    ctx.globalAlpha = alpha * 0.95;
+    ctx.fillStyle = "rgba(0,0,0,1)";
+    ctx.beginPath();
+    ctx.arc(x, y, currentR * 0.25, 0, TWO_PI);
     ctx.fill();
 
     // Purple-black swirl overlay
@@ -2046,12 +1365,7 @@ export class ProjectileRenderer {
 
     // Inner explosion fill
     ctx.globalAlpha = alpha * 0.35;
-    const grad = ctx.createRadialGradient(x, y, 0, x, y, currentR);
-    grad.addColorStop(0, "#FFFFFF");
-    grad.addColorStop(0.3, "#FF8800");
-    grad.addColorStop(0.7, "#FF4400");
-    grad.addColorStop(1, "rgba(255,0,0,0)");
-    ctx.fillStyle = grad;
+    ctx.fillStyle = "#FF8800";
     ctx.beginPath();
     ctx.arc(x, y, currentR, 0, TWO_PI);
     ctx.fill();
@@ -2090,10 +1404,7 @@ export class ProjectileRenderer {
 
     // Inner green fill
     ctx.globalAlpha = alpha * 0.15;
-    const healGrad = ctx.createRadialGradient(x, y, 0, x, y, currentR);
-    healGrad.addColorStop(0, "#A5D6A7");
-    healGrad.addColorStop(1, "rgba(102,187,106,0)");
-    ctx.fillStyle = healGrad;
+    ctx.fillStyle = "#A5D6A7";
     ctx.beginPath();
     ctx.arc(x, y, currentR, 0, TWO_PI);
     ctx.fill();
