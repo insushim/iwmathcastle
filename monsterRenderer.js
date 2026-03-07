@@ -2887,13 +2887,13 @@ export class MonsterRenderer {
       ctx.stroke();
     }
 
-    // Eyes (void purple glow)
+    // Eyes (void purple glow) - simulated with larger semi-transparent shape behind
+    ctx.fillStyle = "rgba(179,136,255,0.35)";
+    ctx.fillRect(cx - s * 0.08 - 2, headY - 4, 8, 7);
+    ctx.fillRect(cx + s * 0.04 - 2, headY - 4, 8, 7);
     ctx.fillStyle = PAL.voidCosmic;
-    ctx.shadowColor = PAL.voidCosmic;
-    ctx.shadowBlur = 4;
     ctx.fillRect(cx - s * 0.08, headY - 2, 4, 3);
     ctx.fillRect(cx + s * 0.04, headY - 2, 4, 3);
-    ctx.shadowBlur = 0;
   }
 
   // --- Titan Golem ---
@@ -3042,13 +3042,13 @@ export class MonsterRenderer {
     const headY = bodyY - headR * 0.1;
     this._oCircle(ctx, cx, headY, headR, PAL.titanDark);
 
-    // Eyes (glowing orange)
+    // Eyes (glowing orange) - simulated with larger semi-transparent shape behind
+    ctx.fillStyle = "rgba(255,109,0,0.3)";
+    ctx.fillRect(cx - s * 0.06 - 2, headY - 4, 7, 7);
+    ctx.fillRect(cx + s * 0.03 - 2, headY - 4, 7, 7);
     ctx.fillStyle = "#FF6D00";
-    ctx.shadowColor = "#FF6D00";
-    ctx.shadowBlur = 3;
     ctx.fillRect(cx - s * 0.06, headY - 2, 3, 3);
     ctx.fillRect(cx + s * 0.03, headY - 2, 3, 3);
-    ctx.shadowBlur = 0;
   }
 
   // --- Final Boss ---
@@ -3131,10 +3131,16 @@ export class MonsterRenderer {
     ctx.fillRect(cx - bodyW / 2 + 2, bodyY + bodyH - 4, bodyW - 4, 2);
     ctx.globalAlpha = 1.0;
 
-    // Core gem
+    // Core gem - glow simulated with larger semi-transparent diamond behind
+    ctx.fillStyle = "rgba(255,23,68,0.3)";
+    ctx.beginPath();
+    ctx.moveTo(cx, bodyY + bodyH * 0.2 - 3);
+    ctx.lineTo(cx - s * 0.05 - 3, bodyY + bodyH * 0.45);
+    ctx.lineTo(cx, bodyY + bodyH * 0.7 + 3);
+    ctx.lineTo(cx + s * 0.05 + 3, bodyY + bodyH * 0.45);
+    ctx.closePath();
+    ctx.fill();
     ctx.fillStyle = PAL.finalBossRed;
-    ctx.shadowColor = PAL.finalBossRed;
-    ctx.shadowBlur = 5;
     ctx.beginPath();
     ctx.moveTo(cx, bodyY + bodyH * 0.2);
     ctx.lineTo(cx - s * 0.05, bodyY + bodyH * 0.45);
@@ -3142,7 +3148,6 @@ export class MonsterRenderer {
     ctx.lineTo(cx + s * 0.05, bodyY + bodyH * 0.45);
     ctx.closePath();
     ctx.fill();
-    ctx.shadowBlur = 0;
 
     // Gold trim
     ctx.strokeStyle = PAL.finalBossGold;
@@ -3253,13 +3258,13 @@ export class MonsterRenderer {
     ctx.arc(cx, headY - headR - 5, 1.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Eyes (burning red/gold)
+    // Eyes (burning red/gold) - simulated with larger semi-transparent shape behind
+    ctx.fillStyle = "rgba(255,23,68,0.35)";
+    ctx.fillRect(cx - s * 0.09 - 2, headY - 4, 8, 7);
+    ctx.fillRect(cx + s * 0.05 - 2, headY - 4, 8, 7);
     ctx.fillStyle = PAL.finalBossRed;
-    ctx.shadowColor = PAL.finalBossRed;
-    ctx.shadowBlur = 4;
     ctx.fillRect(cx - s * 0.09, headY - 2, 4, 3);
     ctx.fillRect(cx + s * 0.05, headY - 2, 4, 3);
-    ctx.shadowBlur = 0;
 
     // Floating energy particles
     ctx.fillStyle = PAL.finalBossGold;

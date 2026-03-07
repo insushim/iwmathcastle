@@ -499,9 +499,10 @@ export class ParticleSystem {
     if (this.ambientTimer >= 800) {
       this.ambientTimer = 0;
       // 활성 앰비언트 파티클이 너무 많으면 생성 건너뜀
-      const ambientCount = this.activeParticles.filter(
-        (p) => p.type === "ambient",
-      ).length;
+      let ambientCount = 0;
+      for (let j = 0; j < this.activeParticles.length; j++) {
+        if (this.activeParticles[j].type === "ambient") ambientCount++;
+      }
       if (ambientCount < 25) {
         this.ambient();
       }
@@ -652,18 +653,31 @@ export class ParticleSystem {
     // 이전 상태 저장
     c.save();
 
-    // --- 앰비언트 파티클 먼저 렌더링 (배경 레이어) ---
-    for (const p of this.activeParticles) {
-      if (p.type !== "ambient") continue;
+    // --- 단일 패스로 파티클을 레이어별로 분류 ---
+    const ambientLayer = [];
+    const generalLayer = [];
+    const textLayer = [];
+
+    for (let i = 0; i < this.activeParticles.length; i++) {
+      const p = this.activeParticles[i];
       if (p.alpha < ALPHA_THRESHOLD) continue;
-      this._renderParticle(c, p);
+      if (p.type === "ambient") {
+        ambientLayer.push(p);
+      } else if (p.type === "text") {
+        textLayer.push(p);
+      } else {
+        generalLayer.push(p);
+      }
+    }
+
+    // --- 앰비언트 파티클 렌더링 (배경 레이어) ---
+    for (let i = 0; i < ambientLayer.length; i++) {
+      this._renderParticle(c, ambientLayer[i]);
     }
 
     // --- 일반 파티클 렌더링 ---
-    for (const p of this.activeParticles) {
-      if (p.type === "ambient" || p.type === "text") continue;
-      if (p.alpha < ALPHA_THRESHOLD) continue;
-      this._renderParticle(c, p);
+    for (let i = 0; i < generalLayer.length; i++) {
+      this._renderParticle(c, generalLayer[i]);
     }
 
     // --- 충격파 렌더링 ---
@@ -673,10 +687,8 @@ export class ParticleSystem {
     }
 
     // --- 텍스트 파티클 렌더링 (최상위 레이어) ---
-    for (const p of this.activeParticles) {
-      if (p.type !== "text") continue;
-      if (p.alpha < ALPHA_THRESHOLD) continue;
-      this._renderTextParticle(c, p);
+    for (let i = 0; i < textLayer.length; i++) {
+      this._renderTextParticle(c, textLayer[i]);
     }
 
     // --- 화면 플래시 렌더링 (가장 위) ---
@@ -699,69 +711,82 @@ export class ParticleSystem {
    * @param {Object} p - 파티클 객체
    */
   _renderParticle(c, p) {
-    c.save();
+    // 발광 효과: shadowBlur 대신 반투명 원으로 대체 (GPU 부담 감소)
+    if (p.glowSize > 0) {
+      c.globalAlpha = p.alpha * 0.25;
+      c.fillStyle = p.glowColor || p.color;
+      c.beginPath();
+      c.arc(p.x, p.y, p.size + p.glowSize * p.alpha, 0, Math.PI * 2);
+      c.fill();
+    }
+
     c.globalAlpha = p.alpha;
 
-    // 발광 효과 (shadowBlur)
-    if (p.glowSize > 0) {
-      c.shadowBlur = p.glowSize * p.alpha; // 알파에 비례하여 발광도 감소
-      c.shadowColor = p.glowColor || p.color;
-    }
-
-    // 위치로 이동 및 회전 적용
-    c.translate(p.x, p.y);
-    if (p.rotation !== 0) {
-      c.rotate(p.rotation);
-    }
-
-    // 채우기 스타일 결정 (그라디언트 또는 단색)
-    let fillStyle;
-    if (p.useGradient && p.size > 1) {
+    // 채우기 스타일 결정 (작은 파티클은 단색으로 최적화 - 그라디언트 생성 비용 절감)
+    if (p.useGradient && p.size > 4) {
+      c.save();
+      c.translate(p.x, p.y);
+      if (p.rotation !== 0) c.rotate(p.rotation);
       const gradient = c.createRadialGradient(0, 0, 0, 0, 0, p.size);
       gradient.addColorStop(0, p.gradientInner);
       gradient.addColorStop(0.4, p.color);
       gradient.addColorStop(1, p.gradientOuter + "00"); // 외곽 투명
-      fillStyle = gradient;
+      c.fillStyle = gradient;
+      this._drawShape(c, p, 0, 0);
+      c.restore();
     } else {
-      fillStyle = p.color;
+      c.fillStyle = p.color;
+      if (p.rotation !== 0) {
+        c.save();
+        c.translate(p.x, p.y);
+        c.rotate(p.rotation);
+        this._drawShape(c, p, 0, 0);
+        c.restore();
+      } else {
+        this._drawShape(c, p, p.x, p.y);
+      }
     }
+  }
 
-    c.fillStyle = fillStyle;
-
-    // 모양별 렌더링
+  /**
+   * 파티클 모양 그리기 헬퍼 (save/restore 없이 호출 가능)
+   * @param {CanvasRenderingContext2D} c
+   * @param {Object} p - 파티클
+   * @param {number} cx - 중심 X
+   * @param {number} cy - 중심 Y
+   */
+  _drawShape(c, p, cx, cy) {
     switch (p.shape) {
       case "circle":
         c.beginPath();
-        c.arc(0, 0, p.size, 0, Math.PI * 2);
+        c.arc(cx, cy, p.size, 0, Math.PI * 2);
         c.fill();
         break;
 
       case "rect":
-        c.fillRect(-p.size, -p.size * 0.5, p.size * 2, p.size);
+        c.fillRect(cx - p.size, cy - p.size * 0.5, p.size * 2, p.size);
         break;
 
       case "star":
-        this._drawStar(c, 0, 0, 4, p.size, p.size * 0.4);
+        this._drawStar(c, cx, cy, 4, p.size, p.size * 0.4);
         c.fill();
         break;
 
       case "diamond":
         c.beginPath();
-        c.moveTo(0, -p.size);
-        c.lineTo(p.size * 0.6, 0);
-        c.lineTo(0, p.size);
-        c.lineTo(-p.size * 0.6, 0);
+        c.moveTo(cx, cy - p.size);
+        c.lineTo(cx + p.size * 0.6, cy);
+        c.lineTo(cx, cy + p.size);
+        c.lineTo(cx - p.size * 0.6, cy);
         c.closePath();
         c.fill();
         break;
 
       default:
         c.beginPath();
-        c.arc(0, 0, p.size, 0, Math.PI * 2);
+        c.arc(cx, cy, p.size, 0, Math.PI * 2);
         c.fill();
     }
-
-    c.restore();
   }
 
   /**
@@ -770,21 +795,14 @@ export class ParticleSystem {
    * @param {Object} p - 텍스트 파티클 객체
    */
   _renderTextParticle(c, p) {
-    c.save();
     c.globalAlpha = p.alpha;
-
-    // 발광 효과
-    if (p.glowSize > 0) {
-      c.shadowBlur = p.glowSize * p.alpha;
-      c.shadowColor = p.glowColor || p.color;
-    }
 
     const size = Math.round(p.fontSize);
     c.font = `bold ${size}px "Do Hyeon", sans-serif`;
     c.textAlign = "center";
     c.textBaseline = "middle";
 
-    // 외곽선 (가독성 향상)
+    // 외곽선 (가독성 향상 + 발광 효과 대체)
     c.strokeStyle = "rgba(0, 0, 0, 0.7)";
     c.lineWidth = 3;
     c.strokeText(p.text, p.x, p.y);
@@ -792,8 +810,6 @@ export class ParticleSystem {
     // 본문
     c.fillStyle = p.color;
     c.fillText(p.text, p.x, p.y);
-
-    c.restore();
   }
 
   /**
@@ -802,14 +818,9 @@ export class ParticleSystem {
    * @param {Object} sw - 충격파 객체
    */
   _renderShockwave(c, sw) {
-    c.save();
     c.globalAlpha = sw.alpha;
     c.strokeStyle = sw.color;
     c.lineWidth = sw.lineWidth;
-
-    // 이중 링으로 두께감 표현
-    c.shadowBlur = 10 * sw.alpha;
-    c.shadowColor = sw.color;
 
     c.beginPath();
     c.arc(sw.x, sw.y, sw.currentRadius, 0, Math.PI * 2);
@@ -823,8 +834,6 @@ export class ParticleSystem {
       c.arc(sw.x, sw.y, sw.currentRadius * 0.7, 0, Math.PI * 2);
       c.stroke();
     }
-
-    c.restore();
   }
 
   /**

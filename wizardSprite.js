@@ -166,6 +166,30 @@ export class WizardSprite {
     // Aura
     this._auraTimer = 0;
     this._auraCycleMs = 2000;
+
+    // --- Offscreen canvas cache ---
+    this._cacheCanvas = null;
+    this._cacheCtx = null;
+    // Padding around sprite for glow/aura effects
+    this._cachePad = 12;
+    // Cache invalidation tracking
+    this._lastCacheDir = -1;
+    this._lastCacheFrame = -1;
+    this._lastCacheCasting = false;
+    this._lastCacheCastFrame = -1;
+    this._lastCacheGalloping = false;
+    this._lastCacheWalking = false;
+    this._lastCacheDamaged = false;
+    this._lastCacheLevelUp = false;
+    this._cacheDirty = true;
+
+    // --- Sparkle particle pool ---
+    this._sparklePool = [];
+    this._sparklePoolSize = 16;
+    // Pre-allocate sparkle objects
+    for (let i = 0; i < this._sparklePoolSize; i++) {
+      this._sparklePool.push({ x: 0, y: 0, life: 0, maxLife: 0, size: 0, angle: 0, speed: 0, active: false });
+    }
   }
 
   get width() {
@@ -376,30 +400,35 @@ export class WizardSprite {
   }
 
   _spawnSparkle() {
-    // Sparkle near staff tip area
-    this._sparkles.push({
-      x: (Math.random() - 0.5) * 8,
-      y: (Math.random() - 0.5) * 8,
-      life: 400 + Math.random() * 300,
-      maxLife: 400 + Math.random() * 300,
-      size: 1 + Math.random() * 2,
-      angle: Math.random() * Math.PI * 2,
-      speed: 0.02 + Math.random() * 0.03,
-    });
-    // Keep sparkle count manageable
-    if (this._sparkles.length > 12) {
-      this._sparkles.shift();
+    // Sparkle near staff tip area - reuse pooled objects
+    let s = null;
+    for (let i = 0; i < this._sparklePool.length; i++) {
+      if (!this._sparklePool[i].active) {
+        s = this._sparklePool[i];
+        break;
+      }
     }
+    if (!s) return; // Pool exhausted, skip this sparkle
+    const life = 400 + Math.random() * 300;
+    s.x = (Math.random() - 0.5) * 8;
+    s.y = (Math.random() - 0.5) * 8;
+    s.life = life;
+    s.maxLife = life;
+    s.size = 1 + Math.random() * 2;
+    s.angle = Math.random() * Math.PI * 2;
+    s.speed = 0.02 + Math.random() * 0.03;
+    s.active = true;
   }
 
   _updateSparkles(dt) {
-    for (let i = this._sparkles.length - 1; i >= 0; i--) {
-      const s = this._sparkles[i];
+    for (let i = 0; i < this._sparklePool.length; i++) {
+      const s = this._sparklePool[i];
+      if (!s.active) continue;
       s.life -= dt;
       s.x += Math.cos(s.angle) * s.speed * dt;
       s.y += Math.sin(s.angle) * s.speed * dt - 0.01 * dt;
       if (s.life <= 0) {
-        this._sparkles.splice(i, 1);
+        s.active = false;
       }
     }
   }
@@ -408,11 +437,55 @@ export class WizardSprite {
    * Draw the wizard on horseback at position (x, y) on context ctx.
    * (x, y) is the center-bottom of the sprite.
    */
-  render(ctx, x, y) {
-    ctx.save();
+  /**
+   * Check if the offscreen cache needs to be redrawn.
+   */
+  _isCacheDirty() {
+    if (this._cacheDirty) return true;
+    if (this._direction !== this._lastCacheDir) return true;
+    if (this._frame !== this._lastCacheFrame) return true;
+    if (this._casting !== this._lastCacheCasting) return true;
+    if (this._casting && this._castFrame !== this._lastCacheCastFrame) return true;
+    if (this._galloping !== this._lastCacheGalloping) return true;
+    if (this._walking !== this._lastCacheWalking) return true;
+    if (this._damaged !== this._lastCacheDamaged) return true;
+    if (this._levelUp !== this._lastCacheLevelUp) return true;
+    return false;
+  }
 
-    const ox = Math.round(x - this._width / 2);
-    const oy = Math.round(y - this._height + this._idleBob);
+  /**
+   * Update cache tracking state after redrawing offscreen canvas.
+   */
+  _updateCacheState() {
+    this._lastCacheDir = this._direction;
+    this._lastCacheFrame = this._frame;
+    this._lastCacheCasting = this._casting;
+    this._lastCacheCastFrame = this._castFrame;
+    this._lastCacheGalloping = this._galloping;
+    this._lastCacheWalking = this._walking;
+    this._lastCacheDamaged = this._damaged;
+    this._lastCacheLevelUp = this._levelUp;
+    this._cacheDirty = false;
+  }
+
+  /**
+   * Render the full sprite onto the offscreen cache canvas.
+   */
+  _renderToCache() {
+    const pad = this._cachePad;
+    const cw = this._width + pad * 2;
+    const ch = this._height + pad * 2;
+
+    // Lazily create offscreen canvas
+    if (!this._cacheCanvas) {
+      this._cacheCanvas = document.createElement('canvas');
+      this._cacheCanvas.width = cw;
+      this._cacheCanvas.height = ch;
+      this._cacheCtx = this._cacheCanvas.getContext('2d');
+    }
+
+    const cctx = this._cacheCtx;
+    cctx.clearRect(0, 0, cw, ch);
 
     const dir = this._direction;
     const frame = this._frame;
@@ -464,12 +537,12 @@ export class WizardSprite {
     else if (dir === DIR.SW) drawDir = DIR.SE;
 
     if (mirrored) {
-      ctx.save();
-      ctx.translate(ox + this._width, oy);
-      ctx.scale(-1, 1);
+      cctx.save();
+      cctx.translate(pad + this._width, pad);
+      cctx.scale(-1, 1);
     } else {
-      ctx.save();
-      ctx.translate(ox, oy);
+      cctx.save();
+      cctx.translate(pad, pad);
     }
 
     // Extra state for enhanced rendering
@@ -485,39 +558,54 @@ export class WizardSprite {
     };
 
     // Draw aura (behind everything)
-    this._drawAura(ctx);
+    this._drawAura(cctx);
 
     // Level up golden glow (behind sprite)
     if (this._levelUp) {
-      this._drawLevelUpGlow(ctx);
+      this._drawLevelUpGlow(cctx);
     }
 
     // Dispatch based on canonical direction
     switch (drawDir) {
       case DIR.E:
-        this._drawSide(ctx, legOff, glowT, enhState);
+        this._drawSide(cctx, legOff, glowT, enhState);
         break;
       case DIR.S:
-        this._drawFront(ctx, legOff, glowT, enhState);
+        this._drawFront(cctx, legOff, glowT, enhState);
         break;
       case DIR.N:
-        this._drawBack(ctx, legOff, glowT, enhState);
+        this._drawBack(cctx, legOff, glowT, enhState);
         break;
       case DIR.SE:
-        this._drawDiagonalFront(ctx, legOff, glowT, enhState);
+        this._drawDiagonalFront(cctx, legOff, glowT, enhState);
         break;
       case DIR.NE:
-        this._drawDiagonalBack(ctx, legOff, glowT, enhState);
+        this._drawDiagonalBack(cctx, legOff, glowT, enhState);
         break;
     }
 
     // Damage red flash overlay
     if (this._damaged) {
-      this._drawDamageFlash(ctx);
+      this._drawDamageFlash(cctx);
     }
 
-    ctx.restore();
-    ctx.restore();
+    cctx.restore();
+
+    this._updateCacheState();
+  }
+
+  render(ctx, x, y) {
+    // Only re-render the offscreen canvas when state has actually changed
+    if (this._isCacheDirty()) {
+      this._renderToCache();
+    }
+
+    const pad = this._cachePad;
+    const ox = Math.round(x - this._width / 2) - pad;
+    const oy = Math.round(y - this._height + this._idleBob) - pad;
+
+    // Blit cached sprite to main canvas in a single drawImage call
+    ctx.drawImage(this._cacheCanvas, ox, oy);
   }
 
   // ========================================================
@@ -614,7 +702,8 @@ export class WizardSprite {
   // SPARKLES - rendered near staff tip
   // ========================================================
   _drawSparkles(ctx, tipX, tipY) {
-    for (const s of this._sparkles) {
+    for (const s of this._sparklePool) {
+      if (!s.active) continue;
       const alpha = Math.max(0, s.life / s.maxLife);
       const colors = [
         `rgba(0,255,255,${alpha})`,

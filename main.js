@@ -53,7 +53,7 @@ class SpatialGrid {
   // 그리드를 초기화하여 새 프레임을 준비합니다.
   clear() {
     for (let i = 0; i < this.grid.length; i++) {
-      this.grid[i] = [];
+      this.grid[i].length = 0;
     }
   }
 
@@ -77,7 +77,7 @@ class SpatialGrid {
 
   // 특정 위치(x, y)와 범위(range) 내에 있는 모든 몬스터를 반환합니다.
   getNearby(x, y, range) {
-    const nearbyMonsters = new Set(); // 중복 방지를 위해 Set 사용
+    const nearbyMonsters = []; // 그리드 셀은 겹치지 않으므로 배열로 충분
     const rangeSq = range * range;
 
     // 탐색할 그리드 셀의 범위를 계산합니다.
@@ -96,17 +96,14 @@ class SpatialGrid {
     for (let row = startRow; row <= endRow; row++) {
       for (let col = startCol; col <= endCol; col++) {
         const index = row * this.cols + col;
-        if (this.grid[index].length > 0) {
-          for (const monster of this.grid[index]) {
-            // 그리드 셀에 있는 몬스터를 Set에 추가
-            nearbyMonsters.add(monster);
-          }
+        const cell = this.grid[index];
+        for (let i = 0; i < cell.length; i++) {
+          nearbyMonsters.push(cell[i]);
         }
       }
     }
 
-    // Set을 배열로 변환하여 반환
-    return Array.from(nearbyMonsters);
+    return nearbyMonsters;
   }
 }
 
@@ -247,23 +244,25 @@ function animateMenuParticles() {
     if (p.x > canvas.width) p.x = 0;
     if (p.y < 0) p.y = canvas.height;
     if (p.y > canvas.height) p.y = 0;
-    menuParticleCtx.globalAlpha = p.alpha;
+    menuParticleCtx.globalAlpha = p.alpha * 0.3;
     menuParticleCtx.fillStyle = p.color;
-    menuParticleCtx.shadowBlur = 10;
-    menuParticleCtx.shadowColor = p.color;
+    menuParticleCtx.beginPath();
+    menuParticleCtx.arc(p.x, p.y, p.size + 4, 0, Math.PI * 2);
+    menuParticleCtx.fill();
+    menuParticleCtx.globalAlpha = p.alpha;
     menuParticleCtx.beginPath();
     menuParticleCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
     menuParticleCtx.fill();
   }
-  // 연결선
-  menuParticleCtx.shadowBlur = 0;
-  for (let i = 0; i < menuParticles.length; i++) {
-    for (let j = i + 1; j < menuParticles.length; j++) {
+  // 연결선 (distSq로 sqrt 제거, 매 3번째 파티클만 비교)
+  for (let i = 0; i < menuParticles.length; i += 2) {
+    for (let j = i + 1; j < menuParticles.length; j += 2) {
       const dx = menuParticles[i].x - menuParticles[j].x;
       const dy = menuParticles[i].y - menuParticles[j].y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 120) {
-        menuParticleCtx.globalAlpha = (1 - dist / 120) * 0.15;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < 14400) {
+        // 120^2
+        menuParticleCtx.globalAlpha = (1 - Math.sqrt(distSq) / 120) * 0.15;
         menuParticleCtx.strokeStyle = "#00e5ff";
         menuParticleCtx.lineWidth = 0.5;
         menuParticleCtx.beginPath();
@@ -1098,8 +1097,8 @@ function updateProjectiles(deltaTime, timestamp) {
       const dist = Math.sqrt(dx * dx + dy * dy);
       p.x += (dx / dist) * moveAmount;
       p.y += (dy / dist) * moveAmount;
-      // [V2] 발사체 트레일
-      if (particleSystem && p.size >= 10)
+      // [V2] 발사체 트레일 (3프레임마다 1번만 생성)
+      if (particleSystem && p.size >= 10 && (timestamp | 0) % 3 === 0)
         particleSystem.trail(p.x, p.y, p.color);
     }
   }
@@ -1489,30 +1488,32 @@ function renderDynamicLayer() {
   }
 
   // 데미지 텍스트 그리기
-  for (const dt of damageTexts) {
-    let color = "#FFFFFF";
-    switch (dt.type) {
-      case "heal":
-        color = "#2ecc71";
-        break;
-      case "poison":
-        color = "#8bc34a";
-        break;
-      case "laser":
-      case "reflect":
-        color = "#ff4757";
-        break;
-      case "magic":
-        color = "#9c88ff";
-        break;
-    }
-    dynamicCtx.globalAlpha = dt.opacity;
+  if (damageTexts.length > 0) {
     dynamicCtx.font = 'bold 16px "Do Hyeon"';
-    dynamicCtx.fillStyle = color;
     dynamicCtx.strokeStyle = "black";
     dynamicCtx.lineWidth = 3;
-    dynamicCtx.strokeText(dt.text, dt.x, dt.y);
-    dynamicCtx.fillText(dt.text, dt.x, dt.y);
+    for (const dt of damageTexts) {
+      let color = "#FFFFFF";
+      switch (dt.type) {
+        case "heal":
+          color = "#2ecc71";
+          break;
+        case "poison":
+          color = "#8bc34a";
+          break;
+        case "laser":
+        case "reflect":
+          color = "#ff4757";
+          break;
+        case "magic":
+          color = "#9c88ff";
+          break;
+      }
+      dynamicCtx.globalAlpha = dt.opacity;
+      dynamicCtx.fillStyle = color;
+      dynamicCtx.strokeText(dt.text, dt.x, dt.y);
+      dynamicCtx.fillText(dt.text, dt.x, dt.y);
+    }
   }
   dynamicCtx.globalAlpha = 1.0;
 

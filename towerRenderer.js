@@ -186,6 +186,16 @@ export class TowerRenderer {
     // base area reference: 40x40 but rendered at a slightly larger footprint
     this._baseW = 40;
     this._baseH = 40;
+
+    // Offscreen canvas cache: keyed by "${type}_${level}"
+    // Caches the static tower body (base + tower-specific geometry)
+    this._cache = new Map();
+    // Canvas size for offscreen rendering (enough to fit any tower)
+    this._cacheW = 80;
+    this._cacheH = 90;
+    // Offset so tower center is at (cacheW/2, cacheH - 20) in offscreen canvas
+    this._cacheOX = 40;
+    this._cacheOY = 60;
   }
 
   /**
@@ -201,24 +211,132 @@ export class TowerRenderer {
     ctx.save();
     ctx.translate(Math.round(x), Math.round(y));
 
-    // Shadow beneath tower
+    // Shadow beneath tower (cheap, always drawn live)
     this._drawShadow(ctx);
 
-    // Level rings (drawn under the base)
+    // Level rings are animated, draw live
     if (level > 0) {
       this._drawLevelRings(ctx, level, timestamp);
     }
 
-    // Draw the stone/metal base
-    this._drawBase(ctx, towerType);
+    // Draw cached static tower body, or build cache on first call
+    const cached = this._getCachedTower(towerType, level);
+    ctx.drawImage(cached, -this._cacheOX, -this._cacheOY);
 
-    // Dispatch to specific tower drawing
-    const drawFn = this._getDrawFunction(towerType);
-    if (drawFn) {
-      drawFn.call(this, ctx, timestamp, level);
-    }
+    // Draw animated overlays on top (glows, particles, rotating elements)
+    this._drawAnimatedOverlays(ctx, towerType, timestamp, level);
 
     ctx.restore();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Offscreen canvas cache for static tower body
+  // ---------------------------------------------------------------------------
+  _getCachedTower(towerType, level) {
+    const key = towerType + "_" + level;
+    if (this._cache.has(key)) {
+      return this._cache.get(key);
+    }
+
+    const offscreen = document.createElement("canvas");
+    offscreen.width = this._cacheW;
+    offscreen.height = this._cacheH;
+    const offCtx = offscreen.getContext("2d");
+
+    offCtx.save();
+    offCtx.translate(this._cacheOX, this._cacheOY);
+
+    // Draw the stone/metal base
+    this._drawBase(offCtx, towerType);
+
+    // Draw the static tower body
+    const drawFn = this._getStaticDrawFunction(towerType);
+    if (drawFn) {
+      drawFn.call(this, offCtx, level);
+    }
+
+    offCtx.restore();
+
+    this._cache.set(key, offscreen);
+    return offscreen;
+  }
+
+  /**
+   * Invalidate cached towers (e.g., on level up).
+   */
+  invalidateCache(towerType, level) {
+    if (towerType !== undefined && level !== undefined) {
+      this._cache.delete(towerType + "_" + level);
+    } else {
+      this._cache.clear();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Static draw functions (no timestamp-dependent animations)
+  // ---------------------------------------------------------------------------
+  _getStaticDrawFunction(type) {
+    const map = {
+      plus: this._drawPlusStatic,
+      minus: this._drawMinusStatic,
+      multiply: this._drawMultiplyStatic,
+      divide: this._drawDivideStatic,
+      cannon: this._drawCannonStatic,
+      skyDestroyer: this._drawSkyDestroyerStatic,
+      ice: this._drawIceStatic,
+      meteor: this._drawMeteorStatic,
+      poison: this._drawPoisonStatic,
+      stun: this._drawStunStatic,
+      net: this._drawNetStatic,
+      laser: this._drawLaserStatic,
+      "multi-shot": this._drawMultiShotStatic,
+      goldMine: this._drawGoldMineStatic,
+      shredder: this._drawShredderStatic,
+      repairStation: this._drawRepairStationStatic,
+      ultimate: this._drawUltimateStatic,
+      golden: this._drawGoldenStatic,
+      silver: this._drawSilverStatic,
+      copper: this._drawCopperStatic,
+      transcendent: this._drawTranscendentStatic,
+      random_cheap: this._drawRandomCheapStatic,
+      random_medium: this._drawRandomMediumStatic,
+      random_expensive: this._drawRandomExpensiveStatic,
+    };
+    return map[type] || null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Animated overlay dispatch
+  // ---------------------------------------------------------------------------
+  _drawAnimatedOverlays(ctx, towerType, ts, level) {
+    const map = {
+      plus: () => this._drawMathAnimated(ctx, ts, PAL.plus),
+      minus: () => this._drawMathAnimated(ctx, ts, PAL.minus),
+      multiply: () => this._drawMathAnimated(ctx, ts, PAL.multiply),
+      divide: () => this._drawMathAnimated(ctx, ts, PAL.divide),
+      cannon: () => this._drawCannonAnimated(ctx, ts),
+      skyDestroyer: () => this._drawSkyDestroyerAnimated(ctx, ts),
+      ice: () => this._drawIceAnimated(ctx, ts, PAL.ice),
+      meteor: () => this._drawMeteorAnimated(ctx, ts, PAL.meteor),
+      poison: () => this._drawPoisonAnimated(ctx, ts),
+      stun: () => this._drawStunAnimated(ctx, ts),
+      net: () => {},
+      laser: () => this._drawLaserAnimated(ctx, ts),
+      "multi-shot": () => {},
+      goldMine: () => this._drawGoldMineAnimated(ctx, ts),
+      shredder: () => this._drawShredderAnimated(ctx, ts),
+      repairStation: () => this._drawRepairStationAnimated(ctx, ts),
+      ultimate: () => this._drawUltimateAnimated(ctx, ts),
+      golden: () => this._drawGoldenAnimated(ctx, ts),
+      silver: () => this._drawSilverAnimated(ctx, ts),
+      copper: () => this._drawCopperAnimated(ctx, ts),
+      transcendent: () => this._drawTranscendentAnimated(ctx, ts),
+      random_cheap: () => {},
+      random_medium: () => this._drawParticles(ctx, ts, 0, -16, 3, 14, "#8000FF", 0.001),
+      random_expensive: () => this._drawParticles(ctx, ts, 0, -16, 6, 16, "#FFFACD", 0.0015),
+    };
+    const fn = map[towerType];
+    if (fn) fn();
   }
 
   // ---------------------------------------------------------------------------
@@ -252,6 +370,863 @@ export class TowerRenderer {
       random_expensive: this._drawRandomExpensive,
     };
     return map[type] || null;
+  }
+
+
+  // ---------------------------------------------------------------------------
+  // STATIC tower body renderers (cached, no timestamp)
+  // ---------------------------------------------------------------------------
+
+  _drawMathCrystalStatic(ctx, pal, symbol) {
+    this._drawHexPillar(ctx, 0, -6, 8, 22, pal.main, pal.dark, pal.light);
+    this._drawSymbolOnPillar(ctx, 0, -16, symbol, "#FFFFFF");
+    ctx.fillStyle = pal.light;
+    ctx.beginPath();
+    ctx.moveTo(-4, -28);
+    ctx.lineTo(0, -37);
+    ctx.lineTo(4, -28);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+  }
+
+  _drawPlusStatic(ctx) { this._drawMathCrystalStatic(ctx, PAL.plus, "+"); }
+  _drawMinusStatic(ctx) { this._drawMathCrystalStatic(ctx, PAL.minus, "\u2212"); }
+  _drawMultiplyStatic(ctx) { this._drawMathCrystalStatic(ctx, PAL.multiply, "\u00D7"); }
+  _drawDivideStatic(ctx) { this._drawMathCrystalStatic(ctx, PAL.divide, "\u00F7"); }
+
+  _drawMathAnimated(ctx, ts, pal) {
+    const p = this._pulse01(ts, 0.003);
+    this._drawGlow(ctx, 0, -14, 10 + p * 3, pal.glow);
+    ctx.save();
+    ctx.globalAlpha = 0.4 + p * 0.6;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.beginPath();
+    ctx.arc(0, -36 - p * 2, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    this._drawParticles(ctx, ts, 0, -20, 4, 12, pal.light, 0.001);
+  }
+
+  _drawCannonStatic(ctx) {
+    const pal = PAL.cannon;
+    ctx.fillStyle = pal.stone;
+    ctx.fillRect(-8, -14, 16, 8);
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-8, -14, 16, 8);
+    ctx.fillStyle = pal.metal;
+    ctx.beginPath();
+    ctx.moveTo(-6, -22);
+    ctx.lineTo(16, -20);
+    ctx.lineTo(16, -14);
+    ctx.lineTo(-6, -12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = pal.metalLight;
+    ctx.fillRect(-4, -21, 18, 3);
+    ctx.fillStyle = pal.metalDark;
+    ctx.beginPath();
+    ctx.ellipse(16, -17, 4, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "#0A0A0A";
+    ctx.beginPath();
+    ctx.ellipse(16, -17, 2.5, 3.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = pal.metalLight;
+    ctx.beginPath();
+    ctx.arc(-4, -12, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(4, -12, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  _drawCannonAnimated(ctx, ts) {
+    const smokePhase = (ts * 0.002) % (Math.PI * 2);
+    ctx.save();
+    ctx.globalAlpha = 0.2 + 0.1 * Math.sin(smokePhase);
+    ctx.fillStyle = "#888888";
+    for (let i = 0; i < 3; i++) {
+      const sx = 18 + i * 4 + Math.sin(smokePhase + i) * 2;
+      const sy = -17 - i * 3 - Math.abs(Math.sin(smokePhase + i * 1.5)) * 3;
+      const sr = 2 - i * 0.4;
+      if (sr > 0) {
+        ctx.beginPath();
+        ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  _drawSkyDestroyerStatic(ctx) {
+    const pal = PAL.skyDestroyer;
+    ctx.fillStyle = pal.body;
+    ctx.fillRect(-12, -12, 24, 6);
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-12, -12, 24, 6);
+    ctx.fillStyle = pal.body;
+    ctx.beginPath();
+    ctx.moveTo(-8, -12);
+    ctx.lineTo(-6, -28);
+    ctx.lineTo(6, -28);
+    ctx.lineTo(8, -12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = pal.metalLight;
+    ctx.fillRect(-2, -27, 4, 14);
+    for (let i = -1; i <= 1; i++) {
+      const mx = i * 5;
+      ctx.fillStyle = pal.accent;
+      ctx.beginPath();
+      ctx.moveTo(mx - 2, -28);
+      ctx.lineTo(mx, -33);
+      ctx.lineTo(mx + 2, -28);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = O;
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+    ctx.strokeStyle = pal.accent;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-8, -18);
+    ctx.lineTo(8, -18);
+    ctx.stroke();
+  }
+
+  _drawSkyDestroyerAnimated(ctx, ts) {
+    const pal = PAL.skyDestroyer;
+    const p = this._pulse01(ts, 0.004);
+    ctx.save();
+    ctx.globalAlpha = 0.5 + p * 0.5;
+    ctx.fillStyle = pal.exhaust;
+    ctx.beginPath();
+    ctx.ellipse(-4, -7, 3, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(4, -7, 3, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  _drawIceStatic(ctx) {
+    const pal = PAL.ice;
+    ctx.fillStyle = pal.main;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.moveTo(-6, -6);
+    ctx.lineTo(-3, -32);
+    ctx.lineTo(0, -37);
+    ctx.lineTo(3, -32);
+    ctx.lineTo(6, -6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = pal.crystal;
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(-2, -10);
+    ctx.lineTo(-1, -30);
+    ctx.lineTo(1, -28);
+    ctx.lineTo(2, -10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = pal.dark;
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(-8, -6);
+    ctx.lineTo(-10, -20);
+    ctx.lineTo(-5, -8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(8, -6);
+    ctx.lineTo(10, -22);
+    ctx.lineTo(5, -8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  _drawIceAnimated(ctx, ts, pal) {
+    const p = this._pulse01(ts, 0.003);
+    this._drawGlow(ctx, 0, -18, 12 + p * 3, pal.glow);
+    this._drawParticles(ctx, ts, 0, -20, 6, 14, pal.light, 0.0008);
+    ctx.save();
+    ctx.globalAlpha = 0.6 + p * 0.4;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.beginPath();
+    ctx.arc(0, -36 - p * 2, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  _drawMeteorStatic(ctx) {
+    const pal = PAL.meteor;
+    ctx.fillStyle = pal.stone;
+    ctx.beginPath();
+    ctx.moveTo(-9, -4);
+    ctx.lineTo(-7, -28);
+    ctx.lineTo(-2, -34);
+    ctx.lineTo(3, -32);
+    ctx.lineTo(7, -28);
+    ctx.lineTo(9, -4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.save();
+    ctx.globalAlpha = 0.8;
+    ctx.strokeStyle = pal.lava;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-5, -6);
+    ctx.quadraticCurveTo(-6, -16, -3, -24);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(3, -8);
+    ctx.quadraticCurveTo(5, -18, 2, -28);
+    ctx.stroke();
+    ctx.strokeStyle = pal.crack;
+    ctx.beginPath();
+    ctx.moveTo(0, -5);
+    ctx.quadraticCurveTo(-1, -14, 1, -20);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  _drawMeteorAnimated(ctx, ts, pal) {
+    const p = this._pulse01(ts, 0.004);
+    this._drawGlow(ctx, 0, -8, 14 + p * 4, pal.glow);
+    ctx.save();
+    ctx.globalAlpha = 0.5 + p * 0.5;
+    ctx.fillStyle = pal.lava;
+    ctx.beginPath();
+    ctx.arc(-2, -33, 3 + p, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = pal.crack;
+    ctx.beginPath();
+    ctx.arc(-2, -33, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    this._drawParticles(ctx, ts, 0, -24, 5, 10, pal.crack, 0.0012);
+  }
+
+
+  _drawPoisonStatic(ctx) {
+    const pal = PAL.poison;
+    ctx.fillStyle = pal.cauldron;
+    ctx.beginPath();
+    ctx.moveTo(-10, -8);
+    ctx.quadraticCurveTo(-12, -18, -8, -22);
+    ctx.lineTo(8, -22);
+    ctx.quadraticCurveTo(12, -18, 10, -8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.fillStyle = "#5A5A6A";
+    ctx.beginPath();
+    ctx.ellipse(0, -22, 10, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = pal.liquid;
+    ctx.beginPath();
+    ctx.ellipse(0, -21, 8, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = pal.cauldron;
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.fillRect(-9, -8, 3, 4);
+    ctx.strokeRect(-9, -8, 3, 4);
+    ctx.fillRect(6, -8, 3, 4);
+    ctx.strokeRect(6, -8, 3, 4);
+  }
+
+  _drawPoisonAnimated(ctx, ts) {
+    const pal = PAL.poison;
+    const bubblePhase = ts * 0.004;
+    for (let i = 0; i < 4; i++) {
+      const bx = -4 + i * 3 + Math.sin(bubblePhase + i * 1.5) * 2;
+      const by = -22 - Math.abs(Math.sin(bubblePhase * 0.7 + i * 2)) * 6;
+      const br = 1.5 + Math.sin(bubblePhase + i) * 0.5;
+      ctx.save();
+      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(bubblePhase + i);
+      ctx.fillStyle = pal.bubble;
+      ctx.beginPath();
+      ctx.arc(bx, by, Math.max(0.5, br), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.save();
+    for (let i = 0; i < 3; i++) {
+      const fx = -3 + i * 3 + Math.sin(ts * 0.002 + i * 2) * 3;
+      const fy = -26 - ((ts * 0.02 + i * 50) % 18);
+      const fa = 0.25 * (1 - ((ts * 0.02 + i * 50) % 18) / 18);
+      ctx.globalAlpha = Math.max(0, fa);
+      ctx.fillStyle = pal.fume;
+      ctx.beginPath();
+      ctx.arc(fx, fy, 3 + Math.sin(ts * 0.003 + i) * 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  _drawStunStatic(ctx) {
+    const pal = PAL.stun;
+    ctx.fillStyle = pal.metal;
+    ctx.beginPath();
+    ctx.ellipse(0, -8, 8, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(-8, -10, 16, 4);
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-8, -10, 16, 4);
+    ctx.fillStyle = pal.rod;
+    ctx.fillRect(-2, -34, 4, 26);
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 0.8;
+    ctx.strokeRect(-2, -34, 4, 26);
+    ctx.fillStyle = pal.metal;
+    ctx.fillRect(-3, -16, 6, 2);
+    ctx.fillRect(-3, -24, 6, 2);
+    ctx.fillStyle = pal.rod;
+    ctx.beginPath();
+    ctx.arc(0, -36, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "#FFFFFF";
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.arc(-1, -37, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  _drawStunAnimated(ctx, ts) {
+    const pal = PAL.stun;
+    const p = this._pulse01(ts, 0.005);
+    ctx.save();
+    ctx.strokeStyle = pal.arc;
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.5 + p * 0.5;
+    for (let i = 0; i < 3; i++) {
+      const arcAngle = (ts * 0.008 + (i * Math.PI * 2) / 3) % (Math.PI * 2);
+      const endX = Math.cos(arcAngle) * (10 + p * 4);
+      const endY = -34 + Math.sin(arcAngle) * 4;
+      const midX = endX * 0.5 + Math.sin(ts * 0.02 + i) * 4;
+      const midY = -35 + Math.cos(ts * 0.015 + i * 2) * 3;
+      ctx.beginPath();
+      ctx.moveTo(0, -36);
+      ctx.quadraticCurveTo(midX, midY, endX, endY);
+      ctx.stroke();
+    }
+    ctx.restore();
+    this._drawGlow(ctx, 0, -36, 6 + p * 3, pal.glow);
+  }
+
+  _drawNetStatic(ctx) {
+    const pal = PAL.net;
+    ctx.fillStyle = pal.body;
+    ctx.beginPath();
+    ctx.moveTo(-8, -8);
+    ctx.lineTo(-6, -24);
+    ctx.lineTo(6, -24);
+    ctx.lineTo(8, -8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.save();
+    ctx.strokeStyle = pal.web;
+    ctx.lineWidth = 0.8;
+    ctx.globalAlpha = 0.7;
+    const cx = 0, cy = -24;
+    for (let i = 0; i < 8; i++) {
+      const angle = (i * Math.PI) / 4;
+      const len = 10;
+      const ex = cx + Math.cos(angle) * len;
+      const ey = cy + Math.sin(angle) * len * 0.6 - 4;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = pal.webDark;
+    ctx.lineWidth = 0.5;
+    for (let r = 1; r <= 2; r++) {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - 4, r * 4, r * 4 * 0.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.fillStyle = pal.accent;
+    ctx.fillRect(-4, -14, 8, 3);
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 0.8;
+    ctx.strokeRect(-4, -14, 8, 3);
+    ctx.fillStyle = pal.body;
+    ctx.fillRect(-10, -20, 4, 4);
+    ctx.fillRect(6, -20, 4, 4);
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 0.8;
+    ctx.strokeRect(-10, -20, 4, 4);
+    ctx.strokeRect(6, -20, 4, 4);
+  }
+
+  _drawLaserStatic(ctx) {
+    const pal = PAL.laser;
+    ctx.fillStyle = pal.body;
+    ctx.beginPath();
+    ctx.moveTo(-7, -8);
+    ctx.lineTo(-5, -22);
+    ctx.lineTo(5, -22);
+    ctx.lineTo(7, -8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = pal.crystal;
+    ctx.beginPath();
+    ctx.ellipse(0, -22, 6, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+  }
+
+  _drawLaserAnimated(ctx, ts) {
+    const pal = PAL.laser;
+    const rotation = (ts * 0.003) % (Math.PI * 2);
+    const p = this._pulse01(ts, 0.004);
+    ctx.save();
+    ctx.translate(0, -28);
+    ctx.rotate(rotation);
+    ctx.fillStyle = pal.crystal;
+    ctx.beginPath();
+    ctx.moveTo(0, -6);
+    ctx.lineTo(4, 0);
+    ctx.lineTo(0, 6);
+    ctx.lineTo(-4, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    ctx.fillStyle = "#FFFFFF";
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -4);
+    ctx.lineTo(2, 0);
+    ctx.lineTo(0, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    this._drawGlow(ctx, 0, -28, 8 + p * 4, pal.glow);
+    this._drawParticles(ctx, ts, 0, -28, 5, 10, pal.beam, 0.002);
+  }
+
+  _drawMultiShotStatic(ctx) {
+    const pal = PAL.multiShot;
+    ctx.fillStyle = pal.body;
+    ctx.fillRect(-9, -12, 18, 6);
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-9, -12, 18, 6);
+    ctx.fillStyle = pal.body;
+    ctx.beginPath();
+    ctx.moveTo(-7, -12);
+    ctx.lineTo(-6, -26);
+    ctx.lineTo(6, -26);
+    ctx.lineTo(7, -12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = pal.barrel;
+    ctx.beginPath();
+    ctx.moveTo(-6, -22);
+    ctx.lineTo(-14, -26);
+    ctx.lineTo(-14, -24);
+    ctx.lineTo(-6, -20);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(6, -22);
+    ctx.lineTo(14, -26);
+    ctx.lineTo(14, -24);
+    ctx.lineTo(6, -20);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = pal.accent;
+    ctx.beginPath();
+    ctx.arc(-14, -25, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(14, -25, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = pal.accent;
+    ctx.beginPath();
+    ctx.arc(0, -26, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    ctx.strokeStyle = pal.bolt;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(-2, -26);
+    ctx.lineTo(2, -26);
+    ctx.moveTo(0, -28);
+    ctx.lineTo(0, -24);
+    ctx.stroke();
+    ctx.strokeStyle = pal.accent;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-6, -17);
+    ctx.lineTo(6, -17);
+    ctx.stroke();
+  }
+
+
+  _drawCopperStatic(ctx) {
+    const pal = PAL.copper;
+    ctx.fillStyle = pal.main;
+    ctx.beginPath();
+    ctx.moveTo(-10, -10);
+    ctx.quadraticCurveTo(-12, -18, -8, -22);
+    ctx.lineTo(8, -22);
+    ctx.quadraticCurveTo(12, -18, 10, -10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.fillStyle = pal.light;
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.moveTo(-8, -12);
+    ctx.quadraticCurveTo(-9, -18, -6, -20);
+    ctx.lineTo(-4, -20);
+    ctx.quadraticCurveTo(-5, -16, -5, -12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = pal.dark;
+    ctx.beginPath();
+    ctx.ellipse(0, -22, 10, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = '#5F8F4F';
+    ctx.globalAlpha = 0.15;
+    ctx.beginPath();
+    ctx.arc(-6, -14, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(4, -16, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = pal.dark;
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(-8, -10);
+    ctx.lineTo(-10, -4);
+    ctx.lineTo(-7, -4);
+    ctx.lineTo(-6, -10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(6, -10);
+    ctx.lineTo(7, -4);
+    ctx.lineTo(10, -4);
+    ctx.lineTo(8, -10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  _drawCopperAnimated(ctx, ts) {
+    const pal = PAL.copper;
+    const p = this._pulse01(ts, 0.004);
+    this._drawGlow(ctx, 0, -22, 12 + p * 4, pal.glow);
+    const flamePhase = ts * 0.006;
+    for (let i = 0; i < 5; i++) {
+      const fx = Math.sin(flamePhase + i * 1.2) * 3;
+      const fy = -24 - i * 3 - Math.abs(Math.sin(flamePhase * 0.8 + i)) * 3;
+      const fs = 4 - i * 0.7;
+      if (fs <= 0) continue;
+      ctx.save();
+      ctx.globalAlpha = 0.7 - i * 0.1;
+      ctx.fillStyle = i < 2 ? pal.flame : '#FF8C00';
+      ctx.beginPath();
+      ctx.arc(fx, fy, fs, 0, Math.PI * 2);
+      ctx.fill();
+      if (i < 3) {
+        ctx.fillStyle = '#FFCC00';
+        ctx.beginPath();
+        ctx.arc(fx, fy, fs * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (i === 0) {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(fx, fy + 1, fs * 0.25, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  _drawTranscendentStatic(ctx) {
+    const pal = PAL.transcendent;
+    ctx.fillStyle = pal.core;
+    ctx.fillRect(-3, -6, 6, -10);
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-3, -16, 6, 10);
+  }
+
+  _drawTranscendentAnimated(ctx, ts) {
+    this._drawTranscendent(ctx, ts);
+  }
+
+  _drawRandomBoxStatic(ctx, pal, symbol, boxColor, bandColor) {
+    ctx.fillStyle = boxColor;
+    ctx.beginPath();
+    ctx.moveTo(-10, -6);
+    ctx.lineTo(-10, -24);
+    ctx.lineTo(10, -24);
+    ctx.lineTo(10, -6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.fillStyle = bandColor;
+    ctx.beginPath();
+    ctx.moveTo(-10, -24);
+    ctx.lineTo(-5, -28);
+    ctx.lineTo(15, -28);
+    ctx.lineTo(10, -24);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = pal[Object.keys(pal)[1]] || boxColor;
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(10, -24);
+    ctx.lineTo(15, -28);
+    ctx.lineTo(15, -10);
+    ctx.lineTo(10, -6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = bandColor;
+    ctx.fillRect(-10, -18, 20, 2);
+    ctx.fillRect(-10, -12, 20, 2);
+    ctx.save();
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillText(symbol, 1, -14);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(symbol, 0, -15);
+    ctx.restore();
+  }
+
+  _drawRandomCheapStatic(ctx) {
+    const pal = PAL.randomCheap;
+    this._drawRandomBoxStatic(ctx, pal, '?', pal.wood, pal.band);
+  }
+
+  _drawRandomMediumStatic(ctx) {
+    const pal = PAL.randomMedium;
+    this._drawRandomBoxStatic(ctx, pal, '?', pal.metal, pal.metalDark);
+  }
+
+  _drawRandomExpensiveStatic(ctx) {
+    const pal = PAL.randomExpensive;
+    this._drawRandomBoxStatic(ctx, pal, '!', pal.gold, pal.goldDark);
+  }
+
+
+  _drawSilverStatic(ctx) {
+    const pal = PAL.silver;
+    ctx.fillStyle = pal.main;
+    ctx.fillRect(-4, -6, 8, -20);
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-4, -26, 8, 20);
+    ctx.fillStyle = pal.dark;
+    ctx.fillRect(-5, -8, 10, 3);
+    ctx.fillRect(-5, -26, 10, 2);
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 0.8;
+    ctx.strokeRect(-5, -8, 10, 3);
+    ctx.strokeRect(-5, -26, 10, 2);
+    ctx.strokeStyle = pal.dark;
+    ctx.lineWidth = 0.4;
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(-2, -8);
+    ctx.lineTo(-2, -24);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, -8);
+    ctx.lineTo(0, -24);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(2, -8);
+    ctx.lineTo(2, -24);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = pal.moon;
+    ctx.beginPath();
+    ctx.arc(0, -32, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = PAL.baseDark;
+    ctx.beginPath();
+    ctx.arc(3, -33, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.arc(0, -32, 7, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  _drawSilverAnimated(ctx, ts) {
+    const pal = PAL.silver;
+    const p = this._pulse01(ts, 0.002);
+    this._drawGlow(ctx, 0, -28, 12 + p * 4, pal.glow);
+    ctx.save();
+    ctx.globalAlpha = 0.15 + p * 0.15;
+    ctx.strokeStyle = pal.light;
+    ctx.lineWidth = 0.8;
+    for (let i = 0; i < 6; i++) {
+      const angle = (i * Math.PI) / 3 + ts * 0.0005;
+      const rx = Math.cos(angle) * 14;
+      const ry = -32 + Math.sin(angle) * 8;
+      ctx.beginPath();
+      ctx.moveTo(0, -32);
+      ctx.lineTo(rx, ry);
+      ctx.stroke();
+    }
+    ctx.restore();
+    this._drawParticles(ctx, ts, 0, -30, 4, 12, pal.light, 0.0006);
+  }
+
+  _drawGoldenStatic(ctx) {
+    const pal = PAL.golden;
+    ctx.fillStyle = pal.main;
+    ctx.beginPath();
+    ctx.moveTo(-7, -6);
+    ctx.lineTo(-5, -18);
+    ctx.lineTo(5, -18);
+    ctx.lineTo(7, -6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = pal.dark;
+    ctx.fillRect(-4, -14, 8, 2);
+    ctx.fillRect(-3, -10, 6, 1);
+    ctx.fillStyle = pal.main;
+    ctx.beginPath();
+    ctx.moveTo(-8, -18);
+    ctx.lineTo(-9, -28);
+    ctx.lineTo(-5, -24);
+    ctx.lineTo(-2, -30);
+    ctx.lineTo(0, -24);
+    ctx.lineTo(2, -32);
+    ctx.lineTo(4, -24);
+    ctx.lineTo(7, -30);
+    ctx.lineTo(9, -24);
+    ctx.lineTo(10, -28);
+    ctx.lineTo(8, -18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = pal.dark;
+    ctx.fillRect(-8, -20, 16, 3);
+    ctx.strokeStyle = O;
+    ctx.lineWidth = 0.8;
+    ctx.strokeRect(-8, -20, 16, 3);
+    const jewels = [
+      { x: -5, y: -25, c: '#FF0000' },
+      { x: 0, y: -27, c: '#0000FF' },
+      { x: 5, y: -25, c: '#00FF00' },
+    ];
+    jewels.forEach((j) => {
+      ctx.fillStyle = j.c;
+      ctx.beginPath();
+      ctx.arc(j.x, j.y, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.arc(j.x - 0.5, j.y - 0.5, 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    });
+  }
+
+  _drawGoldenAnimated(ctx, ts) {
+    const pal = PAL.golden;
+    const p = this._pulse01(ts, 0.003);
+    this._drawGlow(ctx, 0, -20, 14 + p * 5, pal.glow);
+    this._drawParticles(ctx, ts, 0, -24, 6, 14, pal.light, 0.0008);
   }
 
   // ---------------------------------------------------------------------------

@@ -55,6 +55,26 @@ function seededValue(seed) {
 }
 
 // ============================================================
+
+// Cached hex-to-rgba conversion for glow effects
+const _rgbaCache = {};
+function hexToRgba(hex, alpha) {
+  const key = hex + alpha;
+  if (_rgbaCache[key]) return _rgbaCache[key];
+  let r, g, b;
+  if (hex.length === 4) {
+    r = parseInt(hex[1] + hex[1], 16);
+    g = parseInt(hex[2] + hex[2], 16);
+    b = parseInt(hex[3] + hex[3], 16);
+  } else {
+    r = parseInt(hex.slice(1, 3), 16);
+    g = parseInt(hex.slice(3, 5), 16);
+    b = parseInt(hex.slice(5, 7), 16);
+  }
+  const result = `rgba(${r},${g},${b},${alpha})`;
+  _rgbaCache[key] = result;
+  return result;
+}
 // ProjectileRenderer Class
 // ============================================================
 export class ProjectileRenderer {
@@ -62,6 +82,24 @@ export class ProjectileRenderer {
     // Reusable arrays to avoid per-frame allocations
     this._trailPoints = [];
   }
+
+  // Performance: fake glow using layered semi-transparent circles
+  _glow(ctx, x, y, radius, color, alpha) {
+    if (alpha === undefined) alpha = 0.15;
+    const prevAlpha = ctx.globalAlpha;
+    ctx.globalAlpha = prevAlpha * alpha;
+    ctx.fillStyle = hexToRgba(color, 0.3);
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, TWO_PI);
+    ctx.fill();
+    ctx.globalAlpha = prevAlpha * alpha * 1.5;
+    ctx.fillStyle = hexToRgba(color, 0.5);
+    ctx.beginPath();
+    ctx.arc(x, y, radius * 0.6, 0, TWO_PI);
+    ctx.fill();
+    ctx.globalAlpha = prevAlpha;
+  }
+
 
   // ==========================================================
   // Main API: renderProjectile
@@ -316,8 +354,6 @@ export class ProjectileRenderer {
     ctx.strokeStyle = "#FF4444";
     ctx.lineWidth = 8 + p * 4;
     ctx.lineCap = "round";
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = "#FF0000";
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
@@ -327,8 +363,6 @@ export class ProjectileRenderer {
     ctx.globalAlpha = 0.6 + p * 0.2;
     ctx.strokeStyle = "#FF6666";
     ctx.lineWidth = 3 + p * 2;
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = "#FF4444";
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
@@ -338,8 +372,6 @@ export class ProjectileRenderer {
     ctx.globalAlpha = 0.9;
     ctx.strokeStyle = "#FFFFFF";
     ctx.lineWidth = 1.5 + p;
-    ctx.shadowBlur = 6;
-    ctx.shadowColor = "#FFFFFF";
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
@@ -347,7 +379,6 @@ export class ProjectileRenderer {
 
     // Periodic sparks along beam
     const numSparks = Math.floor(len / 20);
-    ctx.shadowBlur = 0;
     for (let i = 0; i < numSparks; i++) {
       const t = (i + ((timestamp * 0.003) % 1)) / numSparks;
       if (t > 1) continue;
@@ -390,8 +421,6 @@ export class ProjectileRenderer {
   _drawEnergyBolt(ctx, x, y, r, angle, ts, color, lightColor, darkColor) {
     // Glow aura
     ctx.globalAlpha = 0.35;
-    ctx.shadowBlur = r * 3;
-    ctx.shadowColor = color;
     const auraGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2.5);
     auraGrad.addColorStop(0, lightColor);
     auraGrad.addColorStop(1, "rgba(0,0,0,0)");
@@ -402,8 +431,6 @@ export class ProjectileRenderer {
 
     // Main sphere
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r * 2;
-    ctx.shadowColor = color;
     const mainGrad = ctx.createRadialGradient(
       x - r * 0.3,
       y - r * 0.3,
@@ -422,7 +449,6 @@ export class ProjectileRenderer {
     ctx.fill();
 
     // Sparkle ring
-    ctx.shadowBlur = 0;
     const sparkCount = 4;
     const sparkAngleBase = ts * 0.005;
     for (let i = 0; i < sparkCount; i++) {
@@ -499,8 +525,6 @@ export class ProjectileRenderer {
   _drawSpinningStar(ctx, x, y, r, angle, ts, color, lightColor, darkColor) {
     // Aura
     ctx.globalAlpha = 0.3;
-    ctx.shadowBlur = r * 2.5;
-    ctx.shadowColor = color;
     const auraGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
     auraGrad.addColorStop(0, lightColor);
     auraGrad.addColorStop(1, "rgba(0,0,0,0)");
@@ -511,8 +535,6 @@ export class ProjectileRenderer {
 
     // Spinning star body
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r * 2;
-    ctx.shadowColor = color;
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(ts * 0.006);
@@ -542,7 +564,6 @@ export class ProjectileRenderer {
   _drawArcaneTrail(ctx, x, y, r, angle, ts, color) {
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
-    ctx.shadowBlur = 0;
 
     for (let i = 0; i < 3; i++) {
       const dist = r * (1.5 + i * 1.1);
@@ -592,8 +613,6 @@ export class ProjectileRenderer {
 
     // Main crescent
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r * 2;
-    ctx.shadowColor = color;
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle);
@@ -627,8 +646,6 @@ export class ProjectileRenderer {
   _drawMagicMissile(ctx, x, y, r, angle, ts) {
     // Glow
     ctx.globalAlpha = 0.3;
-    ctx.shadowBlur = r * 3;
-    ctx.shadowColor = "#00E5FF";
     const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
     glowGrad.addColorStop(0, "#82AAFF");
     glowGrad.addColorStop(1, "rgba(0,229,255,0)");
@@ -639,7 +656,6 @@ export class ProjectileRenderer {
 
     // Core
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r * 1.5;
     const coreGrad = ctx.createRadialGradient(x, y, 0, x, y, r);
     coreGrad.addColorStop(0, "#FFFFFF");
     coreGrad.addColorStop(0.5, "#82AAFF");
@@ -650,7 +666,6 @@ export class ProjectileRenderer {
     ctx.fill();
 
     // Magical trail
-    ctx.shadowBlur = 0;
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
     for (let i = 0; i < 3; i++) {
@@ -673,7 +688,6 @@ export class ProjectileRenderer {
   /** Dark iron cannonball with smoke trail */
   _drawCannonball(ctx, x, y, r, angle, ts) {
     // Smoke trail
-    ctx.shadowBlur = 0;
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
     for (let i = 0; i < 4; i++) {
@@ -690,8 +704,6 @@ export class ProjectileRenderer {
 
     // Main cannonball body
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = 4;
-    ctx.shadowColor = "rgba(0,0,0,0.5)";
     const bodyGrad = ctx.createRadialGradient(
       x - r * 0.3,
       y - r * 0.3,
@@ -735,7 +747,6 @@ export class ProjectileRenderer {
     // White smoke trail
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
-    ctx.shadowBlur = 0;
     for (let i = 0; i < 5; i++) {
       const dist = r * (2.0 + i * 1.5);
       const sx = x + nx * dist + Math.sin(ts * 0.006 + i * 1.3) * r * 0.5;
@@ -811,7 +822,6 @@ export class ProjectileRenderer {
     // Frost particle trail
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
-    ctx.shadowBlur = 0;
     for (let i = 0; i < 5; i++) {
       const dist = r * (1.0 + i * 0.9);
       const px = x + nx * dist + Math.sin(ts * 0.007 + i * 2) * r * 0.4;
@@ -825,8 +835,6 @@ export class ProjectileRenderer {
 
     // Ice shard body (rotating crystal shape)
     ctx.globalAlpha = 0.85;
-    ctx.shadowBlur = r * 2;
-    ctx.shadowColor = "#00BFFF";
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(ts * 0.005);
@@ -868,7 +876,6 @@ export class ProjectileRenderer {
     // Ember particle trail
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
-    ctx.shadowBlur = 0;
     for (let i = 0; i < 6; i++) {
       const dist = r * (1.0 + i * 1.0);
       const jx = Math.sin(ts * 0.009 + i * 2.7) * r * 0.6;
@@ -903,8 +910,6 @@ export class ProjectileRenderer {
 
     // Rock body
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r * 2;
-    ctx.shadowColor = "#FF4400";
     const rockGrad = ctx.createRadialGradient(
       x - r * 0.2,
       y - r * 0.2,
@@ -952,7 +957,6 @@ export class ProjectileRenderer {
     // Dripping trail
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
-    ctx.shadowBlur = 0;
     for (let i = 0; i < 4; i++) {
       const dist = r * (1.2 + i * 1.0);
       const dx = x + nx * dist;
@@ -980,8 +984,6 @@ export class ProjectileRenderer {
 
     // Main glob
     ctx.globalAlpha = 0.9;
-    ctx.shadowBlur = r * 2;
-    ctx.shadowColor = "#8BC34A";
     const globGrad = ctx.createRadialGradient(
       x - r * 0.2,
       y - r * 0.2,
@@ -1000,7 +1002,6 @@ export class ProjectileRenderer {
     ctx.fill();
 
     // Bubbles on surface
-    ctx.shadowBlur = 0;
     ctx.globalAlpha = 0.6;
     const bubblePhase = ts * 0.008;
     for (let i = 0; i < 4; i++) {
@@ -1021,8 +1022,6 @@ export class ProjectileRenderer {
   _drawLightningBolt(ctx, x, y, r, angle, ts) {
     // Bright flash aura
     ctx.globalAlpha = 0.3 + 0.2 * Math.sin(ts * 0.03);
-    ctx.shadowBlur = r * 4;
-    ctx.shadowColor = "#FFFF00";
     const flashGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2.5);
     flashGrad.addColorStop(0, "#FFFFFF");
     flashGrad.addColorStop(0.5, "#FFFF88");
@@ -1034,8 +1033,6 @@ export class ProjectileRenderer {
 
     // Lightning bolt shape
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r * 2;
-    ctx.shadowColor = "#FFFF00";
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle);
@@ -1060,7 +1057,6 @@ export class ProjectileRenderer {
     ctx.restore();
 
     // Spark particles
-    ctx.shadowBlur = 0;
     for (let i = 0; i < 4; i++) {
       const sa = ts * 0.015 + i * 1.8;
       const sd = r * 1.5;
@@ -1080,7 +1076,6 @@ export class ProjectileRenderer {
     // Trailing web strands
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
-    ctx.shadowBlur = 0;
     ctx.strokeStyle = "rgba(200,200,200,0.4)";
     ctx.lineWidth = 0.8;
     for (let i = 0; i < 3; i++) {
@@ -1097,8 +1092,6 @@ export class ProjectileRenderer {
 
     // Main web ball
     ctx.globalAlpha = 0.9;
-    ctx.shadowBlur = r;
-    ctx.shadowColor = "rgba(200,200,200,0.5)";
     const webGrad = ctx.createRadialGradient(
       x - r * 0.2,
       y - r * 0.2,
@@ -1116,7 +1109,6 @@ export class ProjectileRenderer {
     ctx.fill();
 
     // Web cross-hatch pattern on surface
-    ctx.shadowBlur = 0;
     ctx.strokeStyle = "rgba(150,150,150,0.5)";
     ctx.lineWidth = 0.5;
     ctx.save();
@@ -1145,7 +1137,6 @@ export class ProjectileRenderer {
     // Energy trail
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
-    ctx.shadowBlur = 0;
     for (let i = 0; i < 3; i++) {
       const dist = r * (1.2 + i * 1.0);
       const tx = x + nx * dist;
@@ -1162,8 +1153,6 @@ export class ProjectileRenderer {
 
     // Arrow body
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r * 1.5;
-    ctx.shadowColor = "#2196F3";
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle);
@@ -1201,7 +1190,6 @@ export class ProjectileRenderer {
   /** Spinning gold coin with sparkles */
   _drawGoldCoin(ctx, x, y, r, angle, ts) {
     // Sparkle trail
-    ctx.shadowBlur = 0;
     for (let i = 0; i < 5; i++) {
       const a = ts * 0.004 + i * 1.3;
       const dist = r * (1.5 + i * 0.6);
@@ -1216,8 +1204,6 @@ export class ProjectileRenderer {
 
     // Coin body (simulated 3D spin by varying width)
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r * 1.5;
-    ctx.shadowColor = "#FFD700";
     const spinPhase = Math.cos(ts * 0.008);
     const coinWidth = r * Math.abs(spinPhase);
 
@@ -1258,7 +1244,6 @@ export class ProjectileRenderer {
   /** Spinning circular sawblade with metal sparks */
   _drawSawblade(ctx, x, y, r, angle, ts) {
     // Metal spark trail
-    ctx.shadowBlur = 0;
     for (let i = 0; i < 4; i++) {
       const a = ts * 0.012 + i * 1.5;
       const sd = r * 1.3;
@@ -1273,8 +1258,6 @@ export class ProjectileRenderer {
 
     // Main sawblade
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r;
-    ctx.shadowColor = "rgba(150,150,150,0.5)";
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(ts * 0.015);
@@ -1325,7 +1308,6 @@ export class ProjectileRenderer {
     // Multi-color particle trail
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
-    ctx.shadowBlur = 0;
     for (let i = 0; i < 6; i++) {
       const dist = r * (1.0 + i * 0.8);
       const jx = Math.sin(ts * 0.007 + i * 1.5) * r * 0.5;
@@ -1341,8 +1323,6 @@ export class ProjectileRenderer {
 
     // Glow aura (rainbow gradient)
     ctx.globalAlpha = 0.3;
-    ctx.shadowBlur = r * 3;
-    ctx.shadowColor = "#FF00FF";
     const auraGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2.5);
     auraGrad.addColorStop(0, "#FFFFFF");
     auraGrad.addColorStop(0.3, "#FF88FF");
@@ -1355,8 +1335,6 @@ export class ProjectileRenderer {
 
     // Main prismatic sphere (cycling hue via conic segments)
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r * 2;
-    ctx.shadowColor = "#FF00FF";
     const segments = RAINBOW.length;
     const rotOffset = ts * 0.003;
     for (let i = 0; i < segments; i++) {
@@ -1413,7 +1391,6 @@ export class ProjectileRenderer {
     // Golden sparkle trail
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
-    ctx.shadowBlur = 0;
     for (let i = 0; i < 5; i++) {
       const dist = r * (1.0 + i * 0.9);
       const jx = Math.sin(ts * 0.008 + i * 2) * r * 0.3;
@@ -1428,8 +1405,6 @@ export class ProjectileRenderer {
 
     // Glow
     ctx.globalAlpha = 0.3;
-    ctx.shadowBlur = r * 3;
-    ctx.shadowColor = "#FFD700";
     const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
     glowGrad.addColorStop(0, "#FFF8DC");
     glowGrad.addColorStop(1, "rgba(255,215,0,0)");
@@ -1440,8 +1415,6 @@ export class ProjectileRenderer {
 
     // Main bolt body
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r * 2;
-    ctx.shadowColor = "#FFD700";
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle);
@@ -1470,7 +1443,6 @@ export class ProjectileRenderer {
     // Stardust trail
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
-    ctx.shadowBlur = 0;
     for (let i = 0; i < 5; i++) {
       const dist = r * (1.2 + i * 0.8);
       const jx = Math.sin(ts * 0.006 + i * 2.3) * r * 0.4;
@@ -1497,8 +1469,6 @@ export class ProjectileRenderer {
 
     // Glow
     ctx.globalAlpha = 0.25;
-    ctx.shadowBlur = r * 2.5;
-    ctx.shadowColor = "#C0C0C0";
     const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
     glowGrad.addColorStop(0, "#FFFFFF");
     glowGrad.addColorStop(1, "rgba(192,192,192,0)");
@@ -1509,8 +1479,6 @@ export class ProjectileRenderer {
 
     // Silver crescent
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r * 1.5;
-    ctx.shadowColor = "#C0C0C0";
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle + HALF_PI);
@@ -1544,8 +1512,6 @@ export class ProjectileRenderer {
 
     // Glow
     ctx.globalAlpha = 0.3;
-    ctx.shadowBlur = r * 2.5;
-    ctx.shadowColor = "#B87333";
     const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
     glowGrad.addColorStop(0, "#DEB887");
     glowGrad.addColorStop(1, "rgba(184,115,51,0)");
@@ -1556,8 +1522,6 @@ export class ProjectileRenderer {
 
     // Main copper sphere
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r * 2;
-    ctx.shadowColor = "#B87333";
     const bodyGrad = ctx.createRadialGradient(
       x - r * 0.3,
       y - r * 0.3,
@@ -1577,7 +1541,6 @@ export class ProjectileRenderer {
 
     // Flame flickering around the sphere
     const flameCount = 4;
-    ctx.shadowBlur = 0;
     for (let i = 0; i < flameCount; i++) {
       const fa = ts * 0.008 + i * 1.6;
       const fd = r * 1.1;
@@ -1598,7 +1561,6 @@ export class ProjectileRenderer {
     // Aurora trail
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
-    ctx.shadowBlur = 0;
     const auroraColors = ["#00FFFF", "#8B00FF", "#FF00FF", "#00FF88"];
     for (let i = 0; i < 6; i++) {
       const dist = r * (1.0 + i * 0.9);
@@ -1628,8 +1590,6 @@ export class ProjectileRenderer {
 
     // Glow aura
     ctx.globalAlpha = 0.35;
-    ctx.shadowBlur = r * 3;
-    ctx.shadowColor = "#8B00FF";
     const auraGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2.5);
     auraGrad.addColorStop(0, "#FFFFFF");
     auraGrad.addColorStop(0.3, "#00FFFF");
@@ -1642,8 +1602,6 @@ export class ProjectileRenderer {
 
     // Swirling galaxy sphere body
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = r * 2;
-    ctx.shadowColor = "#00FFFF";
 
     // Base dark sphere
     const baseGrad = ctx.createRadialGradient(x, y, 0, x, y, r);
@@ -1693,8 +1651,6 @@ export class ProjectileRenderer {
   /** Fallback simple glowing projectile */
   _drawDefaultProjectile(ctx, x, y, r, ts) {
     ctx.globalAlpha = 0.3;
-    ctx.shadowBlur = r * 2;
-    ctx.shadowColor = "#FFFFFF";
     const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
     glowGrad.addColorStop(0, "#FFFFFF");
     glowGrad.addColorStop(1, "rgba(255,255,255,0)");
@@ -1723,8 +1679,6 @@ export class ProjectileRenderer {
     ctx.globalAlpha = alpha * 0.5;
     ctx.strokeStyle = "#FF6600";
     ctx.lineWidth = 3 + (1 - progress) * 4;
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = "#FF4400";
     ctx.beginPath();
     ctx.arc(x, y, currentR, 0, TWO_PI);
     ctx.stroke();
@@ -1743,7 +1697,6 @@ export class ProjectileRenderer {
     ctx.fill();
 
     // Rising embers
-    ctx.shadowBlur = 0;
     const emberCount = 10;
     for (let i = 0; i < emberCount; i++) {
       const a = (i / emberCount) * TWO_PI + ts * 0.002;
@@ -1780,14 +1733,11 @@ export class ProjectileRenderer {
     ctx.globalAlpha = alpha * 0.6;
     ctx.strokeStyle = "#80DFFF";
     ctx.lineWidth = 2 + (1 - progress) * 3;
-    ctx.shadowBlur = 12;
-    ctx.shadowColor = "#00BFFF";
     ctx.beginPath();
     ctx.arc(x, y, currentR, 0, TWO_PI);
     ctx.stroke();
 
     // Crystal pattern on ground (radial lines)
-    ctx.shadowBlur = 0;
     ctx.globalAlpha = alpha * 0.4;
     ctx.strokeStyle = "#B0E0FF";
     ctx.lineWidth = 1;
@@ -1848,8 +1798,6 @@ export class ProjectileRenderer {
       chainPoints && chainPoints.length > 0 ? chainPoints : [{ x, y }];
 
     // Bright flash at each point
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = "#FFFF00";
     for (let i = 0; i < points.length; i++) {
       const p = points[i];
       ctx.globalAlpha = alpha * (0.4 + 0.3 * Math.sin(ts * 0.02 + i));
@@ -1864,8 +1812,6 @@ export class ProjectileRenderer {
     }
 
     // Lightning arcs between consecutive points
-    ctx.shadowBlur = 8;
-    ctx.shadowColor = "#FFFF00";
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
@@ -1956,7 +1902,6 @@ export class ProjectileRenderer {
     // Spiral particles converging or dispersing
     const particleCount = 16;
     const direction = progress < 0.5 ? 1 : -1; // converge then disperse
-    ctx.shadowBlur = 0;
     for (let i = 0; i < particleCount; i++) {
       const baseAngle = (i / particleCount) * TWO_PI;
       const spiralAngle = baseAngle + ts * 0.008 * direction;
@@ -1975,8 +1920,6 @@ export class ProjectileRenderer {
 
     // Central portal glow
     ctx.globalAlpha = alpha * 0.4;
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = "#8B00FF";
     const portalGrad = ctx.createRadialGradient(x, y, 0, x, y, currentR * 0.6);
     portalGrad.addColorStop(0, "#FFFFFF");
     portalGrad.addColorStop(0.3, "#CC88FF");
@@ -1990,7 +1933,6 @@ export class ProjectileRenderer {
     ctx.globalAlpha = alpha * 0.5;
     ctx.strokeStyle = "#8B00FF";
     ctx.lineWidth = 2;
-    ctx.shadowBlur = 10;
     ctx.beginPath();
     ctx.arc(x, y, currentR, 0, TWO_PI);
     ctx.stroke();
@@ -2009,7 +1951,6 @@ export class ProjectileRenderer {
     const currentR = radius * (progress < 0.1 ? easeOut(progress * 10) : 1);
 
     // Matter being pulled inward (particles spiraling)
-    ctx.shadowBlur = 0;
     const particleCount = 20;
     for (let i = 0; i < particleCount; i++) {
       const baseA = (i / particleCount) * TWO_PI;
@@ -2029,8 +1970,6 @@ export class ProjectileRenderer {
 
     // Gravitational lensing ring (bright distortion edge)
     ctx.globalAlpha = alpha * 0.4;
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = "#8800CC";
     ctx.strokeStyle = "#CC66FF";
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -2058,7 +1997,6 @@ export class ProjectileRenderer {
 
     // Central darkness
     ctx.globalAlpha = alpha * 0.9;
-    ctx.shadowBlur = 0;
     const darkGrad = ctx.createRadialGradient(x, y, 0, x, y, currentR * 0.4);
     darkGrad.addColorStop(0, "rgba(0,0,0,1)");
     darkGrad.addColorStop(0.6, "rgba(10,0,20,0.9)");
@@ -2102,8 +2040,6 @@ export class ProjectileRenderer {
     ctx.globalAlpha = alpha * 0.6;
     ctx.strokeStyle = "#FF6B00";
     ctx.lineWidth = 2 + (1 - progress) * 4;
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = "#FF4400";
     ctx.beginPath();
     ctx.arc(x, y, currentR, 0, TWO_PI);
     ctx.stroke();
@@ -2121,7 +2057,6 @@ export class ProjectileRenderer {
     ctx.fill();
 
     // Scattered particles
-    ctx.shadowBlur = 0;
     const count = 8;
     for (let i = 0; i < count; i++) {
       const a = (i / count) * TWO_PI;
@@ -2149,8 +2084,6 @@ export class ProjectileRenderer {
     ctx.globalAlpha = alpha * 0.4;
     ctx.strokeStyle = "#66BB6A";
     ctx.lineWidth = 2;
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = "#4CAF50";
     ctx.beginPath();
     ctx.arc(x, y, currentR, 0, TWO_PI);
     ctx.stroke();
@@ -2166,8 +2099,6 @@ export class ProjectileRenderer {
     ctx.fill();
 
     // Cross shape at center
-    ctx.shadowBlur = 5;
-    ctx.shadowColor = "#66BB6A";
     ctx.globalAlpha = alpha * 0.7;
     ctx.fillStyle = "#81C784";
     const crossW = radius * 0.15;
@@ -2176,7 +2107,6 @@ export class ProjectileRenderer {
     ctx.fillRect(x - crossH, y - crossW / 2, crossH * 2, crossW);
 
     // Ascending green + particles
-    ctx.shadowBlur = 0;
     const pCount = 8;
     for (let i = 0; i < pCount; i++) {
       const a = (i / pCount) * TWO_PI;
@@ -2203,8 +2133,6 @@ export class ProjectileRenderer {
 
     // Red flash fill
     ctx.globalAlpha = alpha * 0.3;
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = "#FF0000";
     const flashGrad = ctx.createRadialGradient(
       x,
       y,
@@ -2224,7 +2152,6 @@ export class ProjectileRenderer {
     ctx.globalAlpha = alpha * 0.7;
     ctx.strokeStyle = "#FF4444";
     ctx.lineWidth = 2.5;
-    ctx.shadowBlur = 10;
     ctx.beginPath();
     const sides = 6;
     for (let i = 0; i <= sides; i++) {
@@ -2251,7 +2178,6 @@ export class ProjectileRenderer {
     ctx.stroke();
 
     // Flash sparkles on edges
-    ctx.shadowBlur = 0;
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * TWO_PI + ts * 0.005;
       const sx = x + Math.cos(a) * currentR;

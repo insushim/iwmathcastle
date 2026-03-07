@@ -85,6 +85,10 @@ export class CastleRenderer {
     this._debris = [];
     this._smokeParticles = [];
     this._lastTimestamp = 0;
+
+    // Offscreen canvas cache: one per damage tier (0-3)
+    this._cachedTier = new Map();
+    this._cacheCanvas = null;
   }
 
   get width() {
@@ -113,30 +117,16 @@ export class CastleRenderer {
     // 0 = healthy (100-70%), 1 = damaged (70-40%), 2 = heavy (40-10%), 3 = critical (<10%)
     const tier = hpRatio > 0.7 ? 0 : hpRatio > 0.4 ? 1 : hpRatio > 0.1 ? 2 : 3;
 
-    // Background damage tint for heavy damage
-    if (tier >= 2) {
-      const intensity = tier === 3 ? 0.18 : 0.08;
-      ctx.fillStyle = `rgba(255,30,0,${intensity})`;
-      ctx.fillRect(0, 0, this._width, this._height);
-    }
+    // Draw cached static castle structure (or build cache on first call / tier change)
+    const cached = this._getCachedCastle(tier);
+    ctx.drawImage(cached, 0, 0);
 
-    // Draw castle components bottom-up
-    this._drawBase(ctx, tier);
-    this._drawGate(ctx, tier);
-    this._drawWalls(ctx, tier);
-    this._drawKeep(ctx, tier);
-    this._drawLeftTurret(ctx, tier);
-    this._drawRightTurret(ctx, tier);
-    this._drawCrenellations(ctx, tier);
-    this._drawStoneTexture(ctx, tier);
+    // Draw animated overlays on top of cached structure
     this._drawWindows(ctx, timestamp, tier);
     this._drawTorches(ctx, timestamp, tier);
     this._drawFlag(ctx, timestamp, tier);
 
-    // Damage effects
-    if (tier >= 1) {
-      this._drawCracks(ctx, tier);
-    }
+    // Animated damage effects
     if (tier >= 2) {
       this._updateAndDrawDebris(ctx, dt, tier);
     }
@@ -148,6 +138,53 @@ export class CastleRenderer {
     }
 
     ctx.restore();
+  }
+
+  // ----------------------------------------------------------
+  // Offscreen canvas cache for static castle structure
+  // ----------------------------------------------------------
+  _getCachedCastle(tier) {
+    if (this._cachedTier.has(tier)) {
+      return this._cachedTier.get(tier);
+    }
+
+    // Create offscreen canvas and render static parts
+    const offscreen = document.createElement("canvas");
+    offscreen.width = this._width;
+    offscreen.height = this._height;
+    const offCtx = offscreen.getContext("2d");
+
+    // Background damage tint for heavy damage
+    if (tier >= 2) {
+      const intensity = tier === 3 ? 0.18 : 0.08;
+      offCtx.fillStyle = `rgba(255,30,0,${intensity})`;
+      offCtx.fillRect(0, 0, this._width, this._height);
+    }
+
+    // Draw all static castle components
+    this._drawBase(offCtx, tier);
+    this._drawGate(offCtx, tier);
+    this._drawWalls(offCtx, tier);
+    this._drawKeep(offCtx, tier);
+    this._drawLeftTurret(offCtx, tier);
+    this._drawRightTurret(offCtx, tier);
+    this._drawCrenellations(offCtx, tier);
+    this._drawStoneTexture(offCtx, tier);
+
+    // Cracks are also static (pre-generated patterns)
+    if (tier >= 1) {
+      this._drawCracks(offCtx, tier);
+    }
+
+    this._cachedTier.set(tier, offscreen);
+    return offscreen;
+  }
+
+  /**
+   * Invalidate the cache (call when castle takes damage that changes tier).
+   */
+  invalidateCache() {
+    this._cachedTier.clear();
   }
 
   // ----------------------------------------------------------
