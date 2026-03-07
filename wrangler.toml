@@ -5,4 +5,4 @@ pages_build_output_dir = "./"
 [[d1_databases]]
 binding = "DB"
 database_name = "mathcastle-db"
-database_id = "459bfc93-fe1d-4607-ade2-d2a22a745071"
+database_id = "8e82137a-da8f-47d5-b6ad-b57ecb9741e2"
