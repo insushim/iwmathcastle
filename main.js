@@ -141,6 +141,8 @@ let touchStartTime = 0,
   touchMoveDistance = 0,
   lastClickPos = { x: 0, y: 0 };
 let activeSpell = "fireball";
+let gameSpeed = 1; // 1x or 2x speed multiplier
+let shownProblemIds = new Set(); // Track shown problems to avoid duplicates
 let correctAnswer = 0,
   selectedTowerForUpgrade = null,
   selectedDifficulty = null,
@@ -353,6 +355,8 @@ function setupSettingsModal() {
   }
   if (sfxSlider && sfxVal) {
     sfxSlider.addEventListener("input", () => {
+      const vol = sfxSlider.value / 100;
+      sfx.setVolume(vol);
       sfxVal.textContent = sfxSlider.value + "%";
     });
   }
@@ -482,9 +486,10 @@ function initializeGame(difficulty, savedState = null) {
   // [V2] 파티클 시스템 초기화
   particleSystem = new ParticleSystem(dynamicCtx);
 
-  // [V2] 메뉴 파티클 중지 & 게임플레이 음악 시작
+  // [V3] 메뉴 파티클 중지 & 게임플레이 음악 시작
   stopMenuParticles();
   musicSystem.init();
+  sfx.play("game_start");
   musicSystem.play("gameplay");
   musicSystem.setIntensity(0.3);
 
@@ -492,6 +497,8 @@ function initializeGame(difficulty, savedState = null) {
   totalKillCount = 0;
   totalBossKills = 0;
   totalTowersBuilt = 0;
+  gameSpeed = 1;
+  shownProblemIds = new Set();
   comboSystem.break();
 
   if (savedState) {
@@ -505,6 +512,29 @@ function initializeGame(difficulty, savedState = null) {
     WIZARD_AUTO_ATTACK_STATS.range = savedState.wizardRange;
     WIZARD_AUTO_ATTACK_STATS.rangeSq =
       savedState.wizardRange * savedState.wizardRange;
+
+    // --- Restore extended save data ---
+    if (savedState.activeSpell) activeSpell = savedState.activeSpell;
+    if (savedState.maxCombo) comboSystem.maxCombo = savedState.maxCombo;
+    if (savedState.totalKillCount) totalKillCount = savedState.totalKillCount;
+    if (savedState.totalBossKills) totalBossKills = savedState.totalBossKills;
+    if (savedState.totalTowersBuilt)
+      totalTowersBuilt = savedState.totalTowersBuilt;
+    if (savedState.gameSpeed) gameSpeed = savedState.gameSpeed;
+    if (
+      savedState.achievementProgress &&
+      Array.isArray(savedState.achievementProgress)
+    ) {
+      savedState.achievementProgress.forEach((id) => {
+        if (!achievementSystem.isUnlocked(id)) achievementSystem.unlock(id);
+      });
+    }
+    if (
+      savedState.shownProblemIds &&
+      Array.isArray(savedState.shownProblemIds)
+    ) {
+      shownProblemIds = new Set(savedState.shownProblemIds);
+    }
 
     regenerateLayout();
 
@@ -831,8 +861,10 @@ function gameLoop(timestamp) {
     return;
   }
   if (!lastFrameTime) lastFrameTime = timestamp;
-  const deltaTime = timestamp - lastFrameTime;
+  const rawDeltaTime = timestamp - lastFrameTime;
   lastFrameTime = timestamp;
+  // Apply game speed multiplier to deltaTime for all gameplay updates
+  const deltaTime = rawDeltaTime * gameSpeed;
 
   if (!gamePaused) {
     // [NEW] 게임 루프의 핵심 업데이트 순서 변경
@@ -874,8 +906,12 @@ function updateWizard(deltaTime) {
   if (keysPressed["d"] || keysPressed["D"] || keysPressed["ArrowRight"])
     dx += 1;
 
-  // [V2] 마법사 스프라이트 방향 및 애니메이션 업데이트
+  // [V3] 마법사 스프라이트 방향, 갤럽, 애니메이션 업데이트
   wizardSprite.setDirection(dx, dy);
+  const isMoving = dx !== 0 || dy !== 0;
+  const isRunning =
+    isMoving && (keysPressed["Shift"] || keysPressed["ShiftLeft"]);
+  wizardSprite.setGalloping(isRunning);
   wizardSprite.update(deltaTime);
 
   if (dx !== 0 || dy !== 0) {
@@ -1260,6 +1296,8 @@ function updateMonsters(timestamp, deltaTime) {
         castleHealth -= 15;
         waveDamageTaken += 15;
         score = Math.max(0, score - 75);
+        sfx.play("castle_hit");
+        wizardSprite.setDamaged();
         gameElements.gameCanvas.style.animation = "shake 0.5s";
         setTimeout(() => (gameElements.gameCanvas.style.animation = ""), 500);
         if (particleSystem) particleSystem.screenFlash("#ff3366", 200, 0.15);
@@ -1494,7 +1532,7 @@ function renderDynamicLayer() {
 // --- 웨이브 및 몬스터 관리 ---
 function startWave() {
   if (waveInProgress) return;
-  sfx.play("blip");
+  sfx.play("wave_start");
   const { startWaveBtn } = gameElements;
   waveInProgress = true;
   monstersSpawned = 0;
@@ -1549,7 +1587,7 @@ function startWave() {
   startWaveBtn.disabled = true;
   startWaveBtn.textContent = `🌊...`;
   let spawnCount = 0;
-  const spawnInterval = 1000 - currentWave * 8;
+  const spawnInterval = (1000 - currentWave * 8) / gameSpeed;
 
   if (spawnIntervalId) clearInterval(spawnIntervalId);
 
@@ -1877,7 +1915,7 @@ function placeTower(type) {
     return showMessage("골드가 부족합니다!");
   gold -= stat.cost;
   score += 10;
-  sfx.play("blip");
+  sfx.play("tower_place");
   const { x, y } = pendingTile;
   const tower = {
     id: Date.now(),
@@ -1957,7 +1995,7 @@ function upgradeTower() {
     );
   }
   if (tower.levelIndicator) tower.levelIndicator.textContent = tower.level;
-  sfx.play("powerup");
+  sfx.play("tower_upgrade");
   hideModal(gameElements.towerUpgradeSelector);
   gameElements.rangeIndicator.style.display = "none";
   updateFullUI();
@@ -1982,6 +2020,7 @@ function sellTower() {
   if (tower.laserBeam) tower.laserBeam.remove();
   tower.el.remove();
   towers = towers.filter((t) => t.id !== tower.id);
+  sfx.play("tower_sell");
   hideModal(gameElements.towerUpgradeSelector);
   gameElements.rangeIndicator.style.display = "none";
   updateFullUI();
@@ -2411,6 +2450,11 @@ async function handleWizardAttack(clickPos = null) {
     .getNearby(spellOrigin.x, spellOrigin.y, spell.aoe)
     .filter((m) => !m.isDead && getDistanceSq(spellOrigin, m) < aoeSq);
 
+  // [V3] Trigger wizard casting animation + sound
+  wizardSprite.setCasting(true);
+  sfx.play("wizard_cast");
+  setTimeout(() => wizardSprite.setCasting(false), 600);
+
   switch (activeSpell) {
     case "fireball":
       const fireballDamage = Math.floor(spell.damage * damageMultiplier);
@@ -2567,6 +2611,7 @@ async function handleWizardAttack(clickPos = null) {
 // CSS 클래스명 → Canvas 스펠 타입 매핑
 const SPELL_CLASS_MAP = {
   "fireball-effect": "fireball",
+  "magic-attack": "fireball",
   "frost-nova": "frostNova",
   "chain-lightning": "chainLightning",
   "teleport-effect": "teleport",
@@ -2577,6 +2622,8 @@ const SPELL_CLASS_MAP = {
   "ultimate-splash-effect": "explosion",
   "splash-damage-effect": "explosion",
   "plague-pool": "fireball",
+  "soul-drain-effect": "heal",
+  "time-warp-effect": "frostNova",
 };
 
 function addCanvasSpellEffect(x, y, radius, type, duration) {
@@ -2674,25 +2721,70 @@ function populateSpellbook() {
 }
 
 // --- 수학 문제 로직 ---
+function generateRandomArithmetic() {
+  const ops = ["+", "-", "*"];
+  const op = ops[Math.floor(Math.random() * ops.length)];
+  let a, b, answer;
+  switch (op) {
+    case "+":
+      a = Math.floor(Math.random() * 50) + 1;
+      b = Math.floor(Math.random() * 50) + 1;
+      answer = a + b;
+      break;
+    case "-":
+      a = Math.floor(Math.random() * 50) + 10;
+      b = Math.floor(Math.random() * a) + 1;
+      answer = a - b;
+      break;
+    case "*":
+      a = Math.floor(Math.random() * 12) + 1;
+      b = Math.floor(Math.random() * 12) + 1;
+      answer = a * b;
+      break;
+  }
+  return { q: `${a} ${op} ${b} = ?`, a: answer };
+}
+
 function showMathProblem() {
   gamePaused = true;
   problemAnswered = false;
-  if (currentProblemSet.length === 0) {
-    currentProblemSet = [...mathProblems[selectedDifficulty]];
-    shuffleArray(currentProblemSet);
-    showMessage("새로운 문제 세트가 로드되었습니다!");
+
+  // Filter out already-shown problems
+  let problem = null;
+  while (currentProblemSet.length > 0) {
+    const candidate = currentProblemSet.pop();
+    const problemId = candidate.q + "||" + candidate.a;
+    if (!shownProblemIds.has(problemId)) {
+      shownProblemIds.add(problemId);
+      problem = candidate;
+      break;
+    }
   }
-  let problem = currentProblemSet.pop();
+
+  // If all problems exhausted, try reloading unshown ones
+  if (!problem) {
+    const allProblems = mathProblems[selectedDifficulty] || [];
+    const unshown = allProblems.filter(
+      (p) => !shownProblemIds.has(p.q + "||" + p.a),
+    );
+    if (unshown.length > 0) {
+      currentProblemSet = [...unshown];
+      shuffleArray(currentProblemSet);
+      problem = currentProblemSet.pop();
+      if (problem) shownProblemIds.add(problem.q + "||" + problem.a);
+    }
+  }
+
+  // All problems truly exhausted - generate random arithmetic
+  if (!problem) {
+    showMessage("모든 문제를 풀었습니다! 랜덤 산수 문제를 생성합니다.");
+    problem = generateRandomArithmetic();
+  }
 
   if (!problem) {
-    currentProblemSet = [...mathProblems[selectedDifficulty]];
-    shuffleArray(currentProblemSet);
-    problem = currentProblemSet.pop();
-    if (!problem) {
-      console.error("Failed to load problem. Forcing next wave.");
-      forceNextWave(true);
-      return;
-    }
+    console.error("Failed to load problem. Forcing next wave.");
+    forceNextWave(true);
+    return;
   }
 
   correctAnswer = problem.a;
@@ -2781,7 +2873,7 @@ function checkAnswer(answer, clickedBtn) {
     if (isForcedProgress) {
       resultDiv.textContent = `정답! 하지만 강제 진행으로 보상은 없습니다.`;
       resultDiv.style.color = "#2ecc71";
-      sfx.play("blip");
+      sfx.play("math_correct");
     } else {
       // [V2] 콤보 시스템 적용
       const comboResult = comboSystem.addCorrect();
@@ -2792,7 +2884,8 @@ function checkAnswer(answer, clickedBtn) {
       resultDiv.style.color = "#00ff88";
       gold += totalGold;
       score += 100 * comboResult.multiplier;
-      sfx.play("powerup");
+      sfx.play("math_correct");
+      if (comboResult.combo >= 3) sfx.play("combo_hit");
       updateComboDisplay();
 
       // [V2] 파티클 축하 효과
@@ -2827,7 +2920,7 @@ function checkAnswer(answer, clickedBtn) {
     castleHealth = Math.max(0, castleHealth - 5);
     score = Math.max(0, score - 50);
     deleteWeakestTower();
-    sfx.play("hit");
+    sfx.play("math_wrong");
     showMessage("오답으로 인한 페널티: 골드 -30, 성 체력 -5, 점수 -50!");
 
     // [V2] 콤보 브레이크 + 화면 플래시
@@ -2869,10 +2962,15 @@ function checkWaveCompletion() {
       damageTaken: waveDamageTaken,
     });
 
+    sfx.play("wave_clear");
+
     // 보스 웨이브 클리어 후 음악 복귀
     if (musicSystem.currentTrack === "boss") {
       musicSystem.play("gameplay");
     }
+
+    // [V2] Auto-save after each wave completion
+    saveGame(true);
 
     showMathProblem();
   }
@@ -3029,14 +3127,27 @@ function setupEventListeners() {
     .addEventListener("click", restartGame);
   document
     .getElementById("submitScoreBtn")
-    .addEventListener("click", () =>
-      submitScore(
-        document.getElementById("playerNameInput").value,
-        score,
-        currentWave,
-        selectedDifficulty,
-      ),
-    );
+    .addEventListener("click", async () => {
+      const nameInput = document.getElementById("playerNameInput");
+      const playerName = (nameInput ? nameInput.value.trim() : "") || "익명";
+      const btn = document.getElementById("submitScoreBtn");
+      btn.disabled = true;
+      btn.textContent = "등록 중...";
+      try {
+        await submitScore(playerName, score, currentWave, selectedDifficulty);
+        localStorage.removeItem("towerDefenseSave");
+        showMessage("랭킹 등록 완료!");
+        sfx.play("powerup");
+        // Show rankings after submission
+        fetchAndShowRankings();
+      } catch (error) {
+        console.error("점수 등록 실패:", error);
+        showMessage("점수 등록에 실패했습니다. 다시 시도해주세요.");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "등록";
+      }
+    });
   document
     .getElementById("closeTowerUpgradeBtn")
     .addEventListener("click", closeUpgradeSelector);
@@ -3082,7 +3193,8 @@ function setupEventListeners() {
       WIZARD_AUTO_ATTACK_STATS.rangeSq =
         WIZARD_AUTO_ATTACK_STATS.range * WIZARD_AUTO_ATTACK_STATS.range;
       showUpgradeNotification(`🧙‍♂️ 마법사 레벨 ${wizardLevel} 달성!`);
-      sfx.init().then(() => sfx.play("powerup"));
+      sfx.init().then(() => sfx.play("wizard_levelup"));
+      wizardSprite.setLevelUp();
       populateSpellbook();
       updateFullUI();
     } else {
@@ -3197,6 +3309,29 @@ function setupEventListeners() {
         .classList.add("active");
     });
   }
+
+  // --- Save button handler ---
+  const saveGameBtn = document.getElementById("saveGameBtn");
+  if (saveGameBtn) {
+    saveGameBtn.addEventListener("click", () => {
+      if (gameRunning) {
+        saveGame();
+      } else {
+        showMessage("게임이 실행 중이지 않습니다.");
+      }
+    });
+  }
+
+  // --- Game speed toggle handler ---
+  const speedBtn = document.getElementById("speedBtn");
+  if (speedBtn) {
+    speedBtn.addEventListener("click", () => {
+      gameSpeed = gameSpeed === 1 ? 2 : 1;
+      speedBtn.textContent = gameSpeed === 1 ? "1x" : "2x";
+      sfx.play("blip");
+      showMessage(`게임 속도: ${gameSpeed}x`);
+    });
+  }
 }
 
 // --- 유틸리티 및 헬퍼 함수 ---
@@ -3294,6 +3429,16 @@ function restartGame() {
   initMenuParticles();
   comboSystem.break();
   updateComboDisplay();
+
+  // Reset extended state
+  gameSpeed = 1;
+  shownProblemIds = new Set();
+  activeSpell = "fireball";
+  totalKillCount = 0;
+  totalBossKills = 0;
+  totalTowersBuilt = 0;
+  const speedBtn = document.getElementById("speedBtn");
+  if (speedBtn) speedBtn.textContent = "1x";
 }
 
 function handleCanvasClick(e) {
@@ -3418,7 +3563,7 @@ function safeCleanupAllElements() {
 }
 
 // --- 게임 저장 및 불러오기 ---
-function saveGame() {
+function saveGame(silent = false) {
   const gameState = {
     difficulty: selectedDifficulty,
     gold,
@@ -3437,9 +3582,25 @@ function saveGame() {
         y: parseInt(tower.el.style.top),
       },
     })),
+    // --- Extended save data ---
+    activeSpell,
+    maxCombo: comboSystem.maxCombo || 0,
+    currentCombo: comboSystem.getCombo(),
+    totalKillCount,
+    totalBossKills,
+    totalTowersBuilt,
+    achievementProgress: achievementSystem
+      .getAll()
+      .filter((a) => a.unlocked)
+      .map((a) => a.id),
+    problemSetIndex: currentProblemSet.length,
+    shownProblemIds: shownProblemIds ? [...shownProblemIds] : [],
+    gameSpeed,
   };
 
   localStorage.setItem("towerDefenseSave", JSON.stringify(gameState));
-  showMessage("게임이 저장되었습니다!");
-  sfx.play("blip");
+  if (!silent) {
+    showMessage("게임이 저장되었습니다!");
+    sfx.play("blip");
+  }
 }

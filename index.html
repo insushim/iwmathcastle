@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>수학 성 수호자 V2</title>
+    <title>수학 성 수호자 V3</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Orbitron:wght@400;700;900&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -20,7 +20,7 @@
                     <h1 class="brand-title">INsuworlD</h1>
                     <h2 class="main-title">수학 성 수호자</h2>
                     <p class="main-subtitle">MATH CASTLE GUARDIAN</p>
-                    <div class="version-badge">V2.0</div>
+                    <div class="version-badge">V3.0</div>
                 </div>
                 <div class="difficulty-section">
                     <h3 class="section-label">학년을 선택하세요</h3>
@@ -102,10 +102,15 @@
                     <div class="wizard-info">
                         <span class="info-icon">🧙‍♂️</span>
                         <span>Lv.<span id="wizardLevel">1</span></span>
-                        <button class="icon-btn" id="spellbook-btn" title="스펠북">📖</button>
-                        <button class="icon-btn upgrade-btn" id="upgradeWizardBtn" title="마법사 업그레이드">⬆️</button>
+                        <button class="icon-btn" id="spellbook-btn" title="스펠북" aria-label="스펠북 열기">📖</button>
+                        <button class="icon-btn upgrade-btn" id="upgradeWizardBtn" title="마법사 업그레이드" aria-label="마법사 업그레이드">⬆️</button>
                     </div>
                 </div>
+            </div>
+
+            <!-- 웨이브 프로그레스 바 -->
+            <div class="wave-progress-container">
+                <div class="wave-progress-bar" id="waveProgressBar"></div>
             </div>
 
             <!-- 콤보 디스플레이 -->
@@ -118,14 +123,16 @@
             <!-- 하단 컨트롤 바 -->
             <div id="control-bar">
                 <div class="control-left">
-                    <button class="ctrl-btn primary" id="startWaveBtn">🚀 시작</button>
-                    <button class="ctrl-btn" id="pauseBtn">⏸️</button>
-                    <button class="ctrl-btn" id="forceNextWaveBtn">⏭️</button>
+                    <button class="ctrl-btn primary" id="startWaveBtn" aria-label="웨이브 시작">🚀 시작<span class="key-hint">S</span></button>
+                    <button class="ctrl-btn" id="pauseBtn" aria-label="일시정지">⏸️<span class="key-hint">P</span></button>
+                    <button class="ctrl-btn" id="forceNextWaveBtn" aria-label="다음 웨이브">⏭️<span class="key-hint">N</span></button>
+                    <button class="ctrl-btn speed-btn" id="speedBtn" title="게임 속도" aria-label="게임 속도 변경">1x</button>
                 </div>
                 <div class="control-right">
-                    <button class="ctrl-btn" id="submitAndQuitBtn" title="랭킹 등록 후 종료">🏆</button>
-                    <button class="ctrl-btn" id="settingsBtnInGame" title="설정">⚙️</button>
-                    <button class="ctrl-btn" id="fullscreenBtn" title="전체화면">🖼️</button>
+                    <button class="ctrl-btn save-btn" id="saveGameBtn" title="게임 저장" aria-label="게임 저장">💾<span class="key-hint">Q</span></button>
+                    <button class="ctrl-btn" id="submitAndQuitBtn" title="랭킹 등록 후 종료" aria-label="랭킹 등록">🏆</button>
+                    <button class="ctrl-btn" id="settingsBtnInGame" title="설정" aria-label="설정">⚙️</button>
+                    <button class="ctrl-btn" id="fullscreenBtn" title="전체화면" aria-label="전체화면 전환">🖼️<span class="key-hint">F</span></button>
                 </div>
             </div>
 
@@ -155,6 +162,11 @@
                     <h2>🏅 웨이브 클리어!</h2>
                     <div class="combo-badge" id="mathCombo"></div>
                 </div>
+                <div class="math-timer" id="mathTimer">
+                    <div class="math-timer-bar">
+                        <div class="math-timer-fill" id="mathTimerFill"></div>
+                    </div>
+                </div>
                 <div class="math-question" id="mathQuestion"></div>
                 <div class="math-options" id="mathOptions"></div>
                 <div id="mathResult" class="math-result"></div>
@@ -180,7 +192,7 @@
                         <span class="stat-value" id="finalCombo">0</span>
                     </div>
                 </div>
-                <input type="text" id="playerNameInput" class="name-input" placeholder="이름을 입력하세요 (10자 이내)" maxlength="10">
+                <input type="text" id="playerNameInput" class="name-input" placeholder="이름을 입력하세요 (10자 이내)" maxlength="10" aria-label="플레이어 이름">
                 <div class="modal-actions">
                     <button class="modal-btn primary" id="submitScoreBtn">점수 등록</button>
                     <button class="modal-btn" id="restartGameBtn">다시 시작</button>
@@ -194,7 +206,7 @@
                 <h2 class="modal-title">🏆 랭킹</h2>
 
                 <div class="hall-of-fame-container">
-                    <h3 class="hof-title">✨ 명예의 전당 ✨</h3>
+                    <h3 class="hof-title">명예의 전당</h3>
                     <div class="hall-of-fame" id="hallOfFame"></div>
                 </div>
 
@@ -231,12 +243,12 @@
                 <div class="settings-group">
                     <label class="setting-label">
                         <span>🎵 배경 음악</span>
-                        <input type="range" id="musicVolume" min="0" max="100" value="50" class="volume-slider">
+                        <input type="range" id="musicVolume" min="0" max="100" value="50" class="volume-slider" aria-label="배경 음악 볼륨">
                         <span class="volume-value" id="musicVolumeValue">50%</span>
                     </label>
                     <label class="setting-label">
                         <span>🔊 효과음</span>
-                        <input type="range" id="sfxVolume" min="0" max="100" value="70" class="volume-slider">
+                        <input type="range" id="sfxVolume" min="0" max="100" value="70" class="volume-slider" aria-label="효과음 볼륨">
                         <span class="volume-value" id="sfxVolumeValue">70%</span>
                     </label>
                 </div>
