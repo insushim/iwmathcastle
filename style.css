@@ -349,9 +349,20 @@ body {
     height: 100%;
     position: relative;
     background:
-        radial-gradient(ellipse at 20% 80%, rgba(0, 229, 255, 0.03) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 20%, rgba(255, 0, 229, 0.03) 0%, transparent 50%),
-        linear-gradient(180deg, #0d1117 0%, #111827 50%, #0f172a 100%);
+        /* Ambient magical energy */
+        radial-gradient(ellipse at 20% 80%, rgba(0, 229, 255, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(255, 0, 229, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(0, 255, 136, 0.03) 0%, transparent 60%),
+        /* Enhanced stone texture gradient */
+        linear-gradient(180deg, #0d1117 0%, #111827 30%, #1f2937 60%, #0f172a 100%),
+        /* Subtle noise pattern for texture */
+        repeating-linear-gradient(
+            45deg,
+            transparent,
+            transparent 2px,
+            rgba(100, 200, 255, 0.01) 2px,
+            rgba(100, 200, 255, 0.01) 4px
+        );
     display: none;
     overflow: hidden;
     contain: layout style paint;
@@ -362,10 +373,70 @@ body {
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
     background-image:
-        radial-gradient(rgba(100, 200, 255, 0.04) 1px, transparent 1px);
-    background-size: 30px 30px;
+        /* Enhanced grid pattern */
+        radial-gradient(rgba(100, 200, 255, 0.08) 1px, transparent 1px),
+        /* Grass texture dots on placement tiles */
+        radial-gradient(circle at 25% 25%, rgba(0, 255, 136, 0.02) 0.5px, transparent 1px),
+        radial-gradient(circle at 75% 75%, rgba(0, 255, 136, 0.02) 0.5px, transparent 1px);
+    background-size:
+        30px 30px,
+        15px 15px,
+        20px 20px;
     pointer-events: none;
     z-index: 0;
+    /* Add floating firefly particles */
+    animation: subtleShimmer 8s ease-in-out infinite;
+}
+
+#gameCanvas::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image:
+        /* Worn stone path texture */
+        repeating-radial-gradient(
+            circle at center,
+            transparent 0px,
+            rgba(156, 163, 175, 0.03) 1px,
+            transparent 2px
+        ),
+        /* Ambient fireflies */
+        radial-gradient(circle at 20% 30%, rgba(255, 215, 0, 0.4) 1px, transparent 2px),
+        radial-gradient(circle at 80% 60%, rgba(0, 229, 255, 0.3) 1px, transparent 2px),
+        radial-gradient(circle at 60% 80%, rgba(0, 255, 136, 0.3) 1px, transparent 2px),
+        radial-gradient(circle at 30% 70%, rgba(255, 100, 200, 0.3) 1px, transparent 2px);
+    background-size:
+        10px 10px,
+        400px 300px,
+        350px 400px,
+        500px 350px,
+        300px 450px;
+    pointer-events: none;
+    z-index: 1;
+    animation: fireflies 12s linear infinite;
+}
+
+@keyframes subtleShimmer {
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 1.0; }
+}
+
+@keyframes fireflies {
+    0% {
+        background-position: 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%;
+    }
+    25% {
+        background-position: 0% 0%, 10% 15%, 20% 25%, 15% 30%, 25% 10%;
+    }
+    50% {
+        background-position: 0% 0%, 25% 30%, 35% 10%, 30% 15%, 10% 35%;
+    }
+    75% {
+        background-position: 0% 0%, 15% 5%, 10% 40%, 40% 25%, 35% 20%;
+    }
+    100% {
+        background-position: 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%;
+    }
 }
 
 #dynamicLayerCanvas {

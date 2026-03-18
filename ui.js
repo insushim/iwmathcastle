@@ -329,6 +329,9 @@ export function showMathProblemUI(problem, options, answerCallback) {
     optionsContainer.appendChild(btn);
   });
   showModal(gameElements.mathModal);
+
+  const timerEl = document.getElementById("mathTimer");
+  if (timerEl) timerEl.style.display = "block";
 }
 
 export function showTowerInfoTooltip(towerData, x, y) {

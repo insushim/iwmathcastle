@@ -140,6 +140,9 @@ let touchStartTime = 0,
 let activeSpell = "fireball";
 let gameSpeed = 1; // 1x or 2x speed multiplier
 let shownProblemIds = new Set(); // Track shown problems to avoid duplicates
+let problemTimerId = null;
+let problemTimerStart = 0;
+const PROBLEM_TIME_LIMIT = 30000; // 30 seconds
 let correctAnswer = 0,
   selectedTowerForUpgrade = null,
   selectedDifficulty = null,
@@ -2888,6 +2891,9 @@ function showMathProblem() {
   }
 
   ui.showMathProblemUI(problem, options, checkAnswer);
+
+  // Start 30-second timer
+  startProblemTimer();
 }
 
 function generateWrongAnswers(correct) {
@@ -2938,6 +2944,7 @@ function generateWrongAnswers(correct) {
 function checkAnswer(answer, clickedBtn) {
   if (problemAnswered) return;
   problemAnswered = true;
+  clearProblemTimer();
 
   const optionsContainer = document.getElementById("mathOptions");
   const resultDiv = document.getElementById("mathResult");
@@ -3016,6 +3023,85 @@ function checkAnswer(answer, clickedBtn) {
 
   isForcedProgress = false;
 
+  currentWave++;
+  updateFullUI();
+  setTimeout(() => {
+    hideModal(gameElements.mathModal);
+    resultDiv.textContent = "";
+    gamePaused = false;
+    startWave();
+  }, 2500);
+}
+
+function startProblemTimer() {
+  clearProblemTimer();
+  problemTimerStart = Date.now();
+  const timerFill = document.getElementById("mathTimerFill");
+  if (timerFill) {
+    timerFill.style.transition = "none";
+    timerFill.style.width = "100%";
+    timerFill.classList.remove("warning");
+    // Force reflow
+    void timerFill.offsetWidth;
+    timerFill.style.transition = `width ${PROBLEM_TIME_LIMIT}ms linear`;
+    timerFill.style.width = "0%";
+  }
+
+  // Warning at 10 seconds remaining
+  setTimeout(() => {
+    if (timerFill && !problemAnswered) {
+      timerFill.classList.add("warning");
+    }
+  }, PROBLEM_TIME_LIMIT - 10000);
+
+  problemTimerId = setTimeout(() => {
+    if (!problemAnswered) {
+      handleTimeOut();
+    }
+  }, PROBLEM_TIME_LIMIT);
+}
+
+function clearProblemTimer() {
+  if (problemTimerId) {
+    clearTimeout(problemTimerId);
+    problemTimerId = null;
+  }
+}
+
+function handleTimeOut() {
+  if (problemAnswered) return;
+  problemAnswered = true;
+
+  const resultDiv = document.getElementById("mathResult");
+  const optionsContainer = document.getElementById("mathOptions");
+
+  // Show correct answer
+  optionsContainer.querySelectorAll(".math-option").forEach((btn) => {
+    btn.disabled = true;
+    if (String(btn.textContent) === String(correctAnswer)) {
+      btn.classList.add("correct");
+    } else {
+      btn.classList.add("faded");
+    }
+  });
+
+  resultDiv.textContent = `⏰ 시간 초과! 정답은 ${correctAnswer} 입니다.`;
+  resultDiv.style.color = "#ff8c00";
+
+  // Penalty: same as wrong answer but slightly less harsh
+  gold = Math.max(0, gold - 20);
+  castleHealth = Math.max(0, castleHealth - 3);
+  score = Math.max(0, score - 30);
+  sfx.play("math_wrong");
+  showMessage("시간 초과 페널티: 골드 -20, 성 체력 -3, 점수 -30!");
+
+  comboSystem.break();
+  updateComboDisplay();
+  if (particleSystem) particleSystem.screenFlash("#ff8c00", 400, 0.2);
+
+  checkGameOver();
+
+  isForcedProgress = false;
   currentWave++;
   updateFullUI();
   setTimeout(() => {

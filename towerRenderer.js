@@ -1248,30 +1248,46 @@ export class TowerRenderer {
   }
 
   _drawBase(ctx, towerType) {
-    // Isometric-ish stone base: top face + front face + side face
-    const hw = 18; // half width
-    const hd = 6; // half depth (isometric)
-    const bh = 8; // base height
+    // Enhanced larger isometric stone base with brick texture
+    const hw = 22; // half width (increased from 18)
+    const hd = 8; // half depth (increased from 6)
+    const bh = 14; // base height (increased from 8)
 
-    // Top face (lighter)
+    // Top face (lighter) with brick pattern
     ctx.fillStyle = PAL.baseTop;
     ctx.beginPath();
     ctx.moveTo(-hw, -hd);
-    ctx.lineTo(0, -hd - 5);
+    ctx.lineTo(0, -hd - 6);
     ctx.lineTo(hw, -hd);
-    ctx.lineTo(0, -hd + 5);
+    ctx.lineTo(0, -hd + 6);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = O;
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // Front face
+    // Add brick lines on top
+    ctx.strokeStyle = PAL.baseDark;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    // Horizontal lines
+    ctx.moveTo(-hw * 0.7, -hd - 2);
+    ctx.lineTo(hw * 0.7, -hd - 2);
+    ctx.moveTo(-hw * 0.5, -hd + 2);
+    ctx.lineTo(hw * 0.5, -hd + 2);
+    // Vertical lines
+    ctx.moveTo(-hw * 0.3, -hd - 4);
+    ctx.lineTo(-hw * 0.3, -hd + 4);
+    ctx.moveTo(hw * 0.3, -hd - 4);
+    ctx.lineTo(hw * 0.3, -hd + 4);
+    ctx.stroke();
+
+    // Front face with stone texture
     ctx.fillStyle = PAL.baseFront;
     ctx.beginPath();
     ctx.moveTo(-hw, -hd);
-    ctx.lineTo(0, -hd + 5);
-    ctx.lineTo(0, -hd + 5 + bh);
+    ctx.lineTo(0, -hd + 6);
+    ctx.lineTo(0, -hd + 6 + bh);
     ctx.lineTo(-hw, -hd + bh);
     ctx.closePath();
     ctx.fill();
@@ -1279,18 +1295,65 @@ export class TowerRenderer {
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // Side face (darker)
+    // Add brick texture to front face
+    ctx.strokeStyle = PAL.baseDark;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    // Horizontal mortar lines
+    for (let i = 1; i < 3; i++) {
+      const y = -hd + 6 + (i * bh) / 3;
+      ctx.moveTo(-hw, y);
+      ctx.lineTo(0, y);
+    }
+    // Vertical mortar lines (staggered)
+    ctx.moveTo(-hw * 0.6, -hd + 6);
+    ctx.lineTo(-hw * 0.6, -hd + 6 + bh / 3);
+    ctx.moveTo(-hw * 0.3, -hd + 6 + bh / 3);
+    ctx.lineTo(-hw * 0.3, -hd + 6 + (2 * bh) / 3);
+    ctx.moveTo(-hw * 0.7, -hd + 6 + (2 * bh) / 3);
+    ctx.lineTo(-hw * 0.7, -hd + 6 + bh);
+    ctx.stroke();
+
+    // Side face (darker) with texture
     ctx.fillStyle = PAL.baseSide;
     ctx.beginPath();
-    ctx.moveTo(0, -hd + 5);
+    ctx.moveTo(0, -hd + 6);
     ctx.lineTo(hw, -hd);
     ctx.lineTo(hw, -hd + bh);
-    ctx.lineTo(0, -hd + 5 + bh);
+    ctx.lineTo(0, -hd + 6 + bh);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = O;
     ctx.lineWidth = 1;
     ctx.stroke();
+
+    // Add brick texture to side face
+    ctx.strokeStyle = PAL.baseDark;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    // Horizontal mortar lines
+    for (let i = 1; i < 3; i++) {
+      const y = -hd + (i * bh) / 3;
+      ctx.moveTo(0, y + 6);
+      ctx.lineTo(hw, y);
+    }
+    // Vertical mortar lines (staggered)
+    ctx.moveTo(hw * 0.3, -hd);
+    ctx.lineTo(hw * 0.3, -hd + bh / 3);
+    ctx.moveTo(hw * 0.7, -hd + bh / 3);
+    ctx.lineTo(hw * 0.7, -hd + (2 * bh) / 3);
+    ctx.moveTo(hw * 0.5, -hd + (2 * bh) / 3);
+    ctx.lineTo(hw * 0.5, -hd + bh);
+    ctx.stroke();
+
+    // Add corner reinforcements
+    ctx.fillStyle = PAL.baseDark;
+    ctx.fillRect(-hw - 1, -hd + bh - 2, 2, 4); // Left corner
+    ctx.fillRect(hw - 1, -hd + bh - 2, 2, 4); // Right corner
+
+    // Add foundation stones
+    ctx.fillStyle = PAL.baseDark;
+    ctx.fillRect(-hw + 2, -hd + bh, hw * 2 - 4, 2);
   }
 
   _drawLevelRings(ctx, level, ts) {
@@ -2072,13 +2135,21 @@ export class TowerRenderer {
     // Energy particles circling
     this._drawParticles(ctx, ts, 0, -28, 5, 10, pal.beam, 0.002);
 
-    // Enhanced crystal glow pulsing
-    const laserGlowAlpha = 0.3 + 0.2 * Math.sin(ts * 0.003);
+    // Enhanced crystal glow pulsing (larger and brighter)
+    const laserGlowAlpha = 0.4 + 0.3 * Math.sin(ts * 0.003);
     ctx.globalAlpha = laserGlowAlpha;
     ctx.fillStyle = pal.crystal;
     ctx.beginPath();
-    ctx.arc(0, -28, 5 + p * 2, 0, Math.PI * 2);
+    ctx.arc(0, -28, 8 + p * 4, 0, Math.PI * 2);
     ctx.fill();
+
+    // Additional outer glow ring
+    ctx.globalAlpha = laserGlowAlpha * 0.4;
+    ctx.strokeStyle = pal.glow;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, -28, 12 + p * 6, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.globalAlpha = 1;
 
     // Continuous beam glow effect that pulses
@@ -2511,13 +2582,21 @@ export class TowerRenderer {
     }
     ctx.restore();
 
-    // Enhanced crystal glow pulsing
-    const crystalGlowAlpha = 0.3 + 0.2 * Math.sin(ts * 0.003);
+    // Enhanced crystal glow pulsing (ultimate tower - brightest)
+    const crystalGlowAlpha = 0.5 + 0.4 * Math.sin(ts * 0.003);
     ctx.globalAlpha = crystalGlowAlpha;
     ctx.fillStyle = "#FFFFFF";
     ctx.beginPath();
-    ctx.arc(0, -18, 3 + p * 2, 0, Math.PI * 2);
+    ctx.arc(0, -18, 6 + p * 4, 0, Math.PI * 2);
     ctx.fill();
+
+    // Rainbow outer glow ring for ultimate tower
+    ctx.globalAlpha = crystalGlowAlpha * 0.3;
+    ctx.strokeStyle = RAINBOW[Math.floor(ts * 0.01) % RAINBOW.length];
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(0, -18, 10 + p * 6, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.globalAlpha = 1;
 
     // Rotating energy rings around the tower
