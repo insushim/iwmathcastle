@@ -140,6 +140,47 @@ const PAL = {
   finalBossGold: "#FFD700",
   finalBossGlow: "rgba(255,23,68,0.3)",
 
+  // New monsters
+  necromancerPurple: "#4A148C",
+  necromancerGreen: "#4CAF50",
+  necromancerDark: "#1A0033",
+  necromancerGlow: "rgba(76,175,80,0.3)",
+  necromancerSkull: "#E0E0E0",
+
+  berserkerRed: "#D32F2F",
+  berserkerOrange: "#FF9800",
+  berserkerDark: "#B71C1C",
+  berserkerRage: "#FF1744",
+  berserkerFlame: "rgba(255,23,68,0.4)",
+
+  phoenixGold: "#FFD700",
+  phoenixOrange: "#FF9800",
+  phoenixRed: "#F44336",
+  phoenixFire: "rgba(255,152,0,0.4)",
+  phoenixGlow: "rgba(255,215,0,0.3)",
+
+  swarmlingDark: "#2E2E2E",
+  swarmlingRed: "#FF1744",
+  swarmlingChitin: "#424242",
+
+  shadowDragonBlack: "#1A1A1A",
+  shadowDragonPurple: "#6A1B9A",
+  shadowDragonGlow: "rgba(106,27,154,0.35)",
+  shadowDragonDark: "#0D0D0D",
+
+  demonKingRed: "#8B0000",
+  demonKingBlack: "#1A1A1A",
+  demonKingGold: "#FFD700",
+  demonKingFire: "rgba(139,0,0,0.4)",
+  demonKingGlow: "rgba(139,0,0,0.3)",
+  demonKingRune: "#FF6D00",
+
+  wormQueenPurple: "#7B1FA2",
+  wormQueenGreen: "#388E3C",
+  wormQueenDark: "#4A148C",
+  wormQueenToxic: "#76FF03",
+  wormQueenGlow: "rgba(123,31,162,0.3)",
+
   // Status effects
   poisonGreen: "#76FF03",
   frostBlue: "#80D8FF",
@@ -326,6 +367,27 @@ export class MonsterRenderer {
       case "finalBoss":
         this._drawFinalBoss(ctx, drawSize, f);
         break;
+      case "necromancer":
+        this._drawNecromancer(ctx, drawSize, f);
+        break;
+      case "berserker":
+        this._drawBerserker(ctx, drawSize, f, hp, maxHp);
+        break;
+      case "phoenix":
+        this._drawPhoenix(ctx, drawSize, f);
+        break;
+      case "swarmling":
+        this._drawSwarmling(ctx, drawSize, f);
+        break;
+      case "shadowDragon":
+        this._drawShadowDragon(ctx, drawSize, f);
+        break;
+      case "demonKing":
+        this._drawDemonKing(ctx, drawSize, f);
+        break;
+      case "wormQueen":
+        this._drawWormQueen(ctx, drawSize, f);
+        break;
       default:
         this._drawNormal(ctx, drawSize, f);
         break;
@@ -387,6 +449,15 @@ export class MonsterRenderer {
         break;
       case "finalBoss":
         color = PAL.finalBossGlow;
+        break;
+      case "shadowDragon":
+        color = PAL.shadowDragonGlow;
+        break;
+      case "demonKing":
+        color = PAL.demonKingGlow;
+        break;
+      case "wormQueen":
+        color = PAL.wormQueenGlow;
         break;
       default:
         color = PAL.bossGlow;
@@ -3276,6 +3347,1007 @@ export class MonsterRenderer {
       const py = s * 0.48 + Math.sin(angle) * dist * 0.6;
       ctx.beginPath();
       ctx.arc(px, py, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
+  }
+
+  // --- New Monsters ---
+
+  // --- Necromancer (ground, size 38) ---
+  _drawNecromancer(ctx, s, f) {
+    const cx = s / 2;
+    const bottom = s * 0.93;
+
+    // Floating dark particles around necromancer
+    ctx.fillStyle = PAL.necromancerDark;
+    ctx.globalAlpha = 0.6;
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2 + f * 0.4;
+      const dist = s * 0.35;
+      const px = cx + Math.cos(angle) * dist;
+      const py = s * 0.5 + Math.sin(angle) * dist * 0.5;
+      ctx.beginPath();
+      ctx.arc(px, py, 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Legs (hidden under robes, minimal)
+    const legW = s * 0.06;
+    const legH = s * 0.1;
+    const gap = s * 0.05;
+    const phase = LEG_PHASE[f];
+    this._oRect(
+      ctx,
+      cx - gap - legW / 2,
+      bottom - legH + phase.left * 0.2,
+      legW,
+      legH,
+      PAL.necromancerDark,
+    );
+    this._oRect(
+      ctx,
+      cx + gap - legW / 2,
+      bottom - legH + phase.right * 0.2,
+      legW,
+      legH,
+      PAL.necromancerDark,
+    );
+
+    // Dark robes (flowing)
+    const robeW = s * 0.32;
+    const robeH = s * 0.42;
+    const robeY = s * 0.28;
+    this._oRect(
+      ctx,
+      cx - robeW / 2,
+      robeY,
+      robeW,
+      robeH,
+      PAL.necromancerPurple,
+    );
+
+    // Robe trim
+    ctx.fillStyle = PAL.necromancerDark;
+    ctx.fillRect(cx - robeW / 2, robeY, robeW, 2);
+    ctx.fillRect(cx - robeW / 2, robeY + robeH - 2, robeW, 2);
+
+    // Staff (skull-topped)
+    const staffX = cx - robeW / 2 - s * 0.08;
+    const staffY = robeY;
+    const staffH = s * 0.5;
+    ctx.strokeStyle = PAL.necromancerDark;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(staffX, staffY + staffH);
+    ctx.lineTo(staffX, staffY);
+    ctx.stroke();
+
+    // Skull on staff (glowing)
+    ctx.fillStyle = PAL.necromancerGlow;
+    ctx.beginPath();
+    ctx.arc(staffX, staffY - 2, s * 0.04, 0, Math.PI * 2);
+    ctx.fill();
+    this._oCircle(ctx, staffX, staffY - 2, s * 0.03, PAL.necromancerSkull);
+    // Skull eye sockets
+    ctx.fillStyle = PAL.necromancerGreen;
+    ctx.fillRect(staffX - 1.5, staffY - 3, 1, 1);
+    ctx.fillRect(staffX + 0.5, staffY - 3, 1, 1);
+
+    // Arms
+    const armW = s * 0.08;
+    const armH = s * 0.18;
+    this._oRect(
+      ctx,
+      cx + robeW / 2 - armW,
+      robeY + 4,
+      armW,
+      armH,
+      PAL.necromancerPurple,
+    );
+    this._oRect(
+      ctx,
+      cx - robeW / 2 - armW + 6,
+      robeY + 2,
+      armW,
+      armH,
+      PAL.necromancerPurple,
+    );
+
+    // Hooded head
+    const headR = s * 0.12;
+    const headY = robeY - headR * 0.5;
+    this._oCircle(ctx, cx, headY, headR, PAL.necromancerDark);
+
+    // Hood
+    ctx.fillStyle = PAL.necromancerPurple;
+    ctx.strokeStyle = PAL.outline;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - headR * 1.3, headY - headR * 0.3);
+    ctx.quadraticCurveTo(
+      cx,
+      headY - headR * 1.8,
+      cx + headR * 1.3,
+      headY - headR * 0.3,
+    );
+    ctx.lineTo(cx + headR * 0.8, headY + headR * 0.8);
+    ctx.lineTo(cx - headR * 0.8, headY + headR * 0.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Glowing green eyes in hood shadow
+    ctx.fillStyle = PAL.necromancerGreen;
+    ctx.beginPath();
+    ctx.arc(cx - s * 0.04, headY, 2, 0, Math.PI * 2);
+    ctx.arc(cx + s * 0.04, headY, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // --- Berserker (ground, size 35) ---
+  _drawBerserker(ctx, s, f, hp, maxHp) {
+    const cx = s / 2;
+    const bottom = s * 0.93;
+    const isEnraged = hp != null && maxHp != null && hp / maxHp < 0.5;
+
+    // Rage flames when below 50% HP
+    if (isEnraged) {
+      ctx.fillStyle = PAL.berserkerFlame;
+      ctx.globalAlpha = 0.4 + Math.sin(f * Math.PI * 0.5) * 0.3;
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2 + f * 0.8;
+        const dist = s * 0.25;
+        const px = cx + Math.cos(angle) * dist;
+        const py = s * 0.4 + Math.sin(angle) * dist * 0.6;
+        const flameSize = 2 + Math.random() * 2;
+        ctx.beginPath();
+        ctx.arc(px, py, flameSize, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1.0;
+    }
+
+    // Legs (muscular)
+    const legW = s * 0.12;
+    const legH = s * 0.18;
+    const gap = s * 0.08;
+    const phase = LEG_PHASE[f];
+    this._oRect(
+      ctx,
+      cx - gap - legW / 2,
+      bottom - legH + phase.left * 0.8,
+      legW,
+      legH,
+      PAL.berserkerRed,
+    );
+    this._oRect(
+      ctx,
+      cx + gap - legW / 2,
+      bottom - legH + phase.right * 0.8,
+      legW,
+      legH,
+      PAL.berserkerRed,
+    );
+
+    // Body (muscular warrior)
+    const bodyW = s * 0.28;
+    const bodyH = s * 0.32;
+    const bodyY = s * 0.35;
+    this._oRect(ctx, cx - bodyW / 2, bodyY, bodyW, bodyH, PAL.berserkerRed);
+
+    // War paint stripes
+    ctx.fillStyle = PAL.berserkerDark;
+    ctx.fillRect(cx - bodyW / 2 + 2, bodyY + 4, bodyW - 4, 2);
+    ctx.fillRect(cx - bodyW / 2 + 2, bodyY + bodyH - 6, bodyW - 4, 2);
+
+    // Spiked armor chest piece
+    ctx.fillStyle = PAL.berserkerDark;
+    ctx.fillRect(cx - bodyW / 2 + 4, bodyY + 6, bodyW - 8, bodyH - 12);
+    // Spikes
+    for (let i = 0; i < 3; i++) {
+      const spikeX = cx - bodyW / 4 + (i * bodyW) / 4;
+      ctx.beginPath();
+      ctx.moveTo(spikeX - 2, bodyY + 6);
+      ctx.lineTo(spikeX, bodyY + 2);
+      ctx.lineTo(spikeX + 2, bodyY + 6);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Dual axes
+    const axeSize = s * 0.15;
+    // Left axe
+    ctx.fillStyle = PAL.berserkerDark;
+    ctx.strokeStyle = PAL.outline;
+    ctx.lineWidth = 1;
+    ctx.save();
+    ctx.translate(
+      cx - bodyW / 2 - axeSize / 2,
+      bodyY + bodyH * 0.3 + phase.right * 2,
+    );
+    ctx.rotate(-0.3);
+    // Handle
+    ctx.fillRect(-1, -axeSize, 2, axeSize);
+    // Blade
+    ctx.beginPath();
+    ctx.moveTo(-6, -axeSize + 4);
+    ctx.lineTo(6, -axeSize + 4);
+    ctx.lineTo(4, -axeSize - 2);
+    ctx.lineTo(-4, -axeSize - 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // Right axe
+    ctx.save();
+    ctx.translate(
+      cx + bodyW / 2 + axeSize / 2,
+      bodyY + bodyH * 0.3 + phase.left * 2,
+    );
+    ctx.rotate(0.3);
+    // Handle
+    ctx.fillRect(-1, -axeSize, 2, axeSize);
+    // Blade
+    ctx.beginPath();
+    ctx.moveTo(-6, -axeSize + 4);
+    ctx.lineTo(6, -axeSize + 4);
+    ctx.lineTo(4, -axeSize - 2);
+    ctx.lineTo(-4, -axeSize - 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // Head
+    const headR = s * 0.11;
+    const headY = bodyY - headR * 0.8;
+    this._oCircle(ctx, cx, headY, headR, PAL.berserkerOrange);
+
+    // War paint on face
+    ctx.fillStyle = PAL.berserkerDark;
+    ctx.fillRect(cx - headR * 0.8, headY - 2, headR * 1.6, 1);
+    ctx.fillRect(cx - 1, headY - headR * 0.8, 2, headR);
+
+    // Eyes (glowing red when enraged)
+    const eyeColor = isEnraged ? PAL.berserkerRage : PAL.eye;
+    this._oCircle(ctx, cx - s * 0.04, headY - 1, s * 0.025, eyeColor, false);
+    this._oCircle(ctx, cx + s * 0.04, headY - 1, s * 0.025, eyeColor, false);
+    if (!isEnraged) {
+      this._oCircle(ctx, cx - s * 0.04, headY - 1, s * 0.015, PAL.pupil, false);
+      this._oCircle(ctx, cx + s * 0.04, headY - 1, s * 0.015, PAL.pupil, false);
+    }
+  }
+
+  // --- Phoenix (air, size 45) ---
+  _drawPhoenix(ctx, s, f) {
+    const cx = s / 2;
+    const bodyY = s * 0.4;
+
+    // Fire trail particles
+    ctx.fillStyle = PAL.phoenixFire;
+    ctx.globalAlpha = 0.6;
+    for (let i = 0; i < 12; i++) {
+      const trailOffset = i * 4 + f * 2;
+      const px = cx + (Math.random() - 0.5) * s * 0.3;
+      const py = bodyY + trailOffset + (Math.random() - 0.5) * s * 0.1;
+      if (py < s) {
+        const particleSize = 1 + Math.random() * 2;
+        ctx.beginPath();
+        ctx.arc(px, py, particleSize, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Majestic spread wings using bezierCurves
+    const wingSpan = s * 0.7;
+    const wingHeight = s * 0.25;
+    const flapAngle = (WING_ANGLE[f] * Math.PI) / 180;
+
+    ctx.fillStyle = PAL.phoenixOrange;
+    ctx.strokeStyle = PAL.phoenixRed;
+    ctx.lineWidth = 1.5;
+
+    // Left wing
+    ctx.save();
+    ctx.translate(cx - s * 0.15, bodyY);
+    ctx.rotate(-0.2 + flapAngle);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    // Detailed feather curves
+    ctx.bezierCurveTo(
+      -wingSpan * 0.3,
+      -wingHeight * 0.8,
+      -wingSpan * 0.7,
+      -wingHeight * 0.6,
+      -wingSpan,
+      -wingHeight * 0.3,
+    );
+    ctx.bezierCurveTo(
+      -wingSpan * 0.9,
+      -wingHeight * 0.1,
+      -wingSpan * 0.6,
+      wingHeight * 0.2,
+      -wingSpan * 0.3,
+      wingHeight * 0.1,
+    );
+    ctx.bezierCurveTo(-wingSpan * 0.1, wingHeight * 0.05, 0, 0, 0, 0);
+    ctx.fill();
+    ctx.stroke();
+
+    // Wing feather details
+    ctx.strokeStyle = PAL.phoenixRed;
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-wingSpan * (i * 0.15), -wingHeight * 0.5);
+      ctx.lineTo(-wingSpan * (i * 0.15) + 3, wingHeight * 0.1);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Right wing
+    ctx.save();
+    ctx.translate(cx + s * 0.15, bodyY);
+    ctx.rotate(0.2 - flapAngle);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(
+      wingSpan * 0.3,
+      -wingHeight * 0.8,
+      wingSpan * 0.7,
+      -wingHeight * 0.6,
+      wingSpan,
+      -wingHeight * 0.3,
+    );
+    ctx.bezierCurveTo(
+      wingSpan * 0.9,
+      -wingHeight * 0.1,
+      wingSpan * 0.6,
+      wingHeight * 0.2,
+      wingSpan * 0.3,
+      wingHeight * 0.1,
+    );
+    ctx.bezierCurveTo(wingSpan * 0.1, wingHeight * 0.05, 0, 0, 0, 0);
+    ctx.fill();
+    ctx.stroke();
+
+    // Wing feather details
+    ctx.strokeStyle = PAL.phoenixRed;
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(wingSpan * (i * 0.15), -wingHeight * 0.5);
+      ctx.lineTo(wingSpan * (i * 0.15) - 3, wingHeight * 0.1);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Bright glowing body
+    ctx.fillStyle = PAL.phoenixGlow;
+    this._oEllipse(ctx, cx, bodyY, s * 0.12, s * 0.18, PAL.phoenixGold);
+
+    // Tail feathers
+    const tailLength = s * 0.25;
+    ctx.strokeStyle = PAL.phoenixRed;
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(cx + i * 4, bodyY + s * 0.1);
+      ctx.quadraticCurveTo(
+        cx + i * 8 + Math.sin(f * Math.PI * 0.5) * 3,
+        bodyY + tailLength * 0.7,
+        cx + i * 6,
+        bodyY + tailLength,
+      );
+      ctx.stroke();
+    }
+
+    // Head (regal)
+    const headR = s * 0.09;
+    const headY = bodyY - s * 0.12;
+    this._oCircle(ctx, cx, headY, headR, PAL.phoenixGold);
+
+    // Crown feathers
+    ctx.fillStyle = PAL.phoenixRed;
+    ctx.strokeStyle = PAL.outline;
+    ctx.lineWidth = 1;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(cx + i * 4, headY - headR);
+      ctx.lineTo(cx + i * 6, headY - headR - 8);
+      ctx.lineTo(cx + i * 2, headY - headR - 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Eyes (bright)
+    this._oCircle(ctx, cx - s * 0.035, headY, s * 0.02, PAL.phoenixRed, false);
+    this._oCircle(ctx, cx + s * 0.035, headY, s * 0.02, PAL.phoenixRed, false);
+
+    // Beak
+    ctx.fillStyle = PAL.phoenixOrange;
+    ctx.beginPath();
+    ctx.moveTo(cx, headY + headR * 0.3);
+    ctx.lineTo(cx - 2, headY + headR * 0.7);
+    ctx.lineTo(cx + 2, headY + headR * 0.7);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // --- Swarmling (ground, size 18) ---
+  _drawSwarmling(ctx, s, f) {
+    const cx = s / 2;
+    const bottom = s * 0.9;
+
+    // Fast-moving legs (insect style)
+    const legW = s * 0.08;
+    const legH = s * 0.15;
+    const legSpacing = s * 0.06;
+    const phase = LEG_PHASE[f];
+
+    // Multiple legs for insect look
+    for (let i = -1; i <= 1; i++) {
+      this._oRect(
+        ctx,
+        cx + i * legSpacing - legW / 2,
+        bottom - legH + phase.left * 1.5,
+        legW,
+        legH,
+        PAL.swarmlingDark,
+      );
+    }
+
+    // Segmented chitin body
+    const segmentCount = 3;
+    const segmentW = s * 0.25;
+    const segmentH = s * 0.12;
+    for (let i = 0; i < segmentCount; i++) {
+      const segmentY = s * 0.45 + i * segmentH * 0.8;
+      this._oEllipse(
+        ctx,
+        cx,
+        segmentY,
+        segmentW * (0.8 + i * 0.1),
+        segmentH,
+        PAL.swarmlingChitin,
+      );
+
+      // Chitin lines
+      ctx.strokeStyle = PAL.swarmlingDark;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx - segmentW * 0.5, segmentY);
+      ctx.lineTo(cx + segmentW * 0.5, segmentY);
+      ctx.stroke();
+    }
+
+    // Head (small, insect-like)
+    const headR = s * 0.08;
+    const headY = s * 0.35;
+    this._oEllipse(ctx, cx, headY, headR, headR * 0.8, PAL.swarmlingDark);
+
+    // Small red eyes
+    this._oCircle(ctx, cx - s * 0.03, headY, s * 0.02, PAL.swarmlingRed, false);
+    this._oCircle(ctx, cx + s * 0.03, headY, s * 0.02, PAL.swarmlingRed, false);
+
+    // Mandibles
+    ctx.fillStyle = PAL.swarmlingDark;
+    ctx.strokeStyle = PAL.outline;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - 3, headY + headR * 0.5);
+    ctx.lineTo(cx - 5, headY + headR * 0.8);
+    ctx.lineTo(cx - 1, headY + headR * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 3, headY + headR * 0.5);
+    ctx.lineTo(cx + 5, headY + headR * 0.8);
+    ctx.lineTo(cx + 1, headY + headR * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // --- Shadow Dragon (air, boss, size 72) ---
+  _drawShadowDragon(ctx, s, f) {
+    const cx = s / 2;
+
+    // Shadow aura effect
+    ctx.fillStyle = PAL.shadowDragonGlow;
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.arc(cx, s * 0.45, s * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+
+    // Dark energy particles
+    ctx.fillStyle = PAL.shadowDragonPurple;
+    ctx.globalAlpha = 0.7;
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2 + f * 0.3;
+      const dist = s * 0.3;
+      const px = cx + Math.cos(angle) * dist;
+      const py = s * 0.45 + Math.sin(angle) * dist * 0.7;
+      ctx.beginPath();
+      ctx.arc(px, py, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Large detailed wings with membrane texture
+    this._drawDragonWings(
+      ctx,
+      cx,
+      s * 0.25,
+      s * 1.3,
+      f,
+      PAL.shadowDragonBlack,
+      PAL.shadowDragonDark,
+    );
+
+    // Massive dragon body
+    const bodyRx = s * 0.18;
+    const bodyRy = s * 0.25;
+    this._oEllipse(ctx, cx, s * 0.45, bodyRx, bodyRy, PAL.shadowDragonBlack);
+
+    // Armored scales
+    ctx.strokeStyle = PAL.shadowDragonPurple;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.6;
+    for (let i = 0; i < 5; i++) {
+      const scaleY = s * 0.35 + (i * (bodyRy * 2)) / 5;
+      ctx.beginPath();
+      ctx.moveTo(cx - bodyRx * 0.8, scaleY);
+      ctx.quadraticCurveTo(cx, scaleY - 3, cx + bodyRx * 0.8, scaleY);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Long dragon tail
+    ctx.strokeStyle = PAL.shadowDragonBlack;
+    ctx.lineWidth = s * 0.08;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx, s * 0.6);
+    ctx.quadraticCurveTo(cx + s * 0.3, s * 0.8, cx + s * 0.4, s * 0.5);
+    ctx.stroke();
+
+    // Neck
+    this._oRect(
+      ctx,
+      cx - s * 0.05,
+      s * 0.15,
+      s * 0.1,
+      s * 0.15,
+      PAL.shadowDragonBlack,
+    );
+
+    // Dragon head (imposing)
+    const headRx = s * 0.1;
+    const headRy = s * 0.08;
+    const headY = s * 0.18;
+    this._oEllipse(ctx, cx, headY, headRx, headRy, PAL.shadowDragonBlack);
+
+    // Crown-like horns
+    ctx.fillStyle = PAL.shadowDragonPurple;
+    ctx.strokeStyle = PAL.outline;
+    ctx.lineWidth = 1.5;
+    // Center horn (largest)
+    ctx.beginPath();
+    ctx.moveTo(cx - 2, headY - headRy);
+    ctx.lineTo(cx, headY - headRy - s * 0.12);
+    ctx.lineTo(cx + 2, headY - headRy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Side horns
+    for (let i = -1; i <= 1; i += 2) {
+      ctx.beginPath();
+      ctx.moveTo(cx + i * headRx * 0.6, headY - headRy * 0.5);
+      ctx.lineTo(cx + i * headRx * 1.2, headY - headRy - s * 0.08);
+      ctx.lineTo(cx + i * headRx * 0.4, headY - headRy * 0.3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Glowing purple eyes
+    ctx.fillStyle = PAL.shadowDragonPurple;
+    ctx.beginPath();
+    ctx.arc(cx - s * 0.04, headY, s * 0.025, 0, Math.PI * 2);
+    ctx.arc(cx + s * 0.04, headY, s * 0.025, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye glow effect
+    ctx.fillStyle = PAL.shadowDragonGlow;
+    ctx.beginPath();
+    ctx.arc(cx - s * 0.04, headY, s * 0.035, 0, Math.PI * 2);
+    ctx.arc(cx + s * 0.04, headY, s * 0.035, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Snout with shadow flames
+    ctx.fillStyle = PAL.shadowDragonDark;
+    ctx.beginPath();
+    ctx.moveTo(cx, headY + headRy);
+    ctx.lineTo(cx - 3, headY + headRy + 6);
+    ctx.lineTo(cx + 3, headY + headRy + 6);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // --- Demon King (ground, boss, size 85) ---
+  _drawDemonKing(ctx, s, f) {
+    const cx = s / 2;
+    const bottom = s * 0.95;
+
+    // Glowing rune circles beneath
+    ctx.strokeStyle = PAL.demonKingRune;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.4 + Math.sin(f * Math.PI * 0.5) * 0.3;
+    for (let ring = 0; ring < 3; ring++) {
+      const radius = s * (0.25 + ring * 0.1);
+      ctx.beginPath();
+      ctx.arc(cx, bottom - s * 0.1, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Rune symbols on circles
+      for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2 + f * 0.2;
+        const runeX = cx + Math.cos(angle) * radius;
+        const runeY = bottom - s * 0.1 + Math.sin(angle) * radius;
+        ctx.fillStyle = PAL.demonKingRune;
+        ctx.fillRect(runeX - 1, runeY - 1, 2, 2);
+      }
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Hellfire aura
+    ctx.fillStyle = PAL.demonKingFire;
+    ctx.globalAlpha = 0.4;
+    for (let i = 0; i < 15; i++) {
+      const angle = (i / 15) * Math.PI * 2 + f * 0.6;
+      const dist = s * (0.35 + Math.sin(f * Math.PI + i) * 0.1);
+      const px = cx + Math.cos(angle) * dist;
+      const py = s * 0.5 + Math.sin(angle) * dist * 0.8;
+      const flameSize = 2 + Math.random() * 3;
+      ctx.beginPath();
+      ctx.arc(px, py, flameSize, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Cape/wings (demonic)
+    ctx.fillStyle = PAL.demonKingBlack;
+    ctx.strokeStyle = PAL.demonKingRed;
+    ctx.lineWidth = 2;
+
+    // Left cape wing
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.15, s * 0.25);
+    ctx.quadraticCurveTo(cx - s * 0.4, s * 0.4, cx - s * 0.35, s * 0.7);
+    ctx.quadraticCurveTo(cx - s * 0.2, s * 0.8, cx - s * 0.1, s * 0.6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Right cape wing
+    ctx.beginPath();
+    ctx.moveTo(cx + s * 0.15, s * 0.25);
+    ctx.quadraticCurveTo(cx + s * 0.4, s * 0.4, cx + s * 0.35, s * 0.7);
+    ctx.quadraticCurveTo(cx + s * 0.2, s * 0.8, cx + s * 0.1, s * 0.6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Massive legs
+    const legW = s * 0.14;
+    const legH = s * 0.25;
+    const gap = s * 0.12;
+    const phase = LEG_PHASE[f];
+    this._oRect(
+      ctx,
+      cx - gap - legW / 2,
+      bottom - legH + phase.left * 0.3,
+      legW,
+      legH,
+      PAL.demonKingRed,
+    );
+    this._oRect(
+      ctx,
+      cx + gap - legW / 2,
+      bottom - legH + phase.right * 0.3,
+      legW,
+      legH,
+      PAL.demonKingRed,
+    );
+
+    // Heavy demon armor body
+    const bodyW = s * 0.4;
+    const bodyH = s * 0.38;
+    const bodyY = s * 0.32;
+    this._oRect(ctx, cx - bodyW / 2, bodyY, bodyW, bodyH, PAL.demonKingRed);
+
+    // Armor plating with runes
+    ctx.fillStyle = PAL.demonKingBlack;
+    ctx.fillRect(cx - bodyW / 2 + 3, bodyY + 3, bodyW - 6, bodyH - 6);
+
+    // Glowing runes on armor
+    ctx.fillStyle = PAL.demonKingRune;
+    ctx.globalAlpha = 0.8;
+    for (let i = 0; i < 3; i++) {
+      const runeY = bodyY + 8 + i * 8;
+      ctx.fillRect(cx - 2, runeY, 4, 2);
+      ctx.fillRect(cx - 1, runeY - 1, 2, 4);
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Giant sword or trident
+    const weaponX = cx + bodyW / 2 + s * 0.05;
+    const weaponY = bodyY - s * 0.1;
+    const weaponH = s * 0.5;
+
+    // Handle
+    ctx.strokeStyle = PAL.demonKingBlack;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(weaponX, weaponY + weaponH);
+    ctx.lineTo(weaponX, weaponY);
+    ctx.stroke();
+
+    // Trident head
+    ctx.fillStyle = PAL.demonKingRed;
+    ctx.strokeStyle = PAL.outline;
+    ctx.lineWidth = 1.5;
+    // Center prong
+    ctx.beginPath();
+    ctx.moveTo(weaponX - 3, weaponY + 8);
+    ctx.lineTo(weaponX, weaponY - 2);
+    ctx.lineTo(weaponX + 3, weaponY + 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Side prongs
+    for (let i = -1; i <= 1; i += 2) {
+      ctx.beginPath();
+      ctx.moveTo(weaponX + i * 4, weaponY + 6);
+      ctx.lineTo(weaponX + i * 8, weaponY - 2);
+      ctx.lineTo(weaponX + i * 6, weaponY + 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Massive arms
+    const armW = s * 0.15;
+    const armH = s * 0.3;
+    this._oRect(
+      ctx,
+      cx - bodyW / 2 - armW + 2,
+      bodyY + phase.right * 0.2,
+      armW,
+      armH,
+      PAL.demonKingRed,
+    );
+    this._oRect(
+      ctx,
+      cx + bodyW / 2 - 2,
+      bodyY + phase.left * 0.2,
+      armW,
+      armH,
+      PAL.demonKingRed,
+    );
+
+    // Burning crown
+    const headR = s * 0.15;
+    const headY = bodyY - headR * 0.6;
+    this._oCircle(ctx, cx, headY, headR, PAL.demonKingRed);
+
+    // Crown with flames
+    ctx.fillStyle = PAL.demonKingGold;
+    ctx.strokeStyle = PAL.outline;
+    ctx.lineWidth = 1.5;
+    for (let i = -2; i <= 2; i++) {
+      const crownX = cx + i * 4;
+      const crownHeight = 8 + Math.abs(i) * 2;
+      ctx.beginPath();
+      ctx.moveTo(crownX - 2, headY - headR);
+      ctx.lineTo(crownX, headY - headR - crownHeight);
+      ctx.lineTo(crownX + 2, headY - headR);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Flame on crown tip
+      ctx.fillStyle = PAL.demonKingRune;
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      ctx.arc(crownX, headY - headR - crownHeight + 2, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+      ctx.fillStyle = PAL.demonKingGold;
+    }
+
+    // Massive curved horns
+    ctx.fillStyle = PAL.demonKingBlack;
+    ctx.strokeStyle = PAL.outline;
+    ctx.lineWidth = 2;
+    // Left horn
+    ctx.beginPath();
+    ctx.moveTo(cx - headR * 0.8, headY - headR * 0.3);
+    ctx.quadraticCurveTo(
+      cx - headR * 2.5,
+      headY - headR * 1.8,
+      cx - headR * 0.6,
+      headY - headR * 2.5,
+    );
+    ctx.lineTo(cx - headR * 0.3, headY - headR * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Right horn
+    ctx.beginPath();
+    ctx.moveTo(cx + headR * 0.8, headY - headR * 0.3);
+    ctx.quadraticCurveTo(
+      cx + headR * 2.5,
+      headY - headR * 1.8,
+      cx + headR * 0.6,
+      headY - headR * 2.5,
+    );
+    ctx.lineTo(cx + headR * 0.3, headY - headR * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Multiple eye glow effects (demonic)
+    ctx.fillStyle = PAL.demonKingFire;
+    ctx.globalAlpha = 0.8;
+    ctx.fillRect(cx - s * 0.08, headY - 3, 6, 4);
+    ctx.fillRect(cx + s * 0.04, headY - 3, 6, 4);
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = PAL.demonKingRune;
+    ctx.fillRect(cx - s * 0.08 + 1, headY - 2, 4, 2);
+    ctx.fillRect(cx + s * 0.04 + 1, headY - 2, 4, 2);
+  }
+
+  // --- Worm Queen (ground, boss, size 90) ---
+  _drawWormQueen(ctx, s, f) {
+    const cx = s / 2;
+    const bottom = s * 0.9;
+
+    // Ground debris particles
+    ctx.fillStyle = PAL.wormQueenDark;
+    ctx.globalAlpha = 0.5;
+    for (let i = 0; i < 10; i++) {
+      const debrisX = cx + (Math.random() - 0.5) * s * 0.8;
+      const debrisY = bottom + (Math.random() - 0.5) * s * 0.1;
+      const debrisSize = 1 + Math.random() * 2;
+      ctx.beginPath();
+      ctx.arc(debrisX, debrisY, debrisSize, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Multiple segments drawn in wave pattern
+    const segmentCount = 8;
+    const segmentSize = s * 0.12;
+    const waveAmplitude = s * 0.15;
+    const waveFreq = 0.3;
+
+    for (let i = 0; i < segmentCount; i++) {
+      const segmentY = s * (0.2 + i * 0.08);
+      const waveOffset =
+        Math.sin(f * Math.PI * waveFreq + i * 0.5) * waveAmplitude;
+      const segmentX = cx + waveOffset;
+      const segmentRadius = segmentSize * (1 - i * 0.05);
+
+      // Segment body
+      this._oCircle(
+        ctx,
+        segmentX,
+        segmentY,
+        segmentRadius,
+        PAL.wormQueenPurple,
+      );
+
+      // Chitinous ridges
+      ctx.strokeStyle = PAL.wormQueenDark;
+      ctx.lineWidth = 1;
+      for (let ridge = -1; ridge <= 1; ridge++) {
+        ctx.beginPath();
+        ctx.arc(
+          segmentX,
+          segmentY,
+          segmentRadius * 0.8 + ridge * 2,
+          0,
+          Math.PI * 2,
+        );
+        ctx.stroke();
+      }
+
+      // Toxic spots
+      if (i % 2 === 0) {
+        ctx.fillStyle = PAL.wormQueenToxic;
+        ctx.globalAlpha = 0.6;
+        ctx.beginPath();
+        ctx.arc(segmentX - 3, segmentY - 2, 2, 0, Math.PI * 2);
+        ctx.arc(segmentX + 2, segmentY + 1, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+      }
+    }
+
+    // Head (front segment) - crown of mandibles/fangs
+    const headX = cx + Math.sin(f * Math.PI * waveFreq) * waveAmplitude;
+    const headY = s * 0.15;
+    const headRadius = s * 0.15;
+
+    this._oCircle(ctx, headX, headY, headRadius, PAL.wormQueenPurple);
+
+    // Crown of mandibles
+    ctx.fillStyle = PAL.wormQueenDark;
+    ctx.strokeStyle = PAL.outline;
+    ctx.lineWidth = 1.5;
+
+    const mandibleCount = 6;
+    for (let i = 0; i < mandibleCount; i++) {
+      const angle = (i / mandibleCount) * Math.PI * 2;
+      const mandibleLength = s * 0.08;
+      const mandibleX = headX + Math.cos(angle) * headRadius * 0.8;
+      const mandibleY = headY + Math.sin(angle) * headRadius * 0.8;
+      const tipX = mandibleX + Math.cos(angle) * mandibleLength;
+      const tipY = mandibleY + Math.sin(angle) * mandibleLength;
+
+      ctx.beginPath();
+      ctx.moveTo(mandibleX - 2, mandibleY - 1);
+      ctx.lineTo(tipX, tipY);
+      ctx.lineTo(mandibleX + 2, mandibleY + 1);
+      ctx.lineTo(mandibleX, mandibleY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Glowing purple eyes (multiple)
+    ctx.fillStyle = PAL.wormQueenPurple;
+    const eyePositions = [
+      { x: -4, y: -3 },
+      { x: 4, y: -3 },
+      { x: -2, y: 2 },
+      { x: 2, y: 2 },
+    ];
+
+    eyePositions.forEach((pos) => {
+      ctx.beginPath();
+      ctx.arc(headX + pos.x, headY + pos.y, 2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Eye glow
+    ctx.fillStyle = PAL.wormQueenGlow;
+    ctx.globalAlpha = 0.6;
+    eyePositions.forEach((pos) => {
+      ctx.beginPath();
+      ctx.arc(headX + pos.x, headY + pos.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1.0;
+
+    // Toxic drool
+    ctx.fillStyle = PAL.wormQueenToxic;
+    ctx.globalAlpha = 0.8;
+    for (let i = 0; i < 3; i++) {
+      const droolX = headX + (i - 1) * 3;
+      const droolY = headY + headRadius;
+      ctx.beginPath();
+      ctx.arc(droolX, droolY + i * 4, 1, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1.0;

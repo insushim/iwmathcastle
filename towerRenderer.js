@@ -332,8 +332,10 @@ export class TowerRenderer {
       copper: () => this._drawCopperAnimated(ctx, ts),
       transcendent: () => this._drawTranscendentAnimated(ctx, ts),
       random_cheap: () => {},
-      random_medium: () => this._drawParticles(ctx, ts, 0, -16, 3, 14, "#8000FF", 0.001),
-      random_expensive: () => this._drawParticles(ctx, ts, 0, -16, 6, 16, "#FFFACD", 0.0015),
+      random_medium: () =>
+        this._drawParticles(ctx, ts, 0, -16, 3, 14, "#8000FF", 0.001),
+      random_expensive: () =>
+        this._drawParticles(ctx, ts, 0, -16, 6, 16, "#FFFACD", 0.0015),
     };
     const fn = map[towerType];
     if (fn) fn();
@@ -372,7 +374,6 @@ export class TowerRenderer {
     return map[type] || null;
   }
 
-
   // ---------------------------------------------------------------------------
   // STATIC tower body renderers (cached, no timestamp)
   // ---------------------------------------------------------------------------
@@ -392,10 +393,18 @@ export class TowerRenderer {
     ctx.stroke();
   }
 
-  _drawPlusStatic(ctx) { this._drawMathCrystalStatic(ctx, PAL.plus, "+"); }
-  _drawMinusStatic(ctx) { this._drawMathCrystalStatic(ctx, PAL.minus, "\u2212"); }
-  _drawMultiplyStatic(ctx) { this._drawMathCrystalStatic(ctx, PAL.multiply, "\u00D7"); }
-  _drawDivideStatic(ctx) { this._drawMathCrystalStatic(ctx, PAL.divide, "\u00F7"); }
+  _drawPlusStatic(ctx) {
+    this._drawMathCrystalStatic(ctx, PAL.plus, "+");
+  }
+  _drawMinusStatic(ctx) {
+    this._drawMathCrystalStatic(ctx, PAL.minus, "\u2212");
+  }
+  _drawMultiplyStatic(ctx) {
+    this._drawMathCrystalStatic(ctx, PAL.multiply, "\u00D7");
+  }
+  _drawDivideStatic(ctx) {
+    this._drawMathCrystalStatic(ctx, PAL.divide, "\u00F7");
+  }
 
   _drawMathAnimated(ctx, ts, pal) {
     const p = this._pulse01(ts, 0.003);
@@ -634,7 +643,6 @@ export class TowerRenderer {
     this._drawParticles(ctx, ts, 0, -24, 5, 10, pal.crack, 0.0012);
   }
 
-
   _drawPoisonStatic(ctx) {
     const pal = PAL.poison;
     ctx.fillStyle = pal.cauldron;
@@ -769,7 +777,8 @@ export class TowerRenderer {
     ctx.strokeStyle = pal.web;
     ctx.lineWidth = 0.8;
     ctx.globalAlpha = 0.7;
-    const cx = 0, cy = -24;
+    const cx = 0,
+      cy = -24;
     for (let i = 0; i < 8; i++) {
       const angle = (i * Math.PI) / 4;
       const len = 10;
@@ -923,7 +932,6 @@ export class TowerRenderer {
     ctx.stroke();
   }
 
-
   _drawCopperStatic(ctx) {
     const pal = PAL.copper;
     ctx.fillStyle = pal.main;
@@ -954,7 +962,7 @@ export class TowerRenderer {
     ctx.strokeStyle = O;
     ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.fillStyle = '#5F8F4F';
+    ctx.fillStyle = "#5F8F4F";
     ctx.globalAlpha = 0.15;
     ctx.beginPath();
     ctx.arc(-6, -14, 3, 0, Math.PI * 2);
@@ -996,18 +1004,18 @@ export class TowerRenderer {
       if (fs <= 0) continue;
       ctx.save();
       ctx.globalAlpha = 0.7 - i * 0.1;
-      ctx.fillStyle = i < 2 ? pal.flame : '#FF8C00';
+      ctx.fillStyle = i < 2 ? pal.flame : "#FF8C00";
       ctx.beginPath();
       ctx.arc(fx, fy, fs, 0, Math.PI * 2);
       ctx.fill();
       if (i < 3) {
-        ctx.fillStyle = '#FFCC00';
+        ctx.fillStyle = "#FFCC00";
         ctx.beginPath();
         ctx.arc(fx, fy, fs * 0.5, 0, Math.PI * 2);
         ctx.fill();
       }
       if (i === 0) {
-        ctx.fillStyle = '#FFFFFF';
+        ctx.fillStyle = "#FFFFFF";
         ctx.beginPath();
         ctx.arc(fx, fy + 1, fs * 0.25, 0, Math.PI * 2);
         ctx.fill();
@@ -1069,31 +1077,30 @@ export class TowerRenderer {
     ctx.fillRect(-10, -18, 20, 2);
     ctx.fillRect(-10, -12, 20, 2);
     ctx.save();
-    ctx.font = 'bold 16px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.font = "bold 16px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
     ctx.fillText(symbol, 1, -14);
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = "#FFFFFF";
     ctx.fillText(symbol, 0, -15);
     ctx.restore();
   }
 
   _drawRandomCheapStatic(ctx) {
     const pal = PAL.randomCheap;
-    this._drawRandomBoxStatic(ctx, pal, '?', pal.wood, pal.band);
+    this._drawRandomBoxStatic(ctx, pal, "?", pal.wood, pal.band);
   }
 
   _drawRandomMediumStatic(ctx) {
     const pal = PAL.randomMedium;
-    this._drawRandomBoxStatic(ctx, pal, '?', pal.metal, pal.metalDark);
+    this._drawRandomBoxStatic(ctx, pal, "?", pal.metal, pal.metalDark);
   }
 
   _drawRandomExpensiveStatic(ctx) {
     const pal = PAL.randomExpensive;
-    this._drawRandomBoxStatic(ctx, pal, '!', pal.gold, pal.goldDark);
+    this._drawRandomBoxStatic(ctx, pal, "!", pal.gold, pal.goldDark);
   }
-
 
   _drawSilverStatic(ctx) {
     const pal = PAL.silver;
@@ -1204,16 +1211,16 @@ export class TowerRenderer {
     ctx.lineWidth = 0.8;
     ctx.strokeRect(-8, -20, 16, 3);
     const jewels = [
-      { x: -5, y: -25, c: '#FF0000' },
-      { x: 0, y: -27, c: '#0000FF' },
-      { x: 5, y: -25, c: '#00FF00' },
+      { x: -5, y: -25, c: "#FF0000" },
+      { x: 0, y: -27, c: "#0000FF" },
+      { x: 5, y: -25, c: "#00FF00" },
     ];
     jewels.forEach((j) => {
       ctx.fillStyle = j.c;
       ctx.beginPath();
       ctx.arc(j.x, j.y, 2, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#FFFFFF';
+      ctx.fillStyle = "#FFFFFF";
       ctx.globalAlpha = 0.5;
       ctx.beginPath();
       ctx.arc(j.x - 0.5, j.y - 0.5, 0.8, 0, Math.PI * 2);
@@ -1756,6 +1763,34 @@ export class TowerRenderer {
 
     // Ember particles
     this._drawParticles(ctx, ts, 0, -24, 5, 10, pal.crack, 0.0012);
+
+    // Enhanced crystal glow pulsing
+    const emberGlowAlpha = 0.3 + 0.2 * Math.sin(ts * 0.003);
+    ctx.globalAlpha = emberGlowAlpha;
+    ctx.fillStyle = pal.lava;
+    ctx.beginPath();
+    ctx.arc(0, -32, 3 + p * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Smoldering embers floating up
+    ctx.save();
+    for (let i = 0; i < 8; i++) {
+      const emberAge = (ts * 0.001 + i * 0.3) % 2; // 2-second cycle
+      const ex = Math.sin(ts * 0.002 + i) * 4;
+      const ey = -35 - emberAge * 15; // Float upward
+      const esize = Math.max(0, 2 - emberAge); // Shrink as they rise
+      const eAlpha = Math.max(0, 0.8 - emberAge * 0.4);
+
+      if (esize > 0 && eAlpha > 0) {
+        ctx.globalAlpha = eAlpha;
+        ctx.fillStyle = i % 2 ? pal.lava : pal.crack;
+        ctx.beginPath();
+        ctx.arc(ex, ey, esize, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
   }
 
   // ---------------------------------------------------------------------------
@@ -2036,6 +2071,35 @@ export class TowerRenderer {
 
     // Energy particles circling
     this._drawParticles(ctx, ts, 0, -28, 5, 10, pal.beam, 0.002);
+
+    // Enhanced crystal glow pulsing
+    const laserGlowAlpha = 0.3 + 0.2 * Math.sin(ts * 0.003);
+    ctx.globalAlpha = laserGlowAlpha;
+    ctx.fillStyle = pal.crystal;
+    ctx.beginPath();
+    ctx.arc(0, -28, 5 + p * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Continuous beam glow effect that pulses
+    ctx.save();
+    const beamPulse = 0.5 + 0.3 * Math.sin(ts * 0.004);
+
+    // Vertical beam extending upward
+    const gradient = ctx.createLinearGradient(0, -35, 0, -50);
+    gradient.addColorStop(0, `rgba(255,215,0,${beamPulse})`);
+    gradient.addColorStop(1, "rgba(255,215,0,0)");
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(-3, -50, 6, 15);
+
+    // Side glows
+    ctx.globalAlpha = beamPulse * 0.3;
+    ctx.fillStyle = pal.glow;
+    ctx.beginPath();
+    ctx.ellipse(0, -35, 8, 20, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   // ---------------------------------------------------------------------------
@@ -2446,6 +2510,63 @@ export class TowerRenderer {
       this._drawStarShape(ctx, sx, sy, 4, 2, 0.5);
     }
     ctx.restore();
+
+    // Enhanced crystal glow pulsing
+    const crystalGlowAlpha = 0.3 + 0.2 * Math.sin(ts * 0.003);
+    ctx.globalAlpha = crystalGlowAlpha;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.beginPath();
+    ctx.arc(0, -18, 3 + p * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Rotating energy rings around the tower
+    ctx.save();
+    for (let ring = 0; ring < 3; ring++) {
+      const ringRotation =
+        rotation * (1 + ring * 0.3) + (ring * Math.PI * 2) / 3;
+      const ringRadius = 18 + ring * 6;
+      const ringAlpha = 0.2 + 0.1 * Math.sin(ts * 0.004 + ring * 2);
+
+      ctx.globalAlpha = ringAlpha;
+      ctx.strokeStyle = RAINBOW[(ring * 2) % RAINBOW.length];
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+
+      // Draw partial ring (not complete circle)
+      const arcLength = Math.PI * 0.4;
+      ctx.arc(0, -20, ringRadius, ringRotation, ringRotation + arcLength);
+      ctx.stroke();
+
+      // Opposite arc
+      ctx.beginPath();
+      ctx.arc(
+        0,
+        -20,
+        ringRadius,
+        ringRotation + Math.PI,
+        ringRotation + Math.PI + arcLength,
+      );
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Particle trail effects
+    ctx.save();
+    for (let i = 0; i < 12; i++) {
+      const trailAngle = (ts * 0.002 + (i * Math.PI * 2) / 12) % (Math.PI * 2);
+      const trailDist = 25 + Math.sin(ts * 0.003 + i) * 5;
+      const tx = Math.cos(trailAngle) * trailDist;
+      const ty = -20 + Math.sin(trailAngle) * trailDist * 0.3;
+      const trailAlpha = 0.4 + 0.3 * Math.sin(ts * 0.005 + i * 1.5);
+
+      ctx.globalAlpha = trailAlpha;
+      ctx.fillStyle = RAINBOW[i % RAINBOW.length];
+      ctx.beginPath();
+      ctx.arc(tx, ty, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   _drawStarShape(ctx, cx, cy, outerR, innerR, points) {
@@ -2539,6 +2660,56 @@ export class TowerRenderer {
 
     // Radiant sparkles
     this._drawParticles(ctx, ts, 0, -24, 6, 14, pal.light, 0.0008);
+
+    // Enhanced crystal glow pulsing
+    const goldenGlowAlpha = 0.3 + 0.2 * Math.sin(ts * 0.003);
+    ctx.globalAlpha = goldenGlowAlpha;
+    ctx.fillStyle = pal.light;
+    ctx.beginPath();
+    ctx.arc(0, -27, 4 + p * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Metallic sheen effect using gradient fills
+    ctx.save();
+    const gradient = ctx.createLinearGradient(-8, -30, 8, -18);
+    gradient.addColorStop(0, "rgba(255,255,255,0.1)");
+    gradient.addColorStop(0.3, "rgba(255,215,0,0.3)");
+    gradient.addColorStop(0.7, "rgba(218,165,32,0.2)");
+    gradient.addColorStop(1, "rgba(255,255,255,0.1)");
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.moveTo(-7, -6);
+    ctx.lineTo(-5, -18);
+    ctx.lineTo(5, -18);
+    ctx.lineTo(7, -6);
+    ctx.closePath();
+    ctx.fill();
+
+    // Additional sheen on crown
+    const crownGradient = ctx.createLinearGradient(-8, -32, 8, -20);
+    crownGradient.addColorStop(0, "rgba(255,255,255,0.2)");
+    crownGradient.addColorStop(0.5, "rgba(255,215,0,0.4)");
+    crownGradient.addColorStop(1, "rgba(255,255,255,0.1)");
+
+    ctx.fillStyle = crownGradient;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(-8, -18);
+    ctx.lineTo(-9, -28);
+    ctx.lineTo(-5, -24);
+    ctx.lineTo(-2, -30);
+    ctx.lineTo(0, -24);
+    ctx.lineTo(2, -32);
+    ctx.lineTo(4, -24);
+    ctx.lineTo(7, -30);
+    ctx.lineTo(9, -24);
+    ctx.lineTo(10, -28);
+    ctx.lineTo(8, -18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 
   // ---------------------------------------------------------------------------
@@ -2625,6 +2796,38 @@ export class TowerRenderer {
 
     // Silver dust particles
     this._drawParticles(ctx, ts, 0, -30, 4, 12, pal.light, 0.0006);
+
+    // Enhanced crystal glow pulsing
+    const silverGlowAlpha = 0.3 + 0.2 * Math.sin(ts * 0.003);
+    ctx.globalAlpha = silverGlowAlpha;
+    ctx.fillStyle = pal.moon;
+    ctx.beginPath();
+    ctx.arc(0, -32, 4 + p * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Metallic sheen effect for silver
+    ctx.save();
+    const silverGradient = ctx.createLinearGradient(-4, -26, 4, -6);
+    silverGradient.addColorStop(0, "rgba(255,255,255,0.3)");
+    silverGradient.addColorStop(0.4, "rgba(192,192,192,0.4)");
+    silverGradient.addColorStop(0.8, "rgba(169,169,169,0.3)");
+    silverGradient.addColorStop(1, "rgba(255,255,255,0.2)");
+
+    ctx.fillStyle = silverGradient;
+    ctx.globalAlpha = 0.7;
+    ctx.fillRect(-4, -6, 8, -20);
+
+    // Moon surface texture
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = "rgba(255,255,255,0.2)";
+    ctx.beginPath();
+    ctx.arc(-2, -34, 1.5, 0, Math.PI * 2); // Crater 1
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(3, -30, 1, 0, Math.PI * 2); // Crater 2
+    ctx.fill();
+    ctx.restore();
   }
 
   // ---------------------------------------------------------------------------
@@ -2738,6 +2941,45 @@ export class TowerRenderer {
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+
+    // Enhanced crystal glow pulsing
+    const copperGlowAlpha = 0.3 + 0.2 * Math.sin(ts * 0.003);
+    ctx.globalAlpha = copperGlowAlpha;
+    ctx.fillStyle = pal.flame;
+    ctx.beginPath();
+    ctx.arc(0, -30, 3 + p * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Metallic sheen effect for copper
+    ctx.save();
+    const copperGradient = ctx.createLinearGradient(-10, -22, 10, -10);
+    copperGradient.addColorStop(0, "rgba(255,140,0,0.2)");
+    copperGradient.addColorStop(0.3, "rgba(205,133,63,0.4)");
+    copperGradient.addColorStop(0.7, "rgba(184,115,51,0.3)");
+    copperGradient.addColorStop(1, "rgba(255,140,0,0.2)");
+
+    ctx.fillStyle = copperGradient;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(-10, -10);
+    ctx.quadraticCurveTo(-12, -18, -8, -22);
+    ctx.lineTo(8, -22);
+    ctx.quadraticCurveTo(12, -18, 10, -10);
+    ctx.closePath();
+    ctx.fill();
+
+    // Additional warm metallic reflection
+    ctx.fillStyle = "rgba(255,215,0,0.3)";
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.moveTo(-6, -14);
+    ctx.quadraticCurveTo(-7, -18, -4, -20);
+    ctx.lineTo(-2, -20);
+    ctx.quadraticCurveTo(-3, -16, -3, -14);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 
   // ---------------------------------------------------------------------------
@@ -2822,6 +3064,56 @@ export class TowerRenderer {
       ctx.arc(sx, sy, 1 + Math.sin(ts * 0.004 + i) * 0.5, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.restore();
+
+    // Enhanced cosmic glow pulsing
+    const cosmicGlowAlpha = 0.3 + 0.2 * Math.sin(ts * 0.003);
+    ctx.globalAlpha = cosmicGlowAlpha;
+    ctx.fillStyle = pal.core;
+    ctx.beginPath();
+    ctx.arc(0, -26, 4 + p * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Swirling galaxy arms
+    ctx.save();
+    for (let arm = 0; arm < 4; arm++) {
+      const armRotation = rotation * 0.5 + (arm * Math.PI) / 2;
+      const armAlpha = 0.15 + 0.1 * Math.sin(ts * 0.003 + arm * 1.5);
+
+      ctx.globalAlpha = armAlpha;
+      ctx.strokeStyle = nebulaColors[arm % nebulaColors.length];
+      ctx.lineWidth = 1.2;
+
+      for (let segment = 0; segment < 6; segment++) {
+        const segmentAngle = armRotation + (segment * Math.PI) / 12;
+        const radius = 6 + segment * 2;
+        const x1 = Math.cos(segmentAngle) * radius;
+        const y1 = Math.sin(segmentAngle) * radius;
+        const x2 = Math.cos(segmentAngle + Math.PI / 12) * (radius + 2);
+        const y2 = Math.sin(segmentAngle + Math.PI / 12) * (radius + 2);
+
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // Dimensional rift effect
+    ctx.save();
+    ctx.globalAlpha = 0.2 + 0.1 * Math.sin(ts * 0.004);
+    ctx.fillStyle = "rgba(75,0,130,0.3)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 8 + p * 3, 2 + p, rotation * 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = "rgba(138,43,226,0.2)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 6 + p * 2, 1.5 + p * 0.5, rotation * 2, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 

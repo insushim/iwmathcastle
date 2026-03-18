@@ -98,6 +98,9 @@ const CAST_FRAMES = [
 export class WizardSprite {
   constructor() {
     this._width = 48;
+    // Trail system for magical afterimages
+    this._trailPositions = [];
+    this._maxTrailLength = 8;
     this._height = 56;
     this._direction = DIR.S;
     this._targetDirection = DIR.S;
@@ -188,7 +191,16 @@ export class WizardSprite {
     this._sparklePoolSize = 16;
     // Pre-allocate sparkle objects
     for (let i = 0; i < this._sparklePoolSize; i++) {
-      this._sparklePool.push({ x: 0, y: 0, life: 0, maxLife: 0, size: 0, angle: 0, speed: 0, active: false });
+      this._sparklePool.push({
+        x: 0,
+        y: 0,
+        life: 0,
+        maxLife: 0,
+        size: 0,
+        angle: 0,
+        speed: 0,
+        active: false,
+      });
     }
   }
 
@@ -445,7 +457,8 @@ export class WizardSprite {
     if (this._direction !== this._lastCacheDir) return true;
     if (this._frame !== this._lastCacheFrame) return true;
     if (this._casting !== this._lastCacheCasting) return true;
-    if (this._casting && this._castFrame !== this._lastCacheCastFrame) return true;
+    if (this._casting && this._castFrame !== this._lastCacheCastFrame)
+      return true;
     if (this._galloping !== this._lastCacheGalloping) return true;
     if (this._walking !== this._lastCacheWalking) return true;
     if (this._damaged !== this._lastCacheDamaged) return true;
@@ -478,10 +491,10 @@ export class WizardSprite {
 
     // Lazily create offscreen canvas
     if (!this._cacheCanvas) {
-      this._cacheCanvas = document.createElement('canvas');
+      this._cacheCanvas = document.createElement("canvas");
       this._cacheCanvas.width = cw;
       this._cacheCanvas.height = ch;
-      this._cacheCtx = this._cacheCanvas.getContext('2d');
+      this._cacheCtx = this._cacheCanvas.getContext("2d");
     }
 
     const cctx = this._cacheCtx;
@@ -594,7 +607,21 @@ export class WizardSprite {
     this._updateCacheState();
   }
 
-  render(ctx, x, y) {
+  render(ctx, x, y, level = 1) {
+    // Store level for visual upgrades
+    this._currentLevel = level;
+
+    // Update trail positions when moving
+    if (this._walking || this._galloping) {
+      this._updateTrail(x, y);
+    }
+
+    // Draw level-based visual upgrades BEFORE the wizard
+    this._drawLevelBasedEffects(ctx, x, y, level);
+
+    // Draw magical trail (fading afterimages)
+    this._drawMagicalTrail(ctx, y);
+
     // Only re-render the offscreen canvas when state has actually changed
     if (this._isCacheDirty()) {
       this._renderToCache();
@@ -606,6 +633,151 @@ export class WizardSprite {
 
     // Blit cached sprite to main canvas in a single drawImage call
     ctx.drawImage(this._cacheCanvas, ox, oy);
+
+    // Draw level-based effects AFTER the wizard
+    this._drawLevelBasedEffectsOverlay(ctx, x, y, level);
+  }
+
+  _updateTrail(x, y) {
+    // Add current position to trail
+    this._trailPositions.unshift({ x, y, time: Date.now() });
+
+    // Remove old trail positions
+    if (this._trailPositions.length > this._maxTrailLength) {
+      this._trailPositions.length = this._maxTrailLength;
+    }
+  }
+
+  _drawMagicalTrail(ctx, currentY) {
+    if (this._trailPositions.length < 2) return;
+
+    ctx.save();
+    const currentTime = Date.now();
+
+    for (let i = 1; i < this._trailPositions.length; i++) {
+      const pos = this._trailPositions[i];
+      const age = currentTime - pos.time;
+      const maxAge = 300; // Trail fades over 300ms
+
+      if (age > maxAge) continue;
+
+      const alpha = (1 - age / maxAge) * 0.3; // Fade out
+      const scale = 0.7 + (1 - age / maxAge) * 0.3; // Shrink slightly
+
+      if (alpha <= 0) continue;
+
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = "rgba(120,100,255,0.15)";
+
+      // Draw simplified wizard afterimage
+      const pad = this._cachePad;
+      const ox = Math.round(pos.x - (this._width * scale) / 2) - pad;
+      const oy = Math.round(pos.y - this._height * scale + this._idleBob) - pad;
+
+      ctx.save();
+      ctx.translate(ox + this._width / 2, oy + this._height / 2);
+      ctx.scale(scale, scale);
+      ctx.translate(-this._width / 2, -this._height / 2);
+
+      // Simple magical silhouette
+      ctx.fillRect(0, 0, this._width, this._height);
+
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  _drawLevelBasedEffects(ctx, x, y, level) {
+    if (level >= 5) {
+      // Level 5+: Floating rune circle beneath wizard
+      this._drawRuneCircle(ctx, x, y);
+    }
+  }
+
+  _drawLevelBasedEffectsOverlay(ctx, x, y, level) {
+    if (level >= 3) {
+      // Level 3+: Brighter aura
+      this._drawBrighterAura(ctx, x, y, level);
+    }
+  }
+
+  _drawRuneCircle(ctx, x, y) {
+    ctx.save();
+    const runeTime = Date.now() * 0.001;
+    const runeY = y + 5 + Math.sin(runeTime * 2) * 2; // Floating motion
+
+    ctx.translate(x, runeY);
+
+    // Rotating rune circle
+    const rotation = runeTime * 0.5;
+    ctx.rotate(rotation);
+
+    // Draw runes around circle
+    const runeRadius = 25;
+    const runes = ["⚡", "❄", "🔥", "🌟", "💫", "⭐"];
+
+    for (let i = 0; i < runes.length; i++) {
+      const angle = (i * Math.PI * 2) / runes.length;
+      const rx = Math.cos(angle) * runeRadius;
+      const ry = Math.sin(angle) * runeRadius;
+
+      ctx.save();
+      ctx.translate(rx, ry);
+      ctx.rotate(-rotation); // Keep runes upright
+
+      const runeAlpha = 0.4 + 0.2 * Math.sin(runeTime * 3 + i);
+      ctx.globalAlpha = runeAlpha;
+      ctx.fillStyle = "rgba(255,215,0,0.8)";
+      ctx.font = "12px serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(runes[i], 0, 0);
+
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  _drawBrighterAura(ctx, x, y, level) {
+    ctx.save();
+    const auraIntensity = Math.min(level / 10, 1); // Scale with level
+    const auraTime = Date.now() * 0.002;
+    const auraRadius = 35 + Math.sin(auraTime) * 8 + level * 2;
+
+    // Multi-layered aura
+    for (let layer = 0; layer < 3; layer++) {
+      const layerRadius = auraRadius - layer * 8;
+      const layerAlpha = (0.15 - layer * 0.04) * auraIntensity;
+
+      ctx.globalAlpha = layerAlpha;
+
+      const gradient = ctx.createRadialGradient(
+        x,
+        y - 30,
+        0,
+        x,
+        y - 30,
+        layerRadius,
+      );
+      if (level >= 5) {
+        gradient.addColorStop(0, "rgba(255,215,0,0.3)"); // Golden for high level
+        gradient.addColorStop(0.5, "rgba(138,43,226,0.2)");
+        gradient.addColorStop(1, "rgba(0,0,0,0)");
+      } else {
+        gradient.addColorStop(0, "rgba(120,100,255,0.2)"); // Purple for mid level
+        gradient.addColorStop(0.5, "rgba(100,80,200,0.1)");
+        gradient.addColorStop(1, "rgba(0,0,0,0)");
+      }
+
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(x, y - 30, layerRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
   }
 
   // ========================================================
@@ -616,14 +788,35 @@ export class WizardSprite {
     const H = this._height;
     const auraT =
       (Math.sin((this._auraTimer / this._auraCycleMs) * Math.PI * 2) + 1) / 2;
-    const auraRadius = 26 + auraT * 4;
 
-    ctx.fillStyle = COLORS.aura;
+    // Enhanced aura size based on level
+    const levelMult = this._currentLevel
+      ? Math.min(this._currentLevel / 3, 2)
+      : 1;
+    const auraRadius = (26 + auraT * 4) * levelMult;
+
+    // Enhanced colors for higher levels
+    if (this._currentLevel >= 5) {
+      ctx.fillStyle = "rgba(255,215,0,0.12)"; // Golden tint
+    } else if (this._currentLevel >= 3) {
+      ctx.fillStyle = "rgba(120,100,255,0.15)"; // Brighter purple
+    } else {
+      ctx.fillStyle = COLORS.aura;
+    }
+
     ctx.beginPath();
     ctx.ellipse(W / 2, H - 30, auraRadius, auraRadius * 0.8, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = COLORS.auraInner;
+    // Inner aura with level-based intensity
+    if (this._currentLevel >= 5) {
+      ctx.fillStyle = "rgba(255,215,0,0.08)";
+    } else if (this._currentLevel >= 3) {
+      ctx.fillStyle = "rgba(120,100,255,0.10)";
+    } else {
+      ctx.fillStyle = COLORS.auraInner;
+    }
+
     ctx.beginPath();
     ctx.ellipse(
       W / 2,
@@ -2038,18 +2231,21 @@ export class WizardSprite {
     ctx.lineTo(tx + 1, ty);
     ctx.stroke();
 
-    // Enhanced glowing orb
+    // Enhanced glowing orb with dramatic pulsing
     const glowMult = castData ? castData.glowMult : 1;
     const baseRadius = 3 + Math.min(glowIntensity, 1) * 1.5;
-    const glowRadius = baseRadius * Math.min(glowMult, 4);
 
-    // Color cycling for glow
+    // More dramatic pulsing effect
+    const dramaPulse = 1 + Math.sin(this._glowTimer * 0.008) * 0.6;
+    const glowRadius = baseRadius * Math.min(glowMult, 4) * dramaPulse;
+
+    // Enhanced color cycling with more vibrant colors
     const colorPhase = (this._glowTimer / this._glowCycleMs) * Math.PI * 2;
     const r = Math.floor(
-      Math.max(0, Math.min(255, 0 + Math.sin(colorPhase) * 30)),
+      Math.max(0, Math.min(255, 50 + Math.sin(colorPhase) * 100)),
     );
     const g = Math.floor(
-      Math.max(0, Math.min(255, 200 + Math.sin(colorPhase * 1.3) * 55)),
+      Math.max(0, Math.min(255, 150 + Math.sin(colorPhase * 1.3) * 105)),
     );
     const b = Math.floor(
       Math.max(0, Math.min(255, 255 + Math.sin(colorPhase * 0.7) * 20)),

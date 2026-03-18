@@ -1555,15 +1555,49 @@ function startWave() {
   }
 
   // [수정] 몬스터 수를 점진적으로 늘리되, 최대 60마리로 제한하여 성능 저하 방지
-  monstersInWave = Math.min(60, 10 + Math.floor(currentWave * 1.5));
+  monstersInWave = Math.min(80, 12 + Math.floor(currentWave * 2));
 
   let waveComposition = [];
   const highTierBosses = ["ancientDragon", "voidLord", "titanGolem"];
   const midTierBosses = ["archfiend", "boss"];
+  const newMegaBosses = ["shadowDragon", "wormQueen"];
 
-  if (currentWave > 0 && currentWave % 20 === 0) {
+  // Priority: 25 > 20 > 15 > 8 > 4
+  if (currentWave > 0 && currentWave % 25 === 0) {
+    // Demon King waves (every 25)
+    waveComposition.push("demonKing");
+    // Stronger support monsters for mega boss waves
+    const supportTypes = ["general", "dragon", "golem"];
+    for (let i = 0; i < monstersInWave - 1; i++) {
+      const supportType =
+        supportTypes[Math.floor(Math.random() * supportTypes.length)];
+      waveComposition.push(supportType);
+    }
+  } else if (currentWave > 0 && currentWave % 20 === 0) {
     waveComposition.push("finalBoss");
-    for (let i = 0; i < monstersInWave - 1; i++) waveComposition.push("tank");
+    // Stronger support monsters after wave 20
+    if (currentWave > 20) {
+      const supportTypes = ["general", "dragon", "golem"];
+      for (let i = 0; i < monstersInWave - 1; i++) {
+        const supportType =
+          supportTypes[Math.floor(Math.random() * supportTypes.length)];
+        waveComposition.push(supportType);
+      }
+    } else {
+      for (let i = 0; i < monstersInWave - 1; i++) waveComposition.push("tank");
+    }
+  } else if (currentWave > 0 && currentWave % 15 === 0) {
+    // New mega bosses alternating (every 15)
+    const megaBossIndex =
+      Math.floor((currentWave / 15 - 1) / 2) % newMegaBosses.length;
+    waveComposition.push(newMegaBosses[megaBossIndex]);
+    // Stronger support monsters for mega boss waves
+    const supportTypes = ["general", "dragon", "golem"];
+    for (let i = 0; i < monstersInWave - 1; i++) {
+      const supportType =
+        supportTypes[Math.floor(Math.random() * supportTypes.length)];
+      waveComposition.push(supportType);
+    }
   } else if (currentWave > 0 && currentWave % 8 === 0) {
     // [수정] 상급 보스 출현 주기 단축 (10 -> 8)
     const bossIndex =
@@ -1579,8 +1613,18 @@ function startWave() {
     for (let i = 0; i < monstersInWave - 1; i++)
       waveComposition.push("shielder");
   } else {
-    for (let i = 0; i < monstersInWave; i++)
-      waveComposition.push(getMonsterTypeForNormalWave(currentWave));
+    for (let i = 0; i < monstersInWave; i++) {
+      const monsterType = getMonsterTypeForNormalWave(currentWave);
+      if (monsterType === "swarmling") {
+        // Spawn 5 swarmlings at once
+        for (let j = 0; j < 5 && i < monstersInWave; j++, i++) {
+          waveComposition.push("swarmling");
+        }
+        i--; // Adjust for the outer loop increment
+      } else {
+        waveComposition.push(monsterType);
+      }
+    }
   }
 
   shuffleArray(waveComposition);
@@ -1623,13 +1667,16 @@ function spawnMonster(type, position = null, isSpecialSpawn = false) {
 
   // [수정] 웨이브에 따라 몬스터의 능력치(HP, 골드)를 강화하는 로직
   // 기본 배율: 웨이브가 진행될수록 점차 강해짐
-  let waveHpMultiplier = 1 + currentWave * 0.2;
+  let waveHpMultiplier = 1 + currentWave * 0.3;
   // 추가 배율: 특정 웨이브 구간을 넘어서면 더욱 가파르게 강해짐
   if (currentWave > 20) {
-    waveHpMultiplier += (currentWave - 20) * 0.1;
+    waveHpMultiplier += (currentWave - 20) * 0.2;
   }
   if (currentWave > 40) {
-    waveHpMultiplier += (currentWave - 40) * 0.15;
+    waveHpMultiplier += (currentWave - 40) * 0.3;
+  }
+  if (currentWave > 60) {
+    waveHpMultiplier += (currentWave - 60) * 0.5;
   }
 
   const difficultyHpMultiplier = 1 + selectedDifficulty * 0.15;
@@ -1638,22 +1685,51 @@ function spawnMonster(type, position = null, isSpecialSpawn = false) {
   const maxHp = Math.floor(stats.hp * (isSpecialSpawn ? 1 : finalHpMultiplier));
 
   // [추가] 골드 보상도 웨이브에 따라 증가
-  const goldMultiplier = 1 + currentWave / 8;
-  const goldReward = Math.ceil(
+  const goldMultiplier = 1 + currentWave / 12;
+  let goldReward = Math.ceil(
     stats.gold * (isSpecialSpawn ? 1 : goldMultiplier),
   );
+
+  // Elite monster system
+  let isElite = false;
+  let eliteHpMultiplier = 1;
+  let eliteSpeedMultiplier = 1;
+  let eliteGoldMultiplier = 1;
+
+  if (!isSpecialSpawn && !stats.isBoss && currentWave > 15) {
+    let eliteChance = 0.2; // 20% after wave 15
+    if (currentWave > 30) eliteChance = 0.3; // 30% after wave 30
+
+    if (Math.random() < eliteChance) {
+      isElite = true;
+      if (currentWave > 30) {
+        eliteHpMultiplier = 2.0;
+        eliteSpeedMultiplier = 1.2;
+        eliteGoldMultiplier = 2.0;
+      } else {
+        eliteHpMultiplier = 1.5;
+        eliteSpeedMultiplier = 1.2;
+        eliteGoldMultiplier = 1.5;
+      }
+      goldReward = Math.ceil(goldReward * eliteGoldMultiplier);
+    }
+  }
+
+  const finalMaxHp = Math.floor(maxHp * eliteHpMultiplier);
+  const finalSpeed = stats.speed * eliteSpeedMultiplier;
 
   const monster = {
     ...stats,
     id: Date.now() + Math.random(),
     monsterKey,
-    maxHp,
-    hp: maxHp,
+    maxHp: finalMaxHp,
+    hp: finalMaxHp,
     gold: goldReward, // [변경] 강화된 골드 보상 적용
     isDead: false,
     isStealthed: false,
-    baseSpeed: stats.speed,
-    currentSpeed: stats.speed,
+    baseSpeed: finalSpeed,
+    currentSpeed: finalSpeed,
+    isElite,
     x: position ? position.x : pathPoints[0].x,
     y: position ? position.y : pathPoints[0].y,
     pathIndex: position
@@ -1805,6 +1881,12 @@ function getMonsterTypeForNormalWave(wave) {
   if (wave > 12) pool.push({ type: "assassin", weight: 8 });
   if (wave > 13) pool.push({ type: "general", weight: 4 });
   if (wave > 14) pool.push({ type: "plaguebearer", weight: 8 });
+
+  // New monsters
+  if (wave > 10) pool.push({ type: "necromancer", weight: 7 });
+  if (wave > 12) pool.push({ type: "berserker", weight: 10 });
+  if (wave > 15) pool.push({ type: "phoenix", weight: 6 });
+  if (wave > 8) pool.push({ type: "swarmling", weight: 15 });
 
   const totalWeight = pool.reduce((sum, monster) => sum + monster.weight, 0);
   let random = Math.random() * totalWeight;
