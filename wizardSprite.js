@@ -632,13 +632,27 @@ export class WizardSprite {
     const ox = Math.round(x - this._width / 2) - pad;
     const oy = Math.round(y - this._height + this._idleBob) - pad;
 
-    // v5: AI 스프라이트 우선 (idle/cast 포즈), 미로드 시 절차 캐시 폴백
-    const poseSprite = getSprite(this._casting ? "wizard_cast" : "wizard_idle");
+    // v5: AI 스프라이트 우선 — 이동 중이면 걷기 프레임(4컷), 아니면 idle/cast 포즈
+    // v5.5: 마법사는 플레이어가 움직이는 이동 캐릭터 → 걷기 애니메이션 재생
+    const walking = this._walking && !this._casting;
+    const hasWalkSheet = !!getSprite("wizard_walk_0");
+    let poseSprite;
+    if (walking && hasWalkSheet) {
+      poseSprite = getSprite(`wizard_walk_${this._frame % 4}`); // _frame 0~7 → 4프레임 순환
+    } else {
+      poseSprite = getSprite(this._casting ? "wizard_cast" : "wizard_idle");
+    }
+    // 진행 방향 좌우 반전 (NW/W/SW = 왼쪽). N/S는 반전 없음.
+    const facingLeft =
+      this._targetDirection === DIR.W ||
+      this._targetDirection === DIR.NW ||
+      this._targetDirection === DIR.SW;
     if (poseSprite) {
       // v5.1: 살아있는 마법사 — 부유 바운스 + 좌우 스웨이 + 시전 팝 + 발밑 마법진 펄스
       const t = performance.now() / 1000;
-      const floatY = Math.sin(t * 2.2) * 4;
-      const sway = Math.sin(t * 1.1) * 0.04;
+      // 걷는 중엔 스프라이트가 다리 모션을 담당 → 부유 바운스·스웨이 최소화
+      const floatY = walking ? Math.abs(Math.sin(t * 9)) * -2 : Math.sin(t * 2.2) * 4;
+      const sway = walking ? 0 : Math.sin(t * 1.1) * 0.04;
       const castPop = this._casting ? 1.12 : 1;
 
       // 발밑 마법진 (은은한 펄스 — transform·arc만 사용, 웨일북 예산 내)
@@ -661,6 +675,7 @@ export class WizardSprite {
       ctx.save();
       ctx.translate(x, y + floatY);
       ctx.rotate(sway);
+      if (facingLeft) ctx.scale(-1, 1); // 진행 방향 반전
       ctx.drawImage(
         poseSprite,
         Math.round(-w2 / 2),

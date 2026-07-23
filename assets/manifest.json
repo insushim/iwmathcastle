@@ -383,6 +383,22 @@
   {
    "key": "wizard_idle",
    "file": "wizard-idle.webp"
+  },
+  {
+   "key": "wizard_walk_0",
+   "file": "wizard-walk-0.webp"
+  },
+  {
+   "key": "wizard_walk_1",
+   "file": "wizard-walk-1.webp"
+  },
+  {
+   "key": "wizard_walk_2",
+   "file": "wizard-walk-2.webp"
+  },
+  {
+   "key": "wizard_walk_3",
+   "file": "wizard-walk-3.webp"
   }
  ]
 }
