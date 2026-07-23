@@ -108,6 +108,26 @@ if (resumed) {
   check("타워 10기 그대로 복원 (사라지지 않음)", resumed.towers === 10, `실측 ${resumed.towers}`);
 }
 
+// ⑤ 게임오버 → "스테이지부터 다시" — 체크포인트는 살아있고 버튼으로 즉시 재개
+await page.evaluate(() => window.__mathcastle.qaForceGameOver());
+await new Promise((r) => setTimeout(r, 800));
+const overState = await page.evaluate(() => ({
+  modalVisible: getComputedStyle(document.getElementById("gameOverModal")).display !== "none",
+  retryLabel: document.getElementById("retryStageBtn").textContent,
+  stagesKept: !!localStorage.getItem("mathcastle:stages"),
+}));
+check("게임오버 모달 표시", overState.modalVisible);
+check("재도전 버튼 라벨에 현재 스테이지", overState.retryLabel.includes("스테이지 2"), `실측 "${overState.retryLabel}"`);
+check("게임오버 후에도 체크포인트 유지", overState.stagesKept);
+
+await page.click("#retryStageBtn");
+await new Promise((r) => setTimeout(r, 2500));
+const retried = await page.evaluate(() => {
+  const s = window.__mathcastle.getState();
+  return { wave: s.currentWave, towers: s.towers, castleHp: s.castleHealth, running: s.gameRunning };
+});
+check("재도전: 웨이브 6·타워 10기·성 체력 복원", retried.wave === 6 && retried.towers === 10 && retried.castleHp > 0, JSON.stringify(retried));
+
 if (errors.length) { console.log("콘솔/페이지 에러:", errors.slice(0, 5)); fail++; }
 console.log(`\n${fail === 0 ? "✅ STAGES E2E PASS" : "❌ FAIL"} (${pass} PASS / ${fail} FAIL)`);
 await browser.close(); server.close();

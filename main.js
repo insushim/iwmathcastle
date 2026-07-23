@@ -442,6 +442,7 @@ window.addEventListener("DOMContentLoaded", () => {
     },
     qaAddGold: (n) => { gold += n; updateFullUI(); },
     qaSetWave: (n) => { currentWave = n; updateFullUI(); },
+    qaForceGameOver: () => { castleHealth = 0; checkGameOver(); },
     qaGetMonsters: () =>
       monsters.slice(0, 5).map((m) => ({
         key: m.monsterKey, x: Math.round(m.x), y: Math.round(m.y),
