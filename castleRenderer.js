@@ -1,6 +1,7 @@
 // castleRenderer.js - Medieval Castle Renderer
 // Canvas 2D primitives only (fillRect, arc, beginPath/lineTo, quadraticCurveTo)
 // Tower defense game "Math Castle Guardian" - player's base
+import { getSprite } from "./spriteAssets.js";
 
 // ============================================================
 // Color Palette
@@ -103,6 +104,30 @@ export class CastleRenderer {
   // Main render entry point
   // ----------------------------------------------------------
   render(ctx, x, y, hp, maxHp, timestamp) {
+    // v5.6: AI 캐슬 스프라이트 우선 (웅장한 마법 성). 미로드 시 절차 캐슬 폴백.
+    const sprite = getSprite("castle_keep");
+    if (sprite) {
+      const targetW = 184;
+      const scl = targetW / sprite.width;
+      const targetH = sprite.height * scl;
+      // 절차 캐슬의 하단중앙에 스프라이트 하단중앙 정렬 (크리스탈 첨탑은 위로 뻗음)
+      // 첨탑이 상단 HUD에 잘리지 않게 아래로 여유
+      const bx = x + this._width / 2;
+      const by = y + this._height + 30;
+      const dx = Math.round(bx - targetW / 2);
+      const dy = Math.round(by - targetH);
+      const ratio = Math.max(0, Math.min(1, hp / maxHp));
+      ctx.save();
+      if (ratio < 0.3) {
+        // 위급 시 붉은 글로우 맥동
+        ctx.shadowColor = "rgba(255,50,30,0.85)";
+        ctx.shadowBlur = 12 + Math.sin(timestamp / 150) * 6;
+      }
+      ctx.drawImage(sprite, dx, dy, Math.round(targetW), Math.round(targetH));
+      ctx.restore();
+      return;
+    }
+
     const hpRatio = Math.max(0, Math.min(1, hp / maxHp));
     const dt =
       this._lastTimestamp > 0

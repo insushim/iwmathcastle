@@ -163,6 +163,8 @@ let lastFrameTime = 0;
 let isForcedProgress = false;
 let currentProblemSet = [];
 let pathPoints = [];
+let pathCanvas = null,
+  pathCtx = null; // v5.6: 길 전용 캔버스 (한 번만 그림, z-index 1)
 let placementTiles = [];
 let pauseStartTimePerf = 0;
 
@@ -808,17 +810,7 @@ function generatePath() {
   for (let i = 0; i < points.length - 1; i++) {
     const p1 = points[i];
     const p2 = points[i + 1];
-    const segment = document.createElement("div");
-    segment.className = "path";
     const length = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-    const angle = (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI;
-    segment.style.width = `${length}px`;
-    segment.style.height = `${pathWidth}px`;
-    segment.style.left = `${p1.x}px`;
-    segment.style.top = `${p1.y - pathWidth / 2}px`;
-    segment.style.transformOrigin = "left center";
-    segment.style.transform = `rotate(${angle}deg)`;
-    gameCanvas.appendChild(segment);
     for (let j = 0; j < length; j += 5) {
       const ratio = j / length;
       pathPoints.push({
@@ -828,6 +820,76 @@ function generatePath() {
     }
   }
   pathPoints.push(points[points.length - 1]);
+
+  // v5.6: 길을 진짜 길처럼 — DOM 직사각형 대신 캔버스에 연속 스트로크(둥근 코너)+돌길 질감
+  drawRoad(points, pathWidth);
+}
+
+// 결정론 난수 (seed) — 조약돌 위치 고정용
+function seededRand(seed) {
+  let s = seed % 2147483647;
+  if (s <= 0) s += 2147483646;
+  return () => (s = (s * 16807) % 2147483647) / 2147483647;
+}
+
+function drawRoad(corners, w) {
+  if (!pathCanvas || !pathCanvas.isConnected) {
+    pathCanvas = document.createElement("canvas");
+    pathCanvas.id = "pathCanvas";
+    pathCanvas.style.cssText =
+      "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1;";
+    gameElements.gameCanvas.appendChild(pathCanvas);
+    pathCtx = pathCanvas.getContext("2d");
+  }
+  pathCanvas.width = window.innerWidth;
+  pathCanvas.height = window.innerHeight;
+  const ctx = pathCtx;
+  ctx.clearRect(0, 0, pathCanvas.width, pathCanvas.height);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  const traceStroke = (width, color) => {
+    ctx.beginPath();
+    ctx.moveTo(corners[0].x, corners[0].y);
+    for (let i = 1; i < corners.length; i++)
+      ctx.lineTo(corners[i].x, corners[i].y);
+    ctx.lineWidth = width;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+  };
+
+  // 1) 바깥 마법 글로우 테두리 (정적이라 shadowBlur 1회 허용)
+  ctx.save();
+  ctx.shadowColor = "rgba(130,100,220,0.55)";
+  ctx.shadowBlur = 18;
+  traceStroke(w + 16, "#221a30");
+  ctx.restore();
+  // 2) 흙 가장자리 → 3) 본 노면 → 4) 밟아 다져진 밝은 중앙
+  traceStroke(w + 8, "#3c3125");
+  traceStroke(w, "#6f5a41");
+  traceStroke(w * 0.6, "#856b4c");
+
+  // 5) 돌길 질감 — 경로 따라 결정론적 조약돌
+  const rnd = seededRand(1337);
+  ctx.save();
+  for (let i = 0; i < pathPoints.length; i += 3) {
+    const p = pathPoints[i];
+    // 진행 방향 수직으로 살짝 흩뿌림
+    const nx = i + 1 < pathPoints.length ? pathPoints[i + 1].x - p.x : 0;
+    const ny = i + 1 < pathPoints.length ? pathPoints[i + 1].y - p.y : 0;
+    const len = Math.hypot(nx, ny) || 1;
+    const perpX = -ny / len,
+      perpY = nx / len;
+    const spread = (rnd() - 0.5) * (w - 10);
+    const cx = p.x + perpX * spread;
+    const cy = p.y + perpY * spread;
+    const r = 2 + rnd() * 3;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r, r * 0.75, rnd() * Math.PI, 0, Math.PI * 2);
+    ctx.fillStyle = rnd() > 0.5 ? "rgba(60,48,34,0.5)" : "rgba(150,128,96,0.35)";
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function positionCastle() {
