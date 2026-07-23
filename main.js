@@ -440,6 +440,11 @@ window.addEventListener("DOMContentLoaded", () => {
     },
     qaAddGold: (n) => { gold += n; updateFullUI(); },
     qaSetWave: (n) => { currentWave = n; updateFullUI(); },
+    qaGetMonsters: () =>
+      monsters.slice(0, 5).map((m) => ({
+        key: m.monsterKey, x: Math.round(m.x), y: Math.round(m.y),
+        direction: +m.direction.toFixed(2), pathIndex: Math.round(m.pathIndex),
+      })),
     qaPlaceTowers: (type, count) => {
       // 타일에 타워 강제 배치 (성능 테스트용)
       const tiles = [...document.querySelectorAll(".placement-tile")].slice(0, count);
@@ -2973,6 +2978,10 @@ function checkAnswer(answer, clickedBtn) {
       );
       // v5: 학습=화력 — 정답 시 마법 쿨다운 30% 감소
       learnLoop.recordCorrect(isReviewProblem);
+      if (isReviewProblem)
+        checkAchievements("review_correct", {
+          reviewCleared: learnLoop.stats.reviewCleared,
+        });
       const nowCd = performance.now();
       for (const key in wizardCooldowns) {
         if (wizardCooldowns[key] > nowCd) {
@@ -3419,6 +3428,7 @@ function setupEventListeners() {
       WIZARD_AUTO_ATTACK_STATS.rangeSq =
         WIZARD_AUTO_ATTACK_STATS.range * WIZARD_AUTO_ATTACK_STATS.range;
       showUpgradeNotification(`🧙‍♂️ 마법사 레벨 ${wizardLevel} 달성!`);
+      checkAchievements("wizard_level", { level: wizardLevel });
       sfx.init().then(() => sfx.play("wizard_levelup"));
       wizardSprite.setLevelUp();
       populateSpellbook();

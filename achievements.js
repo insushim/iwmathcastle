@@ -78,6 +78,28 @@ export class AchievementSystem {
         condition: (eventType, data) =>
           eventType === "math_correct" && data.streak >= 30,
       },
+      // ---- v5 학습 업적 ----
+      review_clear: {
+        id: "review_clear",
+        name: "오답 정복자",
+        description: "틀렸던 문제를 다시 만나 맞히세요",
+        condition: (eventType, data) =>
+          eventType === "review_correct" && data.reviewCleared >= 1,
+      },
+      review_master: {
+        id: "review_master",
+        name: "복습의 달인",
+        description: "복습 문제를 5회 맞히세요",
+        condition: (eventType, data) =>
+          eventType === "review_correct" && data.reviewCleared >= 5,
+      },
+      spell_collector: {
+        id: "spell_collector",
+        name: "대마법사",
+        description: "마법사 레벨 10을 달성하세요",
+        condition: (eventType, data) =>
+          eventType === "wizard_level" && data.level >= 10,
+      },
       ultimate_tower: {
         id: "ultimate_tower",
         name: "궁극의 힘",

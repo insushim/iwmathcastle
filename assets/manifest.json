@@ -1,1 +1,88 @@
-{"files":[]}
+{
+ "files": [
+  {
+   "key": "monster_normal",
+   "file": "monster-normal.webp"
+  },
+  {
+   "key": "tower_cannon",
+   "file": "tower-cannon.webp"
+  },
+  {
+   "key": "tower_divide",
+   "file": "tower-divide.webp"
+  },
+  {
+   "key": "tower_goldMine",
+   "file": "tower-goldMine.webp"
+  },
+  {
+   "key": "tower_golden",
+   "file": "tower-golden.webp"
+  },
+  {
+   "key": "tower_ice",
+   "file": "tower-ice.webp"
+  },
+  {
+   "key": "tower_laser",
+   "file": "tower-laser.webp"
+  },
+  {
+   "key": "tower_meteor",
+   "file": "tower-meteor.webp"
+  },
+  {
+   "key": "tower_minus",
+   "file": "tower-minus.webp"
+  },
+  {
+   "key": "tower_multiply",
+   "file": "tower-multiply.webp"
+  },
+  {
+   "key": "tower_net",
+   "file": "tower-net.webp"
+  },
+  {
+   "key": "tower_plus",
+   "file": "tower-plus.webp"
+  },
+  {
+   "key": "tower_poison",
+   "file": "tower-poison.webp"
+  },
+  {
+   "key": "tower_random_cheap",
+   "file": "tower-random_cheap.webp"
+  },
+  {
+   "key": "tower_repairStation",
+   "file": "tower-repairStation.webp"
+  },
+  {
+   "key": "tower_shredder",
+   "file": "tower-shredder.webp"
+  },
+  {
+   "key": "tower_skyDestroyer",
+   "file": "tower-skyDestroyer.webp"
+  },
+  {
+   "key": "tower_stun",
+   "file": "tower-stun.webp"
+  },
+  {
+   "key": "tower_ultimate",
+   "file": "tower-ultimate.webp"
+  },
+  {
+   "key": "wizard_cast",
+   "file": "wizard-cast.webp"
+  },
+  {
+   "key": "wizard_idle",
+   "file": "wizard-idle.webp"
+  }
+ ]
+}
