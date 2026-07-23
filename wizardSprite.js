@@ -642,11 +642,12 @@ export class WizardSprite {
     } else {
       poseSprite = getSprite(this._casting ? "wizard_cast" : "wizard_idle");
     }
-    // 진행 방향 좌우 반전 (NW/W/SW = 왼쪽). N/S는 반전 없음.
+    // 진행 방향 좌우 반전. 원본 스프라이트가 왼쪽을 향하고 있어(실측),
+    // 오른쪽 이동(E/NE/SE) 시 반전해 오른쪽을 보게 한다. N/S는 반전 없음.
     const facingLeft =
-      this._targetDirection === DIR.W ||
-      this._targetDirection === DIR.NW ||
-      this._targetDirection === DIR.SW;
+      this._targetDirection === DIR.E ||
+      this._targetDirection === DIR.NE ||
+      this._targetDirection === DIR.SE;
     if (poseSprite) {
       // v5.1: 살아있는 마법사 — 부유 바운스 + 좌우 스웨이 + 시전 팝 + 발밑 마법진 펄스
       const t = performance.now() / 1000;
