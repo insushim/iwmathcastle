@@ -3143,3 +3143,24 @@ body {
     image-rendering: auto;
     filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
 }
+
+/* ===== v5.6 진짜 분수 표기 (a/b → 위아래) ===== */
+.frac {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+    line-height: 1;
+    margin: 0 0.15em;
+    transform: translateY(-0.05em);
+}
+.frac-n {
+    display: block;
+    padding: 0 0.35em 0.08em;
+    border-bottom: 0.09em solid currentColor;
+}
+.frac-d {
+    display: block;
+    padding: 0.08em 0.35em 0;
+}

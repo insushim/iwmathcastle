@@ -449,6 +449,24 @@ window.addEventListener("DOMContentLoaded", () => {
       wizardPosition.x = x; wizardPosition.y = y;
       gameElements.wizardEl.style.transform = `translate(${x}px, ${y}px)`;
     },
+    qaShowProblem: (prob) => {
+      const p = prob || { q: "4/9 - 1/7", a: "19/63", d: ["20/63", "18/63", "63/19"] };
+      correctAnswer = p.a;
+      currentProblem = p;
+      const opts = [p.a, ...(p.d || [])];
+      shuffleArray(opts);
+      ui.showMathProblemUI(p, opts, checkAnswer);
+      return { correct: p.a, options: opts };
+    },
+    qaClickAnswer: (val) => {
+      const btn = [...document.querySelectorAll(".math-option")].find(
+        (b) => String(b.dataset.value) === String(val),
+      );
+      if (!btn) return "no-btn";
+      const before = { gold, castleHealth, score };
+      btn.click();
+      return { clicked: val, correct: correctAnswer, wasCorrect: String(val) === String(correctAnswer), before };
+    },
     qaGetMonsters: () =>
       monsters.slice(0, 5).map((m) => ({
         key: m.monsterKey, x: Math.round(m.x), y: Math.round(m.y),
@@ -3009,7 +3027,18 @@ function showMathProblem() {
   }
 
   correctAnswer = problem.a;
-  const wrongOptions = generateWrongAnswers(correctAnswer);
+  // v5.6: 생성기의 실수 기반 오답(problem.d) 우선 — 그럴싸한 오답. 부족분만 런타임 폴백.
+  let wrongOptions = Array.isArray(problem.d) ? [...problem.d] : [];
+  shuffleArray(wrongOptions);
+  wrongOptions = wrongOptions
+    .filter((w) => String(w) !== String(correctAnswer))
+    .slice(0, 3);
+  if (wrongOptions.length < 3) {
+    const extra = generateWrongAnswers(correctAnswer).filter(
+      (w) => String(w) !== String(correctAnswer) && !wrongOptions.includes(String(w)),
+    );
+    wrongOptions = [...wrongOptions, ...extra].slice(0, 3);
+  }
   const options = [correctAnswer, ...wrongOptions];
   shuffleArray(options);
 
@@ -3095,7 +3124,7 @@ function checkAnswer(answer, clickedBtn) {
 
   optionsContainer.querySelectorAll(".math-option").forEach((btn) => {
     btn.disabled = true;
-    if (String(btn.textContent) === String(correctAnswer)) {
+    if (String(btn.dataset.value) === String(correctAnswer)) {
       btn.classList.add("correct");
     } else {
       btn.classList.add("faded");
@@ -3244,7 +3273,7 @@ function handleTimeOut() {
   // Show correct answer
   optionsContainer.querySelectorAll(".math-option").forEach((btn) => {
     btn.disabled = true;
-    if (String(btn.textContent) === String(correctAnswer)) {
+    if (String(btn.dataset.value) === String(correctAnswer)) {
       btn.classList.add("correct");
     } else {
       btn.classList.add("faded");

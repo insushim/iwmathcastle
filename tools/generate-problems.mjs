@@ -57,6 +57,94 @@ const numEul = (x) => (lastDigitBatchim(x) ? "을" : "를");
 const ITEMS = ["사과", "연필", "구슬", "딸기", "지우개", "공책", "색종이", "붕어빵", "블록", "동전", "스티커", "장난감", "쿠키", "도토리", "밤"];
 const NAMES = ["민준", "서연", "지호", "하은", "도윤", "수아", "예준", "지우"];
 
+// ---------- 오답(distractor) 생성 — 답 형식별 "그럴싸한 실수" 기반 ----------
+// 정답과 같은 형식(분수→분수, 정수→정수)의 근접·실수 오답을 만든다.
+// 아라하루식: 랜덤 정수가 아니라 "학생이 실제로 헷갈릴 만한" 답.
+function makeDistractors(q, a) {
+  const out = [];
+  const add = (v) => {
+    if (v == null) return;
+    const s = String(v);
+    if (s === String(a) || out.includes(s)) return;
+    // 유효성: 양수 · 분수면 분자/분모 양수
+    if (s.includes("/")) {
+      const [n, d] = s.split("/").map(Number);
+      if (!(n > 0 && d > 0)) return;
+    } else {
+      const n = Number(s);
+      if (!isFinite(n) || n <= 0) return;
+    }
+    out.push(s);
+  };
+
+  if (String(a).includes("/")) {
+    const [n, d] = String(a).split("/").map(Number);
+    if (isFinite(n) && isFinite(d) && d > 0) {
+      add(`${n + 1}/${d}`); // 분자 오차
+      add(`${n - 1}/${d}`);
+      add(`${n}/${d + 1}`); // 분모 오차
+      add(`${n}/${d - 1}`);
+      if (n !== d) add(`${d}/${n}`); // 뒤집기
+      // 분수 연산의 대표 실수: 분자끼리·분모끼리 더하기/곱하기
+      const m = String(q).match(/(\d+)\/(\d+)\s*([+\-×÷])\s*(\d+)\/(\d+)/);
+      if (m) {
+        const n1 = +m[1], d1 = +m[2], op = m[3], n2 = +m[4], d2 = +m[5];
+        if (op === "+" || op === "-") {
+          add(`${n1 + n2}/${d1 + d2}`); // 분모까지 더한 흔한 오답
+        }
+        if (op === "×") {
+          add(`${n1 + n2}/${d1 + d2}`);
+          add(`${n1 * n2}/${d1 + d2}`);
+        }
+      }
+      add(`${n + 2}/${d}`);
+      add(`${n}/${d + 2}`);
+    }
+  } else if (String(a).includes(".")) {
+    // 소수 답 → 소수점 실수 기반 오답 (자릿수 유지)
+    const num = Number(a);
+    const dec = (String(a).split(".")[1] || "").length;
+    const fx = (v) => v.toFixed(dec);
+    if (isFinite(num)) {
+      const step = 1 / Math.pow(10, dec);
+      add(fx(num + step)); // 끝자리 ±1
+      add(fx(num - step));
+      add(fx(num + step * 10)); // 한 자리 위 ±1
+      add(fx(num - step * 10));
+      add(fx(num * 10)); // 소수점 위치 실수 (한 칸 오른쪽)
+      add(fx(num / 10)); // 소수점 위치 실수 (한 칸 왼쪽)
+      add(String(Math.round(num))); // 반올림한 정수로 착각
+    }
+  } else {
+    const num = Number(a);
+    if (isFinite(num) && Number.isInteger(num)) {
+      const mMul = String(q).match(/(\d+)\s*×\s*(\d+)/);
+      const mAdd = String(q).match(/(\d+)\s*\+\s*(\d+)/);
+      const mSub = String(q).match(/(\d+)\s*[-−]\s*(\d+)/);
+      if (mMul) {
+        const x = +mMul[1], y = +mMul[2];
+        add(x + y); // 곱 대신 합
+        add(x * (y - 1)); // 한 번 덜 곱
+        add(x * (y + 1)); // 한 번 더 곱
+      } else if (mAdd) {
+        const x = +mAdd[1], y = +mAdd[2];
+        add(Math.abs(x - y)); // 합 대신 차
+        add(num + 10); add(num - 10); // 받아올림 실수
+      } else if (mSub) {
+        const x = +mSub[1], y = +mSub[2];
+        add(x + y); // 차 대신 합
+        add(num + 10); add(num - 10); // 받아내림 실수
+      }
+      // 공통 근접 오답 (자릿수 규모에 맞춰)
+      const mag = num >= 100 ? 10 : num >= 30 ? 5 : 1;
+      add(num + 1); add(num - 1);
+      add(num + mag); add(num - mag);
+      add(num + 2); add(num - 2);
+    }
+  }
+  return out.slice(0, 6); // 여유분 저장 → 런타임에서 3개 랜덤 선택
+}
+
 // ---------- 생성 프레임워크 ----------
 function buildGrade(templates, target) {
   const seen = new Set();
@@ -72,6 +160,7 @@ function buildGrade(templates, target) {
       const aNum = Number(p.a);
       if (!p.a.includes("/") && (!isFinite(aNum) || aNum <= 0)) continue; // 답 0·음수 금지
       seen.add(key);
+      p.d = makeDistractors(p.q, p.a); // 실수 기반 오답 (런타임 폴백 있음)
       out.push(p);
       made++;
     }
@@ -317,7 +406,7 @@ const stats = {};
 for (const [g, [templates, target]] of Object.entries(GRADES)) {
   const list = buildGrade(templates, target);
   stats[g] = list.length;
-  const body = list.map((p) => `{q:${JSON.stringify(p.q)},a:${JSON.stringify(p.a)}}`).join(",\n");
+  const body = list.map((p) => `{q:${JSON.stringify(p.q)},a:${JSON.stringify(p.a)},d:${JSON.stringify(p.d || [])}}`).join(",\n");
   writeFileSync(join(ROOT, "problems", `grade${g}.js`), `// 자동 생성 — tools/generate-problems.mjs (수정 금지, 규칙: docs/curriculum-map.md)\nexport default [\n${body}\n];\n`);
   console.log(`✅ 학년 ${g}: ${list.length}문제 → problems/grade${g}.js`);
 }

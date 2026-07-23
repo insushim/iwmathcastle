@@ -323,15 +323,28 @@ export function showTowerUpgradeSelector(
   showModal(towerUpgradeSelector);
 }
 
+// v5.6: 분수를 진짜 분수(위아래)로 표기. "a/b" → 세로 분수 HTML. 나머지는 그대로.
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+export function formatMath(str) {
+  // 숫자/숫자 패턴을 세로 분수로 (예: 1/3, 19/63). 나눗셈 기호 ÷와 혼동 없음(÷는 별도).
+  return escapeHtml(str).replace(
+    /(\d+)\/(\d+)/g,
+    (_, n, d) => `<span class="frac"><span class="frac-n">${n}</span><span class="frac-d">${d}</span></span>`,
+  );
+}
+
 export function showMathProblemUI(problem, options, answerCallback) {
-  document.getElementById("mathQuestion").textContent = problem.q;
+  document.getElementById("mathQuestion").innerHTML = formatMath(problem.q);
   const optionsContainer = document.getElementById("mathOptions");
   optionsContainer.innerHTML = "";
 
   options.forEach((opt, index) => {
     const btn = document.createElement("button");
     btn.className = "math-option";
-    btn.textContent = opt;
+    btn.innerHTML = formatMath(String(opt));
+    btn.dataset.value = opt; // v5.6: 정답 판정은 raw 값으로 (분수 HTML은 textContent가 "13"이 됨)
     // Staggered animation
     btn.style.animation = `slideUp 0.3s ease-out ${index * 0.08}s backwards`;
     btn.onclick = () => answerCallback(opt, btn);
