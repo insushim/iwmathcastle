@@ -5,6 +5,7 @@ import { gameElements } from "./constants.js";
 import { TOWER_STATS } from "./gameData.js";
 import { hideModal, showModal, showMessage } from "./utils.js";
 import { stageOfWave, waveInStage } from "./stageProgress.js";
+import { getSprite } from "./spriteAssets.js";
 
 const isMobile = /Mobi/i.test(window.navigator.userAgent);
 let buildStepCallback = null;
@@ -186,7 +187,12 @@ export async function showTowerSelector(x, y, sfx) {
     tierDot.style.backgroundColor = getTierColor(tier);
     tierDot.style.boxShadow = `0 0 6px ${getTierColor(tier)}`;
 
-    option.innerHTML = `<div class="tower-option-symbol">${towerStat.symbol}</div><div class="tower-option-name">${towerStat.name}</div><div class="tower-option-cost">${towerStat.cost}G</div>`;
+    // v5.1: AI 타워 스프라이트 우선, 없으면 이모지 폴백 (multi-shot 등 스프라이트 미생성 타워)
+    const towerSprite = getSprite(`tower_${key}`);
+    const symbolHtml = towerSprite
+      ? `<img class="tower-option-img" src="${towerSprite.src}" alt="${towerStat.name}">`
+      : towerStat.symbol;
+    option.innerHTML = `<div class="tower-option-symbol">${symbolHtml}</div><div class="tower-option-name">${towerStat.name}</div><div class="tower-option-cost">${towerStat.cost}G</div>`;
     option.appendChild(tierDot);
 
     if (towerStat.targetType === "air") {
@@ -454,20 +460,60 @@ function populateRankingList(listElement, scores, limit, emptyMessage) {
   }
 }
 
+// v5.1: 랭킹 학년 필터 — 마지막 데이터를 들고 있다가 탭 클릭 시 클라이언트에서 재렌더
+let lastRankingData = null;
+let rankingGradeFilter = 0; // 0 = 전체
+let gradeFilterWired = false;
+
+function filterByGrade(scores) {
+  if (!rankingGradeFilter) return scores;
+  return scores.filter((d) => Number(d.difficulty) === rankingGradeFilter);
+}
+
+function wireGradeFilter() {
+  if (gradeFilterWired) return;
+  const wrap = document.getElementById("gradeFilter");
+  if (!wrap) return;
+  gradeFilterWired = true;
+  wrap.querySelectorAll(".gf-btn").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      rankingGradeFilter = Number(btn.dataset.grade) || 0;
+      wrap
+        .querySelectorAll(".gf-btn")
+        .forEach((b) => b.classList.toggle("active", b === btn));
+      if (lastRankingData) renderRankings();
+    }),
+  );
+}
+
 export function displayRankings(
   hallOfFameScores,
   todayScores,
   yesterdayScores,
   nextUpdateTime,
 ) {
+  lastRankingData = {
+    hallOfFameScores,
+    todayScores,
+    yesterdayScores,
+    nextUpdateTime,
+  };
+  wireGradeFilter();
+  renderRankings();
+}
+
+function renderRankings() {
+  const { hallOfFameScores, todayScores, yesterdayScores, nextUpdateTime } =
+    lastRankingData;
   const hofList = document.getElementById("hallOfFame");
   const todayList = document.getElementById("todayRankingList");
   const yesterdayList = document.getElementById("yesterdayRankingList");
 
+  const hofFiltered = filterByGrade(hallOfFameScores);
   hofList.innerHTML = "";
-  if (hallOfFameScores.length > 0) {
+  if (hofFiltered.length > 0) {
     const medal = ["🥇", "🥈", "🥉", "🏅", "🏅"];
-    hallOfFameScores.slice(0, 5).forEach((data, index) => {
+    hofFiltered.slice(0, 5).forEach((data, index) => {
       const entry = document.createElement("div");
       entry.className = "fame-entry";
       const difficultyText = data.difficulty ? ` (${data.difficulty}학년)` : "";
@@ -475,8 +521,9 @@ export function displayRankings(
       hofList.appendChild(entry);
     });
   } else {
-    hofList.innerHTML =
-      "<div class='fame-entry'>명예의 전당이 비어있습니다.</div>";
+    hofList.innerHTML = rankingGradeFilter
+      ? `<div class='fame-entry'>${rankingGradeFilter}학년 명예의 전당 기록이 없습니다.</div>`
+      : "<div class='fame-entry'>명예의 전당이 비어있습니다.</div>";
   }
 
   const now = new Date();

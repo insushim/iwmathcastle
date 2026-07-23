@@ -1498,6 +1498,8 @@ function renderDynamicLayer() {
       {
         isFlying: m.type === "air",
         isBoss: m.isBoss,
+        now, // v5.1: 걷기 애니메이션 시간
+        phase: m.animPhase, // v5.1: 몬스터별 걷기 위상 (발맞춰 행진 방지)
         isElite: m.isElite, // v5: 엘리트 캔버스 링 (구 CSS 클래스는 미적용 상태였음)
         isShielded: !!m.statusEffects.shielded,
         isPoisoned: !!m.statusEffects.poisoned,
@@ -1703,6 +1705,7 @@ function spawnMonster(type, position = null, isSpecialSpawn = false) {
     direction: 0,
     animFrame: 0,
     animTimer: 0,
+    animPhase: Math.random() * Math.PI * 2, // v5.1: 걷기 위상 (개체별)
     prevX: 0,
     prevY: 0,
     defenseAuraSq: (stats.defenseAuraRadius || 0) ** 2,
@@ -2080,8 +2083,8 @@ function createProjectile(source, target) {
     target,
     speed: 15,
     type: type,
-    size: 8,
-    color: "#FFFFFF",
+    size: type === "wizard-auto" ? 13 : 8, // v5.1: 마법사 미사일 크게 (이펙트 체감)
+    color: type === "wizard-auto" ? "#82AAFF" : "#FFFFFF",
   };
 
   // 타입에 따라 색상과 크기 지정
@@ -2201,6 +2204,11 @@ function handleHit(projectile, timestamp) {
     delete monster.statusEffects.shielded;
     createDamageText(monster, "Block", "magic");
     return;
+  }
+
+  // v5.1: 명중 임팩트 스파클 — 큰 발사체만 + 저사양 모드 스킵 (8배 스로틀 실측 시 전량 생성은 프레임 예산 초과)
+  if (particleSystem && !quality.low && projectile.size >= 10) {
+    particleSystem.sparkle(monster.x, monster.y, projectile.color);
   }
 
   let damage = source.damage;
@@ -2429,6 +2437,24 @@ async function handleWizardAttack(clickPos = null) {
   wizardSprite.setCasting(true);
   sfx.play("wizard_cast");
   setTimeout(() => wizardSprite.setCasting(false), 600);
+
+  // v5.1: 시전 연출 강화 — 마법사 시전 버스트 + 목표 지점 스펠 색 폭발 + 대마법 화면 플래시
+  if (particleSystem) {
+    const SPELL_FX = {
+      fireball: "#ff6b35", frostNova: "#7fdbff", chainLightning: "#ffe066",
+      teleport: "#b388ff", blackHole: "#7c4dff", meteorShower: "#ff8a3d",
+      timeStop: "#80d8ff", guardianLight: "#ffe9a8", tornado: "#9ff0c0",
+      judgment: "#fff3b0",
+    };
+    const fxColor = SPELL_FX[activeSpell] || "#82AAFF";
+    particleSystem.explosion(wizardCenter.x, wizardCenter.y - 30, fxColor, 14);
+    if (spellOrigin !== wizardCenter) {
+      particleSystem.explosion(spellOrigin.x, spellOrigin.y, fxColor, 24);
+    }
+    if (["meteorShower", "timeStop", "judgment", "blackHole"].includes(activeSpell)) {
+      particleSystem.screenFlash(fxColor, 350, 0.18);
+    }
+  }
 
   switch (activeSpell) {
     case "fireball":

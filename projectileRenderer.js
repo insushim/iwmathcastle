@@ -627,33 +627,51 @@ export class ProjectileRenderer {
 
   /** Cyan magic missile for wizard auto-attack */
   _drawMagicMissile(ctx, x, y, r, angle, ts) {
-    // Glow
-    ctx.globalAlpha = 0.3;
-    ctx.fillStyle = "#82AAFF";
-    ctx.beginPath();
-    ctx.arc(x, y, r * 2, 0, TWO_PI);
-    ctx.fill();
+    // v5.1: 혜성형 매직 미사일 — 펄스 글로우 + 회전 스타 코어 + 긴 꼬리
+    const pulse = 1 + Math.sin(ts / 60) * 0.18;
 
-    // Core
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = "#82AAFF";
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, TWO_PI);
-    ctx.fill();
-
-    // Magical trail
+    // 긴 혜성 꼬리 (진행 반대 방향)
     const nx = -Math.cos(angle);
     const ny = -Math.sin(angle);
-    for (let i = 0; i < 3; i++) {
-      const dist = r * (1.0 + i * 0.8);
-      const tx = x + nx * dist;
-      const ty = y + ny * dist;
-      ctx.globalAlpha = 0.4 - i * 0.12;
-      ctx.fillStyle = "#82AAFF";
+    for (let i = 0; i < 6; i++) {
+      const dist = r * (1.0 + i * 0.9);
+      ctx.globalAlpha = 0.45 - i * 0.07;
+      ctx.fillStyle = i < 2 ? "#C3DBFF" : "#82AAFF";
       ctx.beginPath();
-      ctx.arc(tx, ty, r * (0.6 - i * 0.12), 0, TWO_PI);
+      ctx.arc(x + nx * dist, y + ny * dist, r * (0.75 - i * 0.1) * pulse, 0, TWO_PI);
       ctx.fill();
     }
+
+    // 외곽 글로우
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = "#82AAFF";
+    ctx.beginPath();
+    ctx.arc(x, y, r * 2.4 * pulse, 0, TWO_PI);
+    ctx.fill();
+
+    // 회전 4방 스타 코어
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(ts / 120);
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = "#FFFFFF";
+    const sr = r * 1.5 * pulse;
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2;
+      ctx.lineTo(Math.cos(a) * sr, Math.sin(a) * sr);
+      ctx.lineTo(Math.cos(a + Math.PI / 4) * sr * 0.35, Math.sin(a + Math.PI / 4) * sr * 0.35);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // 중심 코어
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#E3F0FF";
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.8, 0, TWO_PI);
+    ctx.fill();
     ctx.globalAlpha = 1;
   }
 

@@ -1,5 +1,6 @@
 // monsterRenderer.js - Canvas 2D Monster Sprite Renderer
 import { drawSpriteCentered } from "./spriteAssets.js";
+import { quality } from "./perfQuality.js";
 // Pixel-art style sprites using canvas primitives (fillRect, arc, lineTo)
 // Self-contained, no external dependencies
 
@@ -276,6 +277,24 @@ export class MonsterRenderer {
       ? -6 - Math.sin((f * Math.PI) / 2) * 3
       : 0;
     ctx.translate(0, bob + flyOffset);
+
+    // v5.1: 단일 프레임 스프라이트 걷기 연출 — 총총 바운스 + 갸우뚱 + 착지 스쿼시
+    // (연속 시간 기반, 몬스터별 위상(options.phase)으로 발맞춰 행진 방지. transform만 쓰므로 웨일북 예산 내)
+    const wt = (options.now ?? performance.now()) / 1000;
+    const wp = wt * (isBoss ? 5 : 9) + (options.phase || 0);
+    if (!options.isStunned) {
+      if (options.isFlying) {
+        if (!quality.low) ctx.rotate(Math.sin(wp * 0.7) * 0.07); // 활공 기울임
+      } else {
+        const hop = Math.abs(Math.sin(wp)) * drawSize * 0.07;
+        ctx.translate(0, -hop);
+        // 스케일 변형은 비트맵 fast path를 깨서 프레임 예산 초과 (실측) — 회전+바운스만.
+        // 저사양 강등 시엔 회전도 생략(바운스만).
+        if (!quality.low) {
+          ctx.rotate(Math.sin(wp) * (isBoss ? 0.05 : 0.1));
+        }
+      }
+    }
 
     // --- Boss glow ---
     if (isBoss) {

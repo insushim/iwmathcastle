@@ -635,16 +635,40 @@ export class WizardSprite {
     // v5: AI 스프라이트 우선 (idle/cast 포즈), 미로드 시 절차 캐시 폴백
     const poseSprite = getSprite(this._casting ? "wizard_cast" : "wizard_idle");
     if (poseSprite) {
-      const targetH = this._height * 1.35;
+      // v5.1: 살아있는 마법사 — 부유 바운스 + 좌우 스웨이 + 시전 팝 + 발밑 마법진 펄스
+      const t = performance.now() / 1000;
+      const floatY = Math.sin(t * 2.2) * 4;
+      const sway = Math.sin(t * 1.1) * 0.04;
+      const castPop = this._casting ? 1.12 : 1;
+
+      // 발밑 마법진 (은은한 펄스 — transform·arc만 사용, 웨일북 예산 내)
+      const auraR = this._width * (0.55 + Math.sin(t * 3) * 0.06);
+      ctx.save();
+      ctx.globalAlpha = 0.28 + Math.sin(t * 3) * 0.08;
+      ctx.strokeStyle = this._casting ? "#ffd166" : "#82AAFF";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(x, y + 2, auraR, auraR * 0.32, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(x, y + 2, auraR * 0.65, auraR * 0.21, t % (Math.PI * 2), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      const targetH = this._height * 1.35 * castPop;
       const scl = targetH / poseSprite.height;
       const w2 = poseSprite.width * scl;
+      ctx.save();
+      ctx.translate(x, y + floatY);
+      ctx.rotate(sway);
       ctx.drawImage(
         poseSprite,
-        Math.round(x - w2 / 2),
-        Math.round(y - targetH + this._idleBob),
+        Math.round(-w2 / 2),
+        Math.round(-targetH),
         Math.round(w2),
         Math.round(targetH),
       );
+      ctx.restore();
     } else {
       // Blit cached sprite to main canvas in a single drawImage call
       ctx.drawImage(this._cacheCanvas, ox, oy);
