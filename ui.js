@@ -4,6 +4,7 @@
 import { gameElements } from "./constants.js";
 import { TOWER_STATS } from "./gameData.js";
 import { hideModal, showModal, showMessage } from "./utils.js";
+import { stageOfWave, waveInStage } from "./stageProgress.js";
 
 const isMobile = /Mobi/i.test(window.navigator.userAgent);
 let buildStepCallback = null;
@@ -90,7 +91,9 @@ function triggerValueAnimation(element, isIncrease) {
 
 export function updateUI(state) {
   document.getElementById("castleHealth").textContent = state.castleHealth;
-  document.getElementById("currentWave").textContent = state.currentWave;
+  // v5.1: 스테이지-웨이브 표기 (예: 2-3 = 스테이지 2의 3번째 웨이브)
+  document.getElementById("currentWave").textContent =
+    `${stageOfWave(state.currentWave)}-${waveInStage(state.currentWave)}`;
   document.getElementById("monstersLeft").textContent =
     `${state.monsters.length}/${state.monstersInWave}`;
 
@@ -152,11 +155,11 @@ export function showDifficultySelector() {
   // Reset tracked values
   prevGold = 100;
   prevScore = 0;
-  if (localStorage.getItem("towerDefenseSave")) {
-    document.getElementById("loadGameBtn").disabled = false;
-  } else {
-    document.getElementById("loadGameBtn").disabled = true;
-  }
+  // v5.1: 신 키(mathcastle:save) 우선 확인 — 구 키만 보던 버그 수정
+  const hasSave =
+    localStorage.getItem("mathcastle:save") ||
+    localStorage.getItem("towerDefenseSave");
+  document.getElementById("loadGameBtn").disabled = !hasSave;
 }
 
 export async function showTowerSelector(x, y, sfx) {

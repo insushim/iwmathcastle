@@ -195,7 +195,20 @@
                 <input type="text" id="playerNameInput" class="name-input" placeholder="이름을 입력하세요 (10자 이내)" maxlength="10" aria-label="플레이어 이름">
                 <div class="modal-actions">
                     <button class="modal-btn primary" id="submitScoreBtn">점수 등록</button>
+                    <button class="modal-btn" id="retryStageBtn">🔁 스테이지부터 다시</button>
                     <button class="modal-btn" id="restartGameBtn">다시 시작</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== 스테이지 선택 모달 ===== -->
+        <div class="modal" id="stageSelectModal">
+            <div class="modal-content stage-select-modal">
+                <h2 class="stage-select-title">🗺️ 스테이지 선택</h2>
+                <p class="stage-select-info" id="stageSelectInfo"></p>
+                <div id="stageGrid"></div>
+                <div class="modal-actions">
+                    <button class="modal-btn" id="closeStageSelectBtn">뒤로</button>
                 </div>
             </div>
         </div>

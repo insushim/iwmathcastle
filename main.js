@@ -11,6 +11,7 @@ import { mathProblems, loadGradeProblems } from "./problems.js";
 import * as simCore from "./simCore.js";
 import { quality, detectLowEnd, feedFrameTime } from "./perfQuality.js";
 import * as learnLoop from "./learnLoop.js";
+import * as stageProgress from "./stageProgress.js";
 import { preloadSprites, getSprite } from "./spriteAssets.js";
 import {
   debounce,
@@ -339,7 +340,8 @@ function showWaveAnnounce(waveNum) {
   const el = document.getElementById("wave-announce");
   const numEl = document.getElementById("announceWaveNum");
   if (!el || !numEl) return;
-  numEl.textContent = waveNum;
+  // v5.1: 스테이지-웨이브 표기 (예: 2-3 = 스테이지 2의 3번째 웨이브)
+  numEl.textContent = `${stageProgress.stageOfWave(waveNum)}-${stageProgress.waveInStage(waveNum)}`;
   el.classList.remove("hidden");
   el.style.animation = "none";
   void el.offsetWidth;
@@ -3176,6 +3178,21 @@ function checkWaveCompletion() {
     // [V2] Auto-save after each wave completion
     saveGame(true);
 
+    // v5.1: 스테이지(5웨이브) 클리어 — 다음 스테이지 시작 스냅샷을 체크포인트로 보관.
+    // 타워·골드·마법사 상태가 전부 스냅샷에 들어가므로 다음 스테이지에서도 그대로 유지되고,
+    // 게임오버가 나도 이 체크포인트부터 다시 시작할 수 있다.
+    if (currentWave % stageProgress.WAVES_PER_STAGE === 0) {
+      const clearedStage = stageProgress.stageOfWave(currentWave);
+      const snap = buildGameState();
+      snap.currentWave = currentWave + 1;
+      stageProgress.recordCheckpoint(selectedDifficulty, clearedStage + 1, snap);
+      showMessage(
+        `🏁 스테이지 ${clearedStage} 클리어! 진행 상황 저장 완료 — 언제든 이어서 할 수 있어요.`,
+      );
+      sfx.play("powerup");
+      if (particleSystem) particleSystem.screenFlash("#ffd166", 500, 0.15);
+    }
+
     showMathProblem();
   }
 }
@@ -3203,6 +3220,15 @@ function checkGameOver() {
     }
     const finalComboEl = document.getElementById("finalCombo");
     if (finalComboEl) finalComboEl.textContent = comboSystem.maxCombo || 0;
+
+    // v5.1: 스테이지 체크포인트는 게임오버에도 남는다 — 현재 스테이지부터 재도전 버튼
+    const retryBtn = document.getElementById("retryStageBtn");
+    if (retryBtn) {
+      const stage = stageProgress.stageOfWave(currentWave);
+      retryBtn.dataset.stage = stage;
+      retryBtn.dataset.difficulty = selectedDifficulty;
+      retryBtn.textContent = `🔁 스테이지 ${stage}부터 다시`;
+    }
 
     // [V2] 게임 오버 음악
     musicSystem.play("defeat");
@@ -3336,9 +3362,33 @@ function setupEventListeners() {
     btn.addEventListener("click", (e) => {
       if (gameInitialized) return;
       sfx.init().then(() => sfx.play("blip"));
-      initializeGame(e.currentTarget.dataset.difficulty);
+      const difficulty = e.currentTarget.dataset.difficulty;
+      const progress = stageProgress.getProgress(difficulty);
+      // 도달한 스테이지가 있으면 스테이지 선택, 처음이면 바로 시작
+      if (progress.highest > 1) {
+        openStageSelect(difficulty, progress);
+      } else {
+        initializeGame(difficulty);
+      }
     }),
   );
+
+  document
+    .getElementById("closeStageSelectBtn")
+    .addEventListener("click", () => {
+      hideModal(document.getElementById("stageSelectModal"));
+    });
+
+  document.getElementById("retryStageBtn").addEventListener("click", () => {
+    const btn = document.getElementById("retryStageBtn");
+    const stage = Number(btn.dataset.stage || 1);
+    const difficulty = btn.dataset.difficulty || selectedDifficulty;
+    const checkpoint =
+      stage > 1 ? stageProgress.getCheckpoint(difficulty, stage) : null;
+    sfx.play("blip");
+    restartGame();
+    initializeGame(difficulty, checkpoint);
+  });
   gameElements.startWaveBtn.addEventListener("click", startWave);
   document.getElementById("pauseBtn").addEventListener("click", togglePause);
   const fullscreenBtn = document.getElementById("fullscreenBtn");
@@ -3646,8 +3696,39 @@ function togglePause() {
   }
 }
 
+// v5.1: 스테이지 선택 — 도달한 스테이지 목록에서 골라 체크포인트(타워·골드 유지)로 시작
+function openStageSelect(difficulty, progress) {
+  const modal = document.getElementById("stageSelectModal");
+  const grid = document.getElementById("stageGrid");
+  const info = document.getElementById("stageSelectInfo");
+  if (!modal || !grid) return initializeGame(difficulty);
+
+  info.textContent = `${difficulty}학년 · 최고 스테이지 ${progress.highest} — 타워와 골드는 그대로 이어집니다`;
+  grid.innerHTML = "";
+  for (let s = 1; s <= progress.highest; s++) {
+    const cleared = s < progress.highest;
+    const btn = document.createElement("button");
+    btn.className = `stage-btn${cleared ? " cleared" : " frontier"}`;
+    btn.innerHTML = `<span class="stage-num">${s}</span><span class="stage-sub">${
+      cleared ? "✅ 클리어" : "⚔️ 도전!"
+    }</span><span class="stage-waves">웨이브 ${stageProgress.stageStartWave(s)}~${
+      s * stageProgress.WAVES_PER_STAGE
+    }</span>`;
+    btn.addEventListener("click", () => {
+      sfx.play("blip");
+      hideModal(modal);
+      const checkpoint =
+        s > 1 ? stageProgress.getCheckpoint(difficulty, s) : null;
+      initializeGame(difficulty, checkpoint);
+    });
+    grid.appendChild(btn);
+  }
+  showModal(modal);
+}
+
 function restartGame() {
   hideModal(gameElements.gameOverModal);
+  hideModal(document.getElementById("stageSelectModal"));
   hideModal(gameElements.rankingModal);
   ui.showDifficultySelector();
   gameInitialized = false;
@@ -3799,8 +3880,8 @@ function safeCleanupAllElements() {
 }
 
 // --- 게임 저장 및 불러오기 ---
-function saveGame(silent = false) {
-  const gameState = {
+function buildGameState() {
+  return {
     difficulty: selectedDifficulty,
     gold,
     score,
@@ -3833,6 +3914,10 @@ function saveGame(silent = false) {
     shownProblemIds: shownProblemIds ? [...shownProblemIds] : [],
     gameSpeed,
   };
+}
+
+function saveGame(silent = false) {
+  const gameState = buildGameState();
 
   // v5: 게임ID 네임스페이스 + 버전 래퍼 (마이그레이션 체인용)
   localStorage.setItem(

@@ -5,6 +5,7 @@
 // 사용: node tools/headless-scenarios.mjs
 
 import * as sim from "../simCore.js";
+import * as stageProgress from "../stageProgress.js";
 import { TOWER_STATS, MONSTER_STATS, WIZARD_SPELLS } from "../gameData.js";
 
 let pass = 0, fail = 0;
@@ -101,6 +102,23 @@ for (let l = 1; l < 10; l++) {
 check("업그레이드 비용 단조 증가", costMono);
 check("레벨 10 데미지 유한·양수", t.damage > 35 && isFinite(t.damage));
 check("쿨다운 하한 유지(>0)", t.cooldown > 0);
+
+// ---------- 스테이지 시스템 (v5.1) ----------
+console.log("\n[불변식 — 스테이지]");
+check("웨이브→스테이지 매핑 (1~5=S1, 6=S2)", stageProgress.stageOfWave(1) === 1 && stageProgress.stageOfWave(5) === 1 && stageProgress.stageOfWave(6) === 2);
+check("스테이지 시작 웨이브 역산 일치 (1~120 전수)", (() => {
+  for (let w = 1; w <= 120; w++) {
+    const s = stageProgress.stageOfWave(w);
+    const start = stageProgress.stageStartWave(s);
+    if (start > w || w >= start + stageProgress.WAVES_PER_STAGE) return false;
+    if (stageProgress.waveInStage(w) !== w - start + 1) return false;
+  }
+  return true;
+})());
+check("localStorage 없는 환경(Node)에서 안전 기본값", (() => {
+  const p = stageProgress.getProgress(4);
+  return p.highest === 1 && Object.keys(p.checkpoints).length === 0;
+})());
 
 console.log(`\n${"=".repeat(40)}\n결과: ${pass} PASS / ${fail} FAIL`);
 process.exit(fail > 0 ? 1 : 0);
