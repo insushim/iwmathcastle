@@ -816,13 +816,17 @@ function generatePath() {
   const playBottom = vh - bottomMargin;
   const playH = playBottom - playTop;
 
+  // v5.7: 최상단 길을 아래로 내려 위에 타워 1줄 + 캐슬 첨탑 여유 확보
+  // (기존 playH*0.05는 너무 위 → 캐슬 잘림·상단 타워 불가)
+  const topRowY = playTop + 135;
+
   const points = [
-    { x: vw - 10, y: playTop + playH * 0.85 },
-    { x: vw * 0.2, y: playTop + playH * 0.85 },
-    { x: vw * 0.2, y: playTop + playH * 0.42 },
-    { x: vw * 0.8, y: playTop + playH * 0.42 },
-    { x: vw * 0.8, y: playTop + playH * 0.05 + pathWidth / 2 },
-    { x: 70, y: playTop + playH * 0.05 + pathWidth / 2 },
+    { x: vw - 10, y: playTop + playH * 0.88 },
+    { x: vw * 0.2, y: playTop + playH * 0.88 },
+    { x: vw * 0.2, y: playTop + playH * 0.5 },
+    { x: vw * 0.8, y: playTop + playH * 0.5 },
+    { x: vw * 0.8, y: topRowY },
+    { x: 70, y: topRowY },
   ];
 
   for (let i = 0; i < points.length - 1; i++) {
@@ -876,35 +880,74 @@ function drawRoad(corners, w) {
     ctx.stroke();
   };
 
+  const TWO_PI = Math.PI * 2;
   // 1) 바깥 마법 글로우 테두리 (정적이라 shadowBlur 1회 허용)
   ctx.save();
-  ctx.shadowColor = "rgba(130,100,220,0.55)";
-  ctx.shadowBlur = 18;
-  traceStroke(w + 16, "#221a30");
+  ctx.shadowColor = "rgba(130,100,220,0.5)";
+  ctx.shadowBlur = 20;
+  traceStroke(w + 18, "#20172c");
   ctx.restore();
-  // 2) 흙 가장자리 → 3) 본 노면 → 4) 밟아 다져진 밝은 중앙
-  traceStroke(w + 8, "#3c3125");
-  traceStroke(w, "#6f5a41");
-  traceStroke(w * 0.6, "#856b4c");
+  // 2) 어두운 흙 가장자리(파인 느낌) → 3) 본 노면 → 4) 밝은 중앙 트랙
+  traceStroke(w + 8, "#33291e");
+  traceStroke(w + 2, "#4a3b2a");
+  traceStroke(w, "#6b5640");
+  // 5) 안쪽 그림자(가장자리 어둡게 — 길이 파인 입체감)
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  traceStroke(w, "#2c2318");
+  ctx.globalAlpha = 1;
+  traceStroke(w - 10, "#6f5a41");
+  ctx.restore();
+  // 6) 밟아 다져진 밝은 중앙 트랙
+  traceStroke(w * 0.5, "#8a6f4e");
 
-  // 5) 돌길 질감 — 경로 따라 결정론적 조약돌
+  // 7) 돌길 질감 — 입체 자갈(그림자+본체+하이라이트)로 진짜 돌길처럼
   const rnd = seededRand(1337);
   ctx.save();
-  for (let i = 0; i < pathPoints.length; i += 3) {
+  for (let i = 0; i < pathPoints.length; i += 2) {
     const p = pathPoints[i];
-    // 진행 방향 수직으로 살짝 흩뿌림
     const nx = i + 1 < pathPoints.length ? pathPoints[i + 1].x - p.x : 0;
     const ny = i + 1 < pathPoints.length ? pathPoints[i + 1].y - p.y : 0;
     const len = Math.hypot(nx, ny) || 1;
     const perpX = -ny / len,
       perpY = nx / len;
-    const spread = (rnd() - 0.5) * (w - 10);
+    const spread = (rnd() - 0.5) * (w - 8);
     const cx = p.x + perpX * spread;
     const cy = p.y + perpY * spread;
-    const r = 2 + rnd() * 3;
+    const r = 2.2 + rnd() * 4;
+    const rot = rnd() * Math.PI;
+    // 그림자
+    ctx.fillStyle = "rgba(30,22,14,0.45)";
     ctx.beginPath();
-    ctx.ellipse(cx, cy, r, r * 0.75, rnd() * Math.PI, 0, Math.PI * 2);
-    ctx.fillStyle = rnd() > 0.5 ? "rgba(60,48,34,0.5)" : "rgba(150,128,96,0.35)";
+    ctx.ellipse(cx + 0.9, cy + 1.1, r, r * 0.8, rot, 0, TWO_PI);
+    ctx.fill();
+    // 돌 본체 (색 변주)
+    const base = 95 + rnd() * 55;
+    ctx.fillStyle = `rgba(${(base + 28) | 0},${(base + 8) | 0},${(base - 22) | 0},0.55)`;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r, r * 0.8, rot, 0, TWO_PI);
+    ctx.fill();
+    // 하이라이트 (좌상단)
+    ctx.fillStyle = "rgba(210,188,150,0.28)";
+    ctx.beginPath();
+    ctx.ellipse(cx - r * 0.28, cy - r * 0.3, r * 0.42, r * 0.3, rot, 0, TWO_PI);
+    ctx.fill();
+  }
+  // 8) 가장자리 이끼/풀 틴트 (드문드문)
+  for (let i = 0; i < pathPoints.length; i += 9) {
+    if (rnd() > 0.5) continue;
+    const p = pathPoints[i];
+    const nx = i + 1 < pathPoints.length ? pathPoints[i + 1].x - p.x : 0;
+    const ny = i + 1 < pathPoints.length ? pathPoints[i + 1].y - p.y : 0;
+    const len = Math.hypot(nx, ny) || 1;
+    const perpX = -ny / len,
+      perpY = nx / len;
+    const side = rnd() > 0.5 ? 1 : -1;
+    const cx = p.x + perpX * (w / 2 - 3) * side;
+    const cy = p.y + perpY * (w / 2 - 3) * side;
+    ctx.fillStyle = "rgba(70,90,45,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 3 + rnd() * 3, 2, rnd() * Math.PI, 0, TWO_PI);
     ctx.fill();
   }
   ctx.restore();
@@ -2554,7 +2597,9 @@ async function handleWizardAttack(clickPos = null) {
   // v5.4: 마법 발사 원점도 스프라이트 상수 기준 (offsetWidth 버그 회피 — wizardAutoAttack 참조)
   const wizardCenter = wizardCenterPoint();
 
-  let spellOrigin = spell.aoe > 0 && clickPos ? clickPos : wizardCenter;
+  // v5.7: 마법은 무조건 마법사 주위에서 발동. 이동 마법(teleport)만 클릭 위치로 순간이동.
+  let spellOrigin =
+    activeSpell === "teleport" && clickPos ? clickPos : wizardCenter;
   const aoeSq = spell.aoe * spell.aoe;
 
   // [MODIFIED] 스킬 효과 적용 시 공간 그리드를 사용하여 효율적으로 대상 탐색
