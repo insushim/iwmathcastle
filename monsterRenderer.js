@@ -1,4 +1,5 @@
 // monsterRenderer.js - Canvas 2D Monster Sprite Renderer
+import { drawSpriteCentered } from "./spriteAssets.js";
 // Pixel-art style sprites using canvas primitives (fillRect, arc, lineTo)
 // Self-contained, no external dependencies
 
@@ -220,7 +221,10 @@ const WING_ANGLE = [15, 5, -10, 5]; // degrees offset for wing flap
 // ---------------------------------------------------------------------------
 export class MonsterRenderer {
   constructor() {
-    // Cache nothing for now; pure draw calls
+    // v5: 몸체 프레임 캐시 — (monsterKey, size, frame[, enraged]) 단위 오프스크린
+    // 웨일북 최적화: 몬스터당 수십~수백 패스 콜 → drawImage 1콜
+    // WS-3 AI 스프라이트 도입 시 이 캐시 자리에 이미지 에셋이 들어간다
+    this._bodyCache = new Map();
   }
 
   /**
@@ -278,10 +282,91 @@ export class MonsterRenderer {
       this._drawBossGlow(ctx, drawSize, monsterKey);
     }
 
-    // --- Draw monster body based on key ---
-    const half = drawSize / 2;
-    ctx.translate(-half, -half); // top-left origin for drawing
+    // --- v5: AI 스프라이트 우선 (미로드 시 절차 캐시 폴백) ---
+    const spriteKey =
+      monsterKey === "mini-splitter" ? "monster_splitter" : `monster_${monsterKey}`;
+    if (drawSpriteCentered(ctx, spriteKey, 0, 0, drawSize * 1.25)) {
+      this._afterBody(ctx, drawSize, monsterKey, f, isBoss, options);
+      ctx.restore();
+      if (hp != null && maxHp != null && hp < maxHp) {
+        this._drawHealthBar(ctx, x, y - drawSize / 2 + bob + flyOffset - 6, drawSize, hp, maxHp);
+      }
+      return;
+    }
 
+    // --- Draw monster body via frame cache (v5 웨일북 최적화) ---
+    const half = drawSize / 2;
+    const enraged =
+      monsterKey === "berserker" && hp != null && maxHp != null && hp / maxHp < 0.5;
+    const pad = Math.ceil(drawSize * 0.6);
+    const cacheKey = `${monsterKey}|${Math.round(drawSize)}|${f}${enraged ? "|e" : ""}`;
+    let bodyCv = this._bodyCache.get(cacheKey);
+    if (!bodyCv) {
+      bodyCv = document.createElement("canvas");
+      bodyCv.width = Math.ceil(drawSize) + pad * 2;
+      bodyCv.height = Math.ceil(drawSize) + pad * 2;
+      const bctx = bodyCv.getContext("2d");
+      bctx.translate(pad, pad);
+      this._drawBody(bctx, monsterKey, drawSize, f, enraged ? 40 : 100, 100);
+      if (this._bodyCache.size > 400) this._bodyCache.clear();
+      this._bodyCache.set(cacheKey, bodyCv);
+    }
+    ctx.drawImage(bodyCv, -half - pad, -half - pad);
+
+    // --- Universal Animated Outline Glow ---
+    this._drawUniversalOutlineGlow(ctx, drawSize, monsterKey, f, isBoss);
+
+    // --- Status effects ---
+    if (options.isElite) this._drawEliteRing(ctx, drawSize, f);
+    if (options.isShielded) this._drawShieldEffect(ctx, drawSize);
+    if (options.isPoisoned) this._drawPoisonEffect(ctx, drawSize, f);
+    if (options.isSlowed) this._drawFrostEffect(ctx, drawSize, f);
+    if (options.isStunned) this._drawStunEffect(ctx, drawSize, f);
+
+    ctx.restore();
+
+    // --- Health bar (drawn without flip) ---
+    if (hp != null && maxHp != null && hp < maxHp) {
+      this._drawHealthBar(
+        ctx,
+        x,
+        y - drawSize / 2 + bob + flyOffset - 6,
+        drawSize,
+        hp,
+        maxHp,
+      );
+    }
+  }
+
+
+  // v5: 엘리트 표시 — 금색 이중 링 (프레임 펄스)
+  _drawEliteRing(ctx, drawSize, f) {
+    const rr = drawSize * 0.62 + (f % 2) * 1.5;
+    ctx.save();
+    ctx.strokeStyle = "rgba(255, 200, 40, 0.9)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, rr, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255, 240, 150, 0.45)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, rr + 3, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // v5: 스프라이트 경로에서 몸체 이후 공통 오버레이 (글로우·상태)
+  _afterBody(ctx, drawSize, monsterKey, f, isBoss, options) {
+    if (options.isElite) this._drawEliteRing(ctx, drawSize, f);
+    this._drawUniversalOutlineGlow(ctx, drawSize, monsterKey, f, isBoss);
+    if (options.isShielded) this._drawShieldEffect(ctx, drawSize);
+    if (options.isPoisoned) this._drawPoisonEffect(ctx, drawSize, f);
+    if (options.isSlowed) this._drawFrostEffect(ctx, drawSize, f);
+    if (options.isStunned) this._drawStunEffect(ctx, drawSize, f);
+  }
+  // v5: 몸체 스위치 (캐시 빌드 전용 — 좌상단 원점 기준)
+  _drawBody(ctx, monsterKey, drawSize, f, hp, maxHp) {
     switch (monsterKey) {
       case "normal":
         this._drawNormal(ctx, drawSize, f);
@@ -392,31 +477,6 @@ export class MonsterRenderer {
         this._drawNormal(ctx, drawSize, f);
         break;
     }
-
-    ctx.translate(half, half); // back to center
-
-    // --- Universal Animated Outline Glow ---
-    this._drawUniversalOutlineGlow(ctx, drawSize, monsterKey, f, isBoss);
-
-    // --- Status effects ---
-    if (options.isShielded) this._drawShieldEffect(ctx, drawSize);
-    if (options.isPoisoned) this._drawPoisonEffect(ctx, drawSize, f);
-    if (options.isSlowed) this._drawFrostEffect(ctx, drawSize, f);
-    if (options.isStunned) this._drawStunEffect(ctx, drawSize, f);
-
-    ctx.restore();
-
-    // --- Health bar (drawn without flip) ---
-    if (hp != null && maxHp != null && hp < maxHp) {
-      this._drawHealthBar(
-        ctx,
-        x,
-        y - drawSize / 2 + bob + flyOffset - 6,
-        drawSize,
-        hp,
-        maxHp,
-      );
-    }
   }
 
   // =========================================================================
@@ -521,12 +581,9 @@ export class MonsterRenderer {
         const py = Math.sin(angle) * orbitRadius;
 
         ctx.fillStyle = ringColor;
-        ctx.shadowColor = ringColor;
-        ctx.shadowBlur = 5;
         ctx.beginPath();
         ctx.arc(px, py, 3, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
       }
     }
 
@@ -663,15 +720,12 @@ export class MonsterRenderer {
       .toString(16)
       .padStart(2, "0")}`;
     ctx.lineWidth = 1 + pulse * 0.5;
-    ctx.shadowColor = glowColor;
-    ctx.shadowBlur = 2 + pulse * 2;
 
     // Draw outline circle around entire monster
     ctx.beginPath();
     ctx.arc(0, 0, size * 0.48 * pulse, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.shadowBlur = 0;
 
     // For boss monsters: Add orbiting energy particles
     if (isBoss) {
@@ -684,13 +738,10 @@ export class MonsterRenderer {
         const py = Math.sin(angle) * orbitRadius;
 
         ctx.fillStyle = `${glowColor}80`; // Semi-transparent
-        ctx.shadowColor = glowColor;
-        ctx.shadowBlur = 3;
         ctx.beginPath();
         ctx.arc(px, py, 2, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.shadowBlur = 0;
     }
   }
 
@@ -1515,11 +1566,8 @@ export class MonsterRenderer {
 
     // Glowing eyes behind visor
     ctx.fillStyle = "#FF4444";
-    ctx.shadowColor = "#FF4444";
-    ctx.shadowBlur = 3;
     ctx.fillRect(cx - s * 0.1, headY - 2, 4, 3);
     ctx.fillRect(cx + s * 0.06, headY - 2, 4, 3);
-    ctx.shadowBlur = 0;
   }
 
   // --- Shielder ---
@@ -1879,12 +1927,9 @@ export class MonsterRenderer {
 
     // Glowing eyes
     const eyeR = s * 0.05;
-    ctx.shadowColor = "#FFD700";
-    ctx.shadowBlur = 4;
     this._oCircle(ctx, cx - s * 0.07, headY - 2, eyeR, PAL.dragonGold, false);
     this._oCircle(ctx, cx - s * 0.07, headY - 2, eyeR * 0.4, PAL.pupil, false);
     this._oCircle(ctx, cx + s * 0.07, headY - 2, eyeR, PAL.dragonGold, false);
-    ctx.shadowBlur = 0;
     this._oCircle(ctx, cx + s * 0.07, headY - 2, eyeR * 0.4, PAL.pupil, false);
 
     // Enhanced snout with teeth
@@ -1918,11 +1963,8 @@ export class MonsterRenderer {
 
     // Flaming nostrils
     ctx.fillStyle = "#FF6F00";
-    ctx.shadowColor = "#FF6F00";
-    ctx.shadowBlur = 3;
     ctx.fillRect(cx - 3, headY + headRy * 0.4, 2, 2);
     ctx.fillRect(cx + 1, headY + headRy * 0.4, 2, 2);
-    ctx.shadowBlur = 0;
 
     // Powerful claws
     ctx.fillStyle = PAL.dragonDark;
@@ -3210,11 +3252,8 @@ export class MonsterRenderer {
 
     // Glowing demonic eyes
     ctx.fillStyle = "#FF0000";
-    ctx.shadowColor = "#FF0000";
-    ctx.shadowBlur = 5;
     this._oCircle(ctx, cx - s * 0.08, headY - 2, s * 0.03, "#FFFF00", false);
     this._oCircle(ctx, cx + s * 0.08, headY - 2, s * 0.03, "#FFFF00", false);
-    ctx.shadowBlur = 0;
 
     // Fanged mouth
     ctx.strokeStyle = PAL.bossDark;

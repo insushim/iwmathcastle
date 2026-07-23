@@ -1,4 +1,5 @@
 // wizardSprite.js - Enhanced Pixel-art Wizard on Horseback sprite system
+import { getSprite } from "./spriteAssets.js";
 // Canvas 2D primitives only (fillRect, arc, lineTo, bezierCurveTo, etc.)
 // 8 directional sprites with walk(8-frame), gallop, casting, idle animations
 // Direction interpolation, sparkle particles, aura, damage/levelup effects
@@ -631,8 +632,23 @@ export class WizardSprite {
     const ox = Math.round(x - this._width / 2) - pad;
     const oy = Math.round(y - this._height + this._idleBob) - pad;
 
-    // Blit cached sprite to main canvas in a single drawImage call
-    ctx.drawImage(this._cacheCanvas, ox, oy);
+    // v5: AI 스프라이트 우선 (idle/cast 포즈), 미로드 시 절차 캐시 폴백
+    const poseSprite = getSprite(this._casting ? "wizard_cast" : "wizard_idle");
+    if (poseSprite) {
+      const targetH = this._height * 1.35;
+      const scl = targetH / poseSprite.height;
+      const w2 = poseSprite.width * scl;
+      ctx.drawImage(
+        poseSprite,
+        Math.round(x - w2 / 2),
+        Math.round(y - targetH + this._idleBob),
+        Math.round(w2),
+        Math.round(targetH),
+      );
+    } else {
+      // Blit cached sprite to main canvas in a single drawImage call
+      ctx.drawImage(this._cacheCanvas, ox, oy);
+    }
 
     // Draw level-based effects AFTER the wizard
     this._drawLevelBasedEffectsOverlay(ctx, x, y, level);

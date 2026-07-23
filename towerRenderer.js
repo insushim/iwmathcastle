@@ -1,4 +1,5 @@
 // towerRenderer.js - Canvas 2D Tower Renderer (Isometric / Pseudo-3D)
+import { drawSpriteCentered } from "./spriteAssets.js";
 // Pixel-art style sprites using canvas primitives (fillRect, arc, lineTo, bezierCurveTo)
 // Self-contained, no external dependencies
 // All animations driven by `timestamp` parameter
@@ -219,9 +220,12 @@ export class TowerRenderer {
       this._drawLevelRings(ctx, level, timestamp);
     }
 
-    // Draw cached static tower body, or build cache on first call
-    const cached = this._getCachedTower(towerType, level);
-    ctx.drawImage(cached, -this._cacheOX, -this._cacheOY);
+    // v5: AI 스프라이트 우선 (미로드 시 절차 캐시 폴백)
+    if (!drawSpriteCentered(ctx, `tower_${towerType}`, 0, -14, 78)) {
+      // Draw cached static tower body, or build cache on first call
+      const cached = this._getCachedTower(towerType, level);
+      ctx.drawImage(cached, -this._cacheOX, -this._cacheOY);
+    }
 
     // Draw animated overlays on top (glows, particles, rotating elements)
     this._drawAnimatedOverlays(ctx, towerType, timestamp, level);

@@ -482,7 +482,8 @@ export class MusicSystem {
   }
 
   init() {
-    if (this.ctx) return;
+    // v5 버그픽스: Promise 반환 (미반환 시 main.js .then() 크래시 → BGM 영구 무음이던 버그)
+    if (this.ctx) return Promise.resolve();
     try {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -510,9 +511,11 @@ export class MusicSystem {
       this.percGain = this._createLayerGain(0.08);
       this.hihatGain = this._createLayerGain(0.03);
 
-      if (this.ctx.state === "suspended") this.ctx.resume();
+      if (this.ctx.state === "suspended") return this.ctx.resume();
+      return Promise.resolve();
     } catch (e) {
       console.warn("MusicSystem: AudioContext init failed", e);
+      return Promise.resolve();
     }
   }
 

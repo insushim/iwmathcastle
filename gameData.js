@@ -110,7 +110,7 @@ export const TOWER_STATS = {
   laser: {
     name: "레이저",
     symbol: "⚡",
-    dps: 42,
+    dps: 58, // v5 밸런스: 42→58 (효율 21→29/100골드 — 사장 타워 구제)
     range: 115,
     cost: 200,
     targetType: "all",
@@ -140,7 +140,7 @@ export const TOWER_STATS = {
   shredder: {
     name: "파쇄기",
     symbol: "💥",
-    damage: 35,
+    damage: 46, // v5 밸런스: 35→46 (방어력 파쇄 유틸 + 준수한 DPS)
     range: 120,
     cost: 180,
     targetType: "all",
@@ -632,6 +632,54 @@ export const WIZARD_SPELLS = {
     dps: 50,
     aoe: 130,
     duration: 2500,
+  },
+  // ---- v5 신규 마법 (레벨 6~10) ----
+  meteorShower: {
+    name: "유성우",
+    symbol: "☄️",
+    level: 6,
+    cooldown: 15000,
+    damage: 90,
+    aoe: 70,
+    strikes: 5,
+  },
+  timeStop: {
+    name: "시간 정지",
+    symbol: "⏱️",
+    level: 7,
+    cooldown: 22000,
+    damage: 0,
+    aoe: 0,
+    freezeDuration: 3000,
+  },
+  guardianLight: {
+    name: "수호의 빛",
+    symbol: "💛",
+    level: 8,
+    cooldown: 28000,
+    damage: 0,
+    aoe: 0,
+    heal: 15,
+    slowFactor: 0.5,
+    slowDuration: 3000,
+  },
+  tornado: {
+    name: "회오리",
+    symbol: "🌪️",
+    level: 9,
+    cooldown: 20000,
+    damage: 40,
+    aoe: 150,
+    pushbackPx: 500,
+  },
+  judgment: {
+    name: "대마법: 심판",
+    symbol: "🌟",
+    level: 10,
+    cooldown: 45000,
+    damage: 250,
+    bossDamage: 150,
+    aoe: 0,
   },
 };
 

@@ -7,7 +7,11 @@ import {
   WIZARD_SPELLS,
   WIZARD_AUTO_ATTACK_STATS,
 } from "./gameData.js";
-import { mathProblems } from "./problems.js";
+import { mathProblems, loadGradeProblems } from "./problems.js";
+import * as simCore from "./simCore.js";
+import { quality, detectLowEnd, feedFrameTime } from "./perfQuality.js";
+import * as learnLoop from "./learnLoop.js";
+import { preloadSprites, getSprite } from "./spriteAssets.js";
 import {
   debounce,
   showMessage,
@@ -138,6 +142,8 @@ let touchStartTime = 0,
   touchMoveDistance = 0,
   lastClickPos = { x: 0, y: 0 };
 let activeSpell = "fireball";
+let currentProblem = null; // v5: 학습 루프용 현재 문제
+let isReviewProblem = false; // v5: 복습(재출제) 문제 여부
 let gameSpeed = 1; // 1x or 2x speed multiplier
 let shownProblemIds = new Set(); // Track shown problems to avoid duplicates
 let problemTimerId = null;
@@ -417,7 +423,39 @@ function renderAchievementList() {
 
 // --- 게임 초기화 및 설정 ---
 window.addEventListener("DOMContentLoaded", () => {
-  categorizeAnswers();
+  detectLowEnd(); // v5: 웨일북(저사양) 자동 감지 → 품질 강등
+
+  // v5 QA 훅 (고유 전역 키 — window.game 금지 교훈). 프로덕션에서도 무해(읽기+시전 테스트용).
+  window.__mathcastle = {
+    getState: () => ({
+      gold, castleHealth, currentWave, wizardLevel, activeSpell,
+      monsters: monsters.length, towers: towers.length,
+      gameRunning, gamePaused,
+    }),
+    qaSetWizardLevel: (lv) => { wizardLevel = lv; populateSpellbook(); },
+    qaCastSpell: async (key, x, y) => {
+      activeSpell = key;
+      wizardCooldowns[key] = 0;
+      await handleWizardAttack({ x: x ?? window.innerWidth / 2, y: y ?? window.innerHeight / 2 });
+    },
+    qaAddGold: (n) => { gold += n; updateFullUI(); },
+    qaSetWave: (n) => { currentWave = n; updateFullUI(); },
+    qaPlaceTowers: (type, count) => {
+      // 타일에 타워 강제 배치 (성능 테스트용)
+      const tiles = [...document.querySelectorAll(".placement-tile")].slice(0, count);
+      tiles.forEach((tile) => {
+        gold += 10000;
+        pendingTile = {
+          x: parseInt(tile.style.left) + 20,
+          y: parseInt(tile.style.top) + 20,
+        };
+        placeTower(type);
+      });
+      pendingTile = null;
+    },
+  };
+  window.__spritesReady = preloadSprites(); // v5: AI 스프라이트 로드 (없으면 절차적 폴백)
+  // categorizeAnswers()는 학년 선택 후 initializeGame에서 실행 (문제 동적 로드 이후)
   ui.initializeUI(handleBuildStep);
 
   initializeFirebase((isReady) => {
@@ -446,7 +484,7 @@ window.addEventListener("DOMContentLoaded", () => {
   ui.showDifficultySelector();
 });
 
-function initializeGame(difficulty, savedState = null) {
+async function initializeGame(difficulty, savedState = null) {
   const {
     difficultyModal,
     gameCanvas,
@@ -455,6 +493,30 @@ function initializeGame(difficulty, savedState = null) {
     dynamicLayerCanvas,
   } = gameElements;
   gameInitialized = true;
+
+  // 학년별 문제 동적 로드 (실패 시 게임 시작 중단)
+  try {
+    await loadGradeProblems(difficulty);
+    categorizeAnswers();
+    learnLoop.resetQueue();
+
+  // v5: 학년별 AI 배경 (없으면 기존 CSS 배경 유지)
+  {
+    try { await window.__spritesReady; } catch {}
+    const bgKey = { 3: "bg_meadow", 4: "bg_meadow", 5: "bg_canyon", 6: "bg_volcano" }[difficulty];
+    const bgImg = getSprite(bgKey);
+    if (bgImg && gameElements.gameContent) {
+      gameElements.gameContent.style.backgroundImage = `linear-gradient(rgba(8,10,30,0.45), rgba(8,10,30,0.45)), url(${bgImg.src})`;
+      gameElements.gameContent.style.backgroundSize = "cover";
+      gameElements.gameContent.style.backgroundPosition = "center";
+    }
+  }
+  } catch (err) {
+    console.error("문제 데이터 로드 실패:", err);
+    gameInitialized = false;
+    showMessage("문제 데이터를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.");
+    return;
+  }
   selectedDifficulty = difficulty;
   difficultyModal.style.display = "none";
   gameCanvas.style.display = "block";
@@ -467,7 +529,7 @@ function initializeGame(difficulty, savedState = null) {
     (projectiles = []),
     (effects = []),
     (damageTexts = []));
-  ((gold = 300), (score = 0), (castleHealth = 100), (currentWave = 1));
+  ((gold = simCore.INITIAL_GOLD), (score = 0), (castleHealth = simCore.INITIAL_CASTLE_HP), (currentWave = 1));
   ((monstersInWave = 10), (monstersSpawned = 0), (wizardLevel = 1));
   wizardPosition = { x: 100, y: 200 };
   ((gameRunning = true), (gamePaused = false), (waveInProgress = false));
@@ -868,22 +930,29 @@ function gameLoop(timestamp) {
   // Apply game speed multiplier to deltaTime for all gameplay updates
   const deltaTime = rawDeltaTime * gameSpeed;
 
-  if (!gamePaused) {
-    // [NEW] 게임 루프의 핵심 업데이트 순서 변경
-    updateSpatialGrid(); // 1. 몬스터 위치를 그리드에 업데이트
-    updateWizard(deltaTime); // 2. 마법사 이동
-    updateWizardCooldownVisual(timestamp);
-    wizardAutoAttack(timestamp); // 3. 마법사 공격 (그리드 사용)
-    updateTowers(timestamp, deltaTime); // 4. 타워 업데이트 (그리드 사용)
-    updateProjectiles(deltaTime, timestamp); // 5. 발사체 이동
-    updateMonsters(timestamp, deltaTime); // 6. 몬스터 이동 및 상태 업데이트
-    updateEffects(timestamp, deltaTime); // 7. 각종 효과 업데이트
-    updateDamageTexts(timestamp, deltaTime); // 8. 데미지 텍스트 업데이트
-    if (particleSystem) particleSystem.update(deltaTime); // 8.5. [V2] 파티클 업데이트
-    checkWaveCompletion(); // 9. 웨이브 종료 확인
-    renderDynamicLayer(); // 10. 동적 요소 렌더링
+  // v5: 예외 1회로 루프가 영구 정지하지 않도록 — 재예약은 무조건 (finally)
+  try {
+    feedFrameTime(rawDeltaTime); // 저사양 런타임 감지
+    if (!gamePaused) {
+      // [NEW] 게임 루프의 핵심 업데이트 순서 변경
+      updateSpatialGrid(); // 1. 몬스터 위치를 그리드에 업데이트
+      updateWizard(deltaTime); // 2. 마법사 이동
+      updateWizardCooldownVisual(timestamp);
+      wizardAutoAttack(timestamp); // 3. 마법사 공격 (그리드 사용)
+      updateTowers(timestamp, deltaTime); // 4. 타워 업데이트 (그리드 사용)
+      updateProjectiles(deltaTime, timestamp); // 5. 발사체 이동
+      updateMonsters(timestamp, deltaTime); // 6. 몬스터 이동 및 상태 업데이트
+      updateEffects(timestamp, deltaTime); // 7. 각종 효과 업데이트
+      updateDamageTexts(timestamp, deltaTime); // 8. 데미지 텍스트 업데이트
+      if (particleSystem) particleSystem.update(deltaTime); // 8.5. [V2] 파티클 업데이트
+      checkWaveCompletion(); // 9. 웨이브 종료 확인
+      renderDynamicLayer(); // 10. 동적 요소 렌더링
+    }
+  } catch (err) {
+    console.error("[gameLoop] 프레임 예외 (루프는 계속):", err);
+  } finally {
+    requestAnimationFrame(gameLoop);
   }
-  requestAnimationFrame(gameLoop);
 }
 gameLoop.isRunning = false;
 
@@ -1111,11 +1180,9 @@ function updateMonsters(timestamp, deltaTime) {
   for (let i = monsters.length - 1; i >= 0; i--) {
     const monster = monsters[i];
     if (monster.isDead) {
-      if (monster.el && monster.el.parentNode) monster.el.remove();
       monsters.splice(i, 1);
       continue;
     }
-    if (!monster.el) continue;
 
     for (const effect in monster.statusEffects) {
       if (timestamp >= monster.statusEffects[effect].endTime) {
@@ -1126,28 +1193,12 @@ function updateMonsters(timestamp, deltaTime) {
     let isStunned = false;
     monster.currentSpeed = monster.baseSpeed;
 
-    monster.el.classList.remove(
-      "slowed",
-      "stunned",
-      "poisoned",
-      "shielded",
-      "shredded",
-    );
-    monster.el.classList.toggle("stealthed", monster.isStealthed);
-
+    // v5: 상태 표시는 캔버스 렌더러가 담당 (DOM classList 제거 — 웨일북 최적화)
     if (monster.statusEffects.slowed) {
       monster.currentSpeed *= monster.statusEffects.slowed.factor;
-      monster.el.classList.add("slowed");
     }
     if (monster.statusEffects.stunned) {
       isStunned = true;
-      monster.el.classList.add("stunned");
-    }
-    if (monster.statusEffects.shredded) {
-      monster.el.classList.add("shredded");
-    }
-    if (monster.statusEffects.shielded) {
-      monster.el.classList.add("shielded");
     }
     if (monster.statusEffects.poisoned) {
       const damageThisFrame =
@@ -1165,7 +1216,6 @@ function updateMonsters(timestamp, deltaTime) {
         handleMonsterDeath(monster, timestamp);
         continue;
       }
-      monster.el.classList.add("poisoned");
     }
 
     if (
@@ -1295,8 +1345,8 @@ function updateMonsters(timestamp, deltaTime) {
     if (!isStunned) {
       monster.pathIndex += monster.currentSpeed * (deltaTime / 16.66);
       if (monster.pathIndex >= pathPoints.length - 1) {
-        castleHealth -= 15;
-        waveDamageTaken += 15;
+        castleHealth -= simCore.LEAK_DAMAGE;
+        waveDamageTaken += simCore.LEAK_DAMAGE;
         score = Math.max(0, score - 75);
         sfx.play("castle_hit");
         wizardSprite.setDamaged();
@@ -1311,10 +1361,6 @@ function updateMonsters(timestamp, deltaTime) {
       if (point) {
         monster.x = point.x;
         monster.y = point.y;
-        const roundedX = Math.round(monster.x - monster.size / 2);
-        const roundedY = Math.round(monster.y - monster.size / 2);
-        monster.el.style.transform = `translate(${roundedX}px, ${roundedY}px)`;
-
         // [V2] 방향 및 애니메이션 프레임 업데이트
         const dx = monster.x - monster.prevX;
         const dy = monster.y - monster.prevY;
@@ -1331,9 +1377,6 @@ function updateMonsters(timestamp, deltaTime) {
       }
     }
 
-    if (monster.healthBar) {
-      monster.healthBar.style.width = `${(monster.hp / monster.maxHp) * 100}%`;
-    }
   }
 }
 
@@ -1433,6 +1476,7 @@ function renderDynamicLayer() {
   // [V2] 몬스터 캔버스 렌더링
   for (const m of monsters) {
     if (m.isDead) continue;
+    if (m.isStealthed) dynamicCtx.globalAlpha = 0.15; // v5: 스텔스는 캔버스 알파로
     monsterRenderer.render(
       dynamicCtx,
       m.monsterKey,
@@ -1446,12 +1490,14 @@ function renderDynamicLayer() {
       {
         isFlying: m.type === "air",
         isBoss: m.isBoss,
+        isElite: m.isElite, // v5: 엘리트 캔버스 링 (구 CSS 클래스는 미적용 상태였음)
         isShielded: !!m.statusEffects.shielded,
         isPoisoned: !!m.statusEffects.poisoned,
         isSlowed: !!m.statusEffects.slowed,
         isStunned: !!m.statusEffects.stunned,
       },
     );
+    if (m.isStealthed) dynamicCtx.globalAlpha = 1;
   }
 
   // [V3] 발사체 캔버스 렌더링 (타입별 고유 비주얼)
@@ -1557,85 +1603,16 @@ function startWave() {
     musicSystem.play("gameplay");
   }
 
-  // [수정] 몬스터 수를 점진적으로 늘리되, 최대 60마리로 제한하여 성능 저하 방지
-  monstersInWave = Math.min(80, 12 + Math.floor(currentWave * 2));
-
-  let waveComposition = [];
-  const highTierBosses = ["ancientDragon", "voidLord", "titanGolem"];
-  const midTierBosses = ["archfiend", "boss"];
-  const newMegaBosses = ["shadowDragon", "wormQueen"];
-
-  // Priority: 25 > 20 > 15 > 8 > 4
-  if (currentWave > 0 && currentWave % 25 === 0) {
-    // Demon King waves (every 25)
-    waveComposition.push("demonKing");
-    // Stronger support monsters for mega boss waves
-    const supportTypes = ["general", "dragon", "golem"];
-    for (let i = 0; i < monstersInWave - 1; i++) {
-      const supportType =
-        supportTypes[Math.floor(Math.random() * supportTypes.length)];
-      waveComposition.push(supportType);
-    }
-  } else if (currentWave > 0 && currentWave % 20 === 0) {
-    waveComposition.push("finalBoss");
-    // Stronger support monsters after wave 20
-    if (currentWave > 20) {
-      const supportTypes = ["general", "dragon", "golem"];
-      for (let i = 0; i < monstersInWave - 1; i++) {
-        const supportType =
-          supportTypes[Math.floor(Math.random() * supportTypes.length)];
-        waveComposition.push(supportType);
-      }
-    } else {
-      for (let i = 0; i < monstersInWave - 1; i++) waveComposition.push("tank");
-    }
-  } else if (currentWave > 0 && currentWave % 15 === 0) {
-    // New mega bosses alternating (every 15)
-    const megaBossIndex =
-      Math.floor((currentWave / 15 - 1) / 2) % newMegaBosses.length;
-    waveComposition.push(newMegaBosses[megaBossIndex]);
-    // Stronger support monsters for mega boss waves
-    const supportTypes = ["general", "dragon", "golem"];
-    for (let i = 0; i < monstersInWave - 1; i++) {
-      const supportType =
-        supportTypes[Math.floor(Math.random() * supportTypes.length)];
-      waveComposition.push(supportType);
-    }
-  } else if (currentWave > 0 && currentWave % 8 === 0) {
-    // [수정] 상급 보스 출현 주기 단축 (10 -> 8)
-    const bossIndex =
-      Math.floor((currentWave / 8 - 1) / 2) % highTierBosses.length;
-    waveComposition.push(highTierBosses[bossIndex]);
-    for (let i = 0; i < monstersInWave - 1; i++)
-      waveComposition.push("general");
-  } else if (currentWave > 0 && currentWave % 4 === 0) {
-    // [수정] 중급 보스 출현 주기 단축 (5 -> 4)
-    const midBossIndex =
-      Math.floor((currentWave / 4 - 1) / 2) % midTierBosses.length;
-    waveComposition.push(midTierBosses[midBossIndex]);
-    for (let i = 0; i < monstersInWave - 1; i++)
-      waveComposition.push("shielder");
-  } else {
-    for (let i = 0; i < monstersInWave; i++) {
-      const monsterType = getMonsterTypeForNormalWave(currentWave);
-      if (monsterType === "swarmling") {
-        // Spawn 5 swarmlings at once
-        for (let j = 0; j < 5 && i < monstersInWave; j++, i++) {
-          waveComposition.push("swarmling");
-        }
-        i--; // Adjust for the outer loop increment
-      } else {
-        waveComposition.push(monsterType);
-      }
-    }
-  }
+  // 웨이브 수·조성은 simCore가 단일 진실원 (밸런스 프로브와 공유)
+  monstersInWave = simCore.monstersInWave(currentWave);
+  const waveComposition = simCore.buildWaveComposition(currentWave);
 
   shuffleArray(waveComposition);
 
   startWaveBtn.disabled = true;
   startWaveBtn.textContent = `🌊...`;
   let spawnCount = 0;
-  const spawnInterval = (1000 - currentWave * 8) / gameSpeed;
+  const spawnInterval = simCore.spawnIntervalMs(currentWave, gameSpeed);
 
   if (spawnIntervalId) clearInterval(spawnIntervalId);
 
@@ -1651,7 +1628,7 @@ function startWave() {
         spawnIntervalId = null;
       }
     },
-    Math.max(150, spawnInterval),
+    spawnInterval,
   );
 }
 
@@ -1668,29 +1645,13 @@ function spawnMonster(type, position = null, isSpecialSpawn = false) {
     stats = MONSTER_STATS["normal"];
   }
 
-  // [수정] 웨이브에 따라 몬스터의 능력치(HP, 골드)를 강화하는 로직
-  // 기본 배율: 웨이브가 진행될수록 점차 강해짐
-  let waveHpMultiplier = 1 + currentWave * 0.3;
-  // 추가 배율: 특정 웨이브 구간을 넘어서면 더욱 가파르게 강해짐
-  if (currentWave > 20) {
-    waveHpMultiplier += (currentWave - 20) * 0.2;
-  }
-  if (currentWave > 40) {
-    waveHpMultiplier += (currentWave - 40) * 0.3;
-  }
-  if (currentWave > 60) {
-    waveHpMultiplier += (currentWave - 60) * 0.5;
-  }
-
-  const difficultyHpMultiplier = 1 + selectedDifficulty * 0.15;
-  const finalHpMultiplier = waveHpMultiplier * difficultyHpMultiplier;
-
+  // 몬스터 스케일링은 simCore가 단일 진실원 (밸런스 프로브와 공유)
+  const finalHpMultiplier =
+    simCore.waveHpMultiplier(currentWave) *
+    simCore.difficultyHpMultiplier(selectedDifficulty);
   const maxHp = Math.floor(stats.hp * (isSpecialSpawn ? 1 : finalHpMultiplier));
-
-  // [추가] 골드 보상도 웨이브에 따라 증가
-  const goldMultiplier = 1 + currentWave / 12;
   let goldReward = Math.ceil(
-    stats.gold * (isSpecialSpawn ? 1 : goldMultiplier),
+    stats.gold * (isSpecialSpawn ? 1 : simCore.waveGoldMultiplier(currentWave)),
   );
 
   // Elite monster system
@@ -1699,21 +1660,13 @@ function spawnMonster(type, position = null, isSpecialSpawn = false) {
   let eliteSpeedMultiplier = 1;
   let eliteGoldMultiplier = 1;
 
-  if (!isSpecialSpawn && !stats.isBoss && currentWave > 15) {
-    let eliteChance = 0.2; // 20% after wave 15
-    if (currentWave > 30) eliteChance = 0.3; // 30% after wave 30
-
-    if (Math.random() < eliteChance) {
+  if (!isSpecialSpawn && !stats.isBoss) {
+    const elite = simCore.eliteParams(currentWave);
+    if (elite) {
       isElite = true;
-      if (currentWave > 30) {
-        eliteHpMultiplier = 2.0;
-        eliteSpeedMultiplier = 1.2;
-        eliteGoldMultiplier = 2.0;
-      } else {
-        eliteHpMultiplier = 1.5;
-        eliteSpeedMultiplier = 1.2;
-        eliteGoldMultiplier = 1.5;
-      }
+      eliteHpMultiplier = elite.hp;
+      eliteSpeedMultiplier = elite.speed;
+      eliteGoldMultiplier = elite.gold;
       goldReward = Math.ceil(goldReward * eliteGoldMultiplier);
     }
   }
@@ -1738,8 +1691,6 @@ function spawnMonster(type, position = null, isSpecialSpawn = false) {
     pathIndex: position
       ? pathPoints.findIndex((p) => getDistanceSq(p, position) < 25) || 0
       : 0,
-    el: document.createElement("div"),
-    healthBar: document.createElement("div"),
     statusEffects: {},
     direction: 0,
     animFrame: 0,
@@ -1751,19 +1702,7 @@ function spawnMonster(type, position = null, isSpecialSpawn = false) {
     shieldRadiusSq: (stats.shieldRadius || 0) ** 2,
   };
 
-  monster.el.className = `monster monster-${monsterKey}`;
-  const size = stats.size || 30;
-  monster.el.style.width = `${size}px`;
-  monster.el.style.height = `${size}px`;
-  const roundedX = Math.round(monster.x - size / 2);
-  const roundedY = Math.round(monster.y - size / 2);
-  monster.el.style.transform = `translate(${roundedX}px, ${roundedY}px)`;
-  const healthContainer = document.createElement("div");
-  healthContainer.className = "monster-health";
-  monster.healthBar.className = "monster-health-bar";
-  healthContainer.appendChild(monster.healthBar);
-  monster.el.appendChild(healthContainer);
-  gameCanvas.appendChild(monster.el);
+  // v5: 몬스터 DOM 제거 — 렌더링·HP바·상태는 전부 캔버스(monsterRenderer) 담당
   monsters.push(monster);
   if (!isSpecialSpawn) monstersSpawned++;
   updateFullUI();
@@ -1852,54 +1791,8 @@ function handleMonsterDeath(monster, timestamp) {
   updateFullUI();
 }
 
-function getMonsterTypeForNormalWave(wave) {
-  const pool = [{ type: "normal", weight: 100 }];
-  if (wave > 1) pool.push({ type: "speed", weight: 30 });
-  if (wave > 2) {
-    pool.push({ type: "bat", weight: 25 });
-    pool.push({ type: "collector", weight: 15 });
-  }
-  if (wave > 3) pool.push({ type: "tank", weight: 20 });
-  if (wave > 4) {
-    pool.push({ type: "shielder", weight: 15 });
-    pool.push({ type: "leech", weight: 10 });
-    pool.push({ type: "healer", weight: 12 }); // [수정] 힐러 몬스터 등장 로직 추가
-  }
-  if (wave > 5) pool.push({ type: "dragon", weight: 8 });
-  if (wave > 6) {
-    pool.push({ type: "teleporter", weight: 12 });
-    pool.push({ type: "mirage", weight: 10 });
-  }
-  if (wave > 7) pool.push({ type: "ghost", weight: 10 });
-  if (wave > 8) {
-    pool.push({ type: "splitter", weight: 10 });
-    pool.push({ type: "chronomancer", weight: 8 });
-  }
-  if (wave > 9) pool.push({ type: "disruptor", weight: 6 });
-  if (wave > 10) {
-    pool.push({ type: "mimic", weight: 5 });
-    pool.push({ type: "golem", weight: 5 });
-  }
-  if (wave > 11) pool.push({ type: "summoner", weight: 8 });
-  if (wave > 12) pool.push({ type: "assassin", weight: 8 });
-  if (wave > 13) pool.push({ type: "general", weight: 4 });
-  if (wave > 14) pool.push({ type: "plaguebearer", weight: 8 });
+// getMonsterTypeForNormalWave — simCore.js로 이동 (단일 진실원)
 
-  // New monsters
-  if (wave > 10) pool.push({ type: "necromancer", weight: 7 });
-  if (wave > 12) pool.push({ type: "berserker", weight: 10 });
-  if (wave > 15) pool.push({ type: "phoenix", weight: 6 });
-  if (wave > 8) pool.push({ type: "swarmling", weight: 15 });
-
-  const totalWeight = pool.reduce((sum, monster) => sum + monster.weight, 0);
-  let random = Math.random() * totalWeight;
-
-  for (const monster of pool) {
-    if (random < monster.weight) return monster.type;
-    random -= monster.weight;
-  }
-  return "normal";
-}
 
 // --- 타워 관리 ---
 function handleRandomTowerPlacement(type, tile) {
@@ -2058,22 +1951,11 @@ function placeTower(type) {
 
 function upgradeTower() {
   const tower = selectedTowerForUpgrade;
-  if (!tower || tower.level >= 10) return;
-  const baseCost =
-    tower.cost === 0 ||
-    tower.type === "ultimate" ||
-    tower.type === "transcendent"
-      ? 350
-      : tower.cost;
-  const cost = baseCost * (tower.level + 1);
+  if (!tower || tower.level >= simCore.TOWER_MAX_LEVEL) return;
+  const cost = simCore.towerUpgradeCost(tower);
   if (gold < cost) return showMessage("골드가 부족합니다!");
   gold -= cost;
-  tower.level++;
-  tower.damage = Math.floor(tower.damage * 1.3);
-  if (tower.dps) tower.dps = Math.floor(tower.dps * 1.25);
-  tower.range = Math.floor(tower.range * 1.1);
-  tower.rangeSq = tower.range * tower.range;
-  if (tower.cooldown) tower.cooldown = Math.floor(tower.cooldown * 0.95);
+  simCore.applyTowerUpgrade(tower);
   if (tower.type === "multi-shot" && tower.level % 2 === 0) {
     tower.numTargets++;
     showUpgradeNotification(
@@ -2309,7 +2191,6 @@ function handleHit(projectile, timestamp) {
   }
   if (monster.statusEffects.shielded) {
     delete monster.statusEffects.shielded;
-    monster.el.classList.remove("shielded");
     createDamageText(monster, "Block", "magic");
     return;
   }
@@ -2691,6 +2572,108 @@ async function handleWizardAttack(clickPos = null) {
         poolObj: bhPoolObj,
       });
       break;
+
+    // ---- v5 신규 마법 ----
+    case "meteorShower": {
+      // 랜덤 몬스터 5지점 낙하 광역
+      const meteorDamage = Math.floor(spell.damage * damageMultiplier);
+      const aliveMonsters = monsters.filter((m) => !m.isDead);
+      sfx.play("explosion");
+      for (let i = 0; i < spell.strikes; i++) {
+        const target = aliveMonsters.length
+          ? aliveMonsters[Math.floor(Math.random() * aliveMonsters.length)]
+          : null;
+        const strikePos = target
+          ? { x: target.x, y: target.y }
+          : {
+              x: Math.random() * window.innerWidth,
+              y: 100 + Math.random() * (window.innerHeight - 200),
+            };
+        setTimeout(() => {
+          createMagicEffect(strikePos.x, strikePos.y, spell.aoe, "magic-attack", 450);
+          const hitSq = spell.aoe * spell.aoe;
+          spatialGrid
+            .getNearby(strikePos.x, strikePos.y, spell.aoe)
+            .filter((m) => !m.isDead && getDistanceSq(strikePos, m) < hitSq)
+            .forEach((m) =>
+              handleHit({ source: { damage: meteorDamage }, target: m }, performance.now()),
+            );
+          if (particleSystem) particleSystem.explosion(strikePos.x, strikePos.y, "#ff8c42", 12);
+        }, i * 220);
+      }
+      break;
+    }
+
+    case "timeStop": {
+      // 전체 몬스터 정지
+      sfx.play("frost");
+      monsters.forEach((m) => {
+        if (!m.isDead) {
+          m.statusEffects.stunned = { endTime: nowPerf + spell.freezeDuration };
+          createMagicEffect(m.x, m.y, 25, "time-warp-effect", 400);
+        }
+      });
+      if (particleSystem) particleSystem.screenFlash("#66ccff", 350, 0.18);
+      showMessage("⏱️ 시간 정지! 모든 몬스터가 3초간 멈춥니다.");
+      break;
+    }
+
+    case "guardianLight": {
+      // 성 체력 회복 + 전체 감속
+      sfx.play("repair");
+      castleHealth = Math.min(100, castleHealth + spell.heal);
+      if (castleCoords.x != null) {
+        createMagicEffect(castleCoords.x + 50, castleCoords.y + 50, 90, "heal-effect", 800);
+      }
+      monsters.forEach((m) => {
+        if (!m.isDead && !m.isBoss) {
+          m.statusEffects.slowed = {
+            factor: spell.slowFactor,
+            endTime: nowPerf + spell.slowDuration,
+          };
+        }
+      });
+      if (particleSystem) particleSystem.screenFlash("#ffe066", 400, 0.15);
+      showMessage(`💛 수호의 빛! 성 체력 +${spell.heal}`);
+      updateFullUI();
+      break;
+    }
+
+    case "tornado": {
+      // 범위 내 몬스터를 경로 역방향으로 밀어내기
+      const tornadoDamage = Math.floor(spell.damage * damageMultiplier);
+      sfx.play("wizard_cast");
+      createMagicEffect(spellOrigin.x, spellOrigin.y, spell.aoe, "teleport-effect", 600);
+      const pushPoints = Math.floor(spell.pushbackPx / 5); // pathPoints는 5px 간격
+      affectedMonsters.forEach((m) => {
+        handleHit({ source: { damage: tornadoDamage }, target: m }, nowPerf);
+        if (!m.isDead && !m.isBoss) {
+          m.pathIndex = Math.max(0, m.pathIndex - pushPoints);
+        }
+      });
+      break;
+    }
+
+    case "judgment": {
+      // 화면 전체 대미지 (보스는 절반 수준)
+      sfx.play("explosion");
+      if (particleSystem) {
+        particleSystem.screenFlash("#ffffff", 500, 0.35);
+      }
+      const judgeNormal = Math.floor(spell.damage * damageMultiplier);
+      const judgeBoss = Math.floor(spell.bossDamage * damageMultiplier);
+      monsters.forEach((m) => {
+        if (!m.isDead) {
+          createMagicEffect(m.x, m.y, 30, "explosion-effect", 400);
+          handleHit(
+            { source: { damage: m.isBoss ? judgeBoss : judgeNormal }, target: m },
+            nowPerf,
+          );
+        }
+      });
+      showMessage("🌟 대마법: 심판!");
+      break;
+    }
   }
 }
 
@@ -2728,6 +2711,8 @@ function createMagicEffect(x, y, size, className, duration) {
   const canvasType = SPELL_CLASS_MAP[className];
   if (canvasType) {
     addCanvasSpellEffect(x, y, size, canvasType, duration);
+    // v5: 저사양 모드에서는 캔버스 이펙트만 사용 (DOM 이펙트 스킵 — 웨일북 최적화)
+    if (!quality.domEffects) return null;
   }
 
   const effectObj = getFromPool(pools.effects, className);
@@ -2835,9 +2820,17 @@ function showMathProblem() {
   gamePaused = true;
   problemAnswered = false;
 
-  // Filter out already-shown problems
+  // v5: 간격 반복 — 재출제 시점이 된 오답 문제 우선
   let problem = null;
-  while (currentProblemSet.length > 0) {
+  isReviewProblem = false;
+  const review = learnLoop.popDueReview(currentWave);
+  if (review) {
+    problem = review;
+    isReviewProblem = true;
+  }
+
+  // Filter out already-shown problems
+  while (!problem && currentProblemSet.length > 0) {
     const candidate = currentProblemSet.pop();
     const problemId = candidate.q + "||" + candidate.a;
     if (!shownProblemIds.has(problemId)) {
@@ -2890,6 +2883,14 @@ function showMathProblem() {
     }
   }
 
+  // v5: 복습 문제 뱃지
+  const reviewBadge = document.getElementById("mathCombo");
+  if (isReviewProblem && reviewBadge) {
+    reviewBadge.textContent = "🔁 복습 문제! 이번엔 맞혀보자";
+    reviewBadge.style.display = "block";
+  }
+
+  currentProblem = problem;
   ui.showMathProblemUI(problem, options, checkAnswer);
 
   // Start 30-second timer
@@ -2967,9 +2968,17 @@ function checkAnswer(answer, clickedBtn) {
     } else {
       // [V2] 콤보 시스템 적용
       const comboResult = comboSystem.addCorrect();
-      const baseGold = 150 + currentWave * 10;
-      const totalGold =
-        Math.floor(baseGold * comboResult.multiplier) + comboResult.bonusGold;
+      const totalGold = simCore.answerReward(
+        currentWave, comboResult.multiplier, comboResult.bonusGold,
+      );
+      // v5: 학습=화력 — 정답 시 마법 쿨다운 30% 감소
+      learnLoop.recordCorrect(isReviewProblem);
+      const nowCd = performance.now();
+      for (const key in wizardCooldowns) {
+        if (wizardCooldowns[key] > nowCd) {
+          wizardCooldowns[key] = nowCd + (wizardCooldowns[key] - nowCd) * 0.7;
+        }
+      }
       resultDiv.textContent = `정답! 💰 +${totalGold} 골드${comboResult.combo >= 3 ? ` (${comboResult.combo}x 콤보!)` : ""}`;
       resultDiv.style.color = "#00ff88";
       gold += totalGold;
@@ -3004,14 +3013,22 @@ function checkAnswer(answer, clickedBtn) {
   } else {
     clickedBtn.classList.add("incorrect");
     clickedBtn.classList.remove("faded");
-    resultDiv.textContent = `오답! 정답은 ${correctAnswer} 입니다.`;
+    // v5: 정답 + 한 줄 풀이 힌트 (학습 루프) + 재출제 큐 등록
+    const hint = learnLoop.getSolutionHint(
+      currentProblem ? currentProblem.q : "",
+      correctAnswer,
+    );
+    resultDiv.textContent = `오답! 💡 ${hint}`;
     resultDiv.style.color = "#ff3366";
-    gold = Math.max(0, gold - 30);
-    castleHealth = Math.max(0, castleHealth - 5);
-    score = Math.max(0, score - 50);
-    deleteWeakestTower();
+    if (currentProblem) learnLoop.recordWrong(currentProblem, currentWave);
+    gold = Math.max(0, gold - simCore.WRONG_PENALTY.gold);
+    castleHealth = Math.max(0, castleHealth - simCore.WRONG_PENALTY.castleHp);
+    score = Math.max(0, score - simCore.WRONG_PENALTY.score);
+    if (simCore.WRONG_PENALTY.deleteTower) deleteWeakestTower();
     sfx.play("math_wrong");
-    showMessage("오답으로 인한 페널티: 골드 -30, 성 체력 -5, 점수 -50!");
+    showMessage(
+      `오답 페널티: 골드 -${simCore.WRONG_PENALTY.gold}, 성 체력 -${simCore.WRONG_PENALTY.castleHp}!`,
+    );
 
     // [V2] 콤보 브레이크 + 화면 플래시
     comboSystem.break();
@@ -3025,12 +3042,15 @@ function checkAnswer(answer, clickedBtn) {
 
   currentWave++;
   updateFullUI();
-  setTimeout(() => {
-    hideModal(gameElements.mathModal);
-    resultDiv.textContent = "";
-    gamePaused = false;
-    startWave();
-  }, 2500);
+  setTimeout(
+    () => {
+      hideModal(gameElements.mathModal);
+      resultDiv.textContent = "";
+      gamePaused = false;
+      startWave();
+    },
+    isCorrect ? 2500 : 4200, // v5: 오답은 풀이 읽을 시간 확보
+  );
 }
 
 function startProblemTimer() {
@@ -3138,6 +3158,12 @@ function checkWaveCompletion() {
       musicSystem.play("gameplay");
     }
 
+    // v5: 무피해 클리어 보너스 — 성 체력 회복 (회복 루프)
+    if (waveDamageTaken === 0 && castleHealth > 0) {
+      castleHealth = Math.min(100, castleHealth + simCore.WAVE_CLEAR_HEAL);
+      showMessage(`🛡️ 무피해 방어! 성 체력 +${simCore.WAVE_CLEAR_HEAL}`);
+    }
+
     // [V2] Auto-save after each wave completion
     saveGame(true);
 
@@ -3150,8 +3176,22 @@ function checkGameOver() {
     gameRunning = false;
     if (spawnIntervalId) clearInterval(spawnIntervalId);
     localStorage.removeItem("towerDefenseSave");
+    localStorage.removeItem("mathcastle:save");
     document.getElementById("finalScore").textContent = score;
     document.getElementById("finalWave").textContent = currentWave;
+    // v5: 학습 리포트 한 줄
+    {
+      const modal = gameElements.gameOverModal;
+      let learnLine = modal.querySelector(".learn-report");
+      if (!learnLine) {
+        learnLine = document.createElement("div");
+        learnLine.className = "learn-report";
+        learnLine.style.cssText = "margin-top:8px;font-size:15px;color:#ffd166;";
+        const anchor = modal.querySelector("#finalWave")?.parentElement;
+        (anchor || modal.firstElementChild || modal).appendChild(learnLine);
+      }
+      learnLine.textContent = `📚 ${learnLoop.accuracyText()}`;
+    }
     const finalComboEl = document.getElementById("finalCombo");
     if (finalComboEl) finalComboEl.textContent = comboSystem.maxCombo || 0;
 
@@ -3178,7 +3218,7 @@ function forceNextWave(isFromError = false) {
   projectiles = [];
 
   monsters.forEach((m) => {
-    if (m.el && m.el.parentNode) m.el.remove();
+    if (m.el && m.el.parentNode) m.el.remove(); // (구 세이브 호환: DOM 있던 몬스터만)
   });
   monsters = [];
 
@@ -3232,6 +3272,7 @@ async function saveAndSubmit() {
     gameRunning = false;
     if (spawnIntervalId) clearInterval(spawnIntervalId);
     localStorage.removeItem("towerDefenseSave");
+    localStorage.removeItem("mathcastle:save");
 
     showMessage("랭킹 등록 완료! 메인 화면으로 돌아갑니다.");
     setTimeout(restartGame, 1500);
@@ -3245,13 +3286,28 @@ async function saveAndSubmit() {
 }
 
 function loadGame() {
-  const savedGameJSON = localStorage.getItem("towerDefenseSave");
-  if (savedGameJSON) {
-    const savedState = JSON.parse(savedGameJSON);
+  const savedState = readSavedState();
+  if (savedState) {
     initializeGame(savedState.difficulty, savedState);
   } else {
     showMessage("저장된 게임이 없습니다.");
   }
+}
+
+// v5: 세이브 읽기 — 신 키({version,data}) 우선, 구 키(v4 무버전) 자동 마이그레이션
+function readSavedState() {
+  try {
+    const v5json = localStorage.getItem("mathcastle:save");
+    if (v5json) {
+      const wrapped = JSON.parse(v5json);
+      if (wrapped && wrapped.version >= 5 && wrapped.data) return wrapped.data;
+    }
+    const legacy = localStorage.getItem("towerDefenseSave");
+    if (legacy) return JSON.parse(legacy); // v4 형식 그대로 호환
+  } catch (e) {
+    console.warn("세이브 읽기 실패:", e);
+  }
+  return null;
 }
 
 // --- 이벤트 리스너 설정 ---
@@ -3305,6 +3361,7 @@ function setupEventListeners() {
       try {
         await submitScore(playerName, score, currentWave, selectedDifficulty);
         localStorage.removeItem("towerDefenseSave");
+        localStorage.removeItem("mathcastle:save");
         showMessage("랭킹 등록 완료!");
         sfx.play("powerup");
         // Show rankings after submission
@@ -3767,7 +3824,12 @@ function saveGame(silent = false) {
     gameSpeed,
   };
 
-  localStorage.setItem("towerDefenseSave", JSON.stringify(gameState));
+  // v5: 게임ID 네임스페이스 + 버전 래퍼 (마이그레이션 체인용)
+  localStorage.setItem(
+    "mathcastle:save",
+    JSON.stringify({ version: 5, data: gameState }),
+  );
+  localStorage.removeItem("towerDefenseSave"); // 구 키 정리
   if (!silent) {
     showMessage("게임이 저장되었습니다!");
     sfx.play("blip");

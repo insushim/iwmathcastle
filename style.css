@@ -543,7 +543,8 @@ body {
     font-family: var(--font-display);
     font-size: 14px;
     z-index: 3;
-    position: relative;
+    /* v5 버그픽스: position: relative가 위의 absolute를 덮어써 성 체력 표시가
+       성 컨테이너 안에 끼여 "00"으로 잘려 보이던 버그 */
     overflow: hidden;
     transition: all 0.3s ease;
 }
@@ -651,7 +652,8 @@ body {
     z-index: 100;
     gap: 12px;
     animation: infoPulse 4s ease-in-out infinite;
-    position: relative;
+    /* v5 버그픽스: position: relative가 위의 fixed를 덮어써 HUD가 화면 밖(y=768)으로
+       밀려나던 버그 — ::before(borderScan)의 기준은 fixed로도 유효 */
     overflow: hidden;
 }
 

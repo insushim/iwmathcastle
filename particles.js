@@ -1,4 +1,5 @@
 // particles.js
+import { quality } from "./perfQuality.js";
 // 프리미엄 캔버스 파티클 시스템 모듈
 // 타워 디펜스 게임 "수학 성 수호자"용 시각 효과 엔진
 
@@ -161,6 +162,8 @@ export class ParticleSystem {
    * @returns {Object|null} 활성화된 파티클 또는 null (풀 소진 시)
    */
   _acquire() {
+    // v5: 저사양 상한 — 초과 시 스폰 스킵 (null 반환은 호출부에서 안전 처리)
+    if (this.activeParticles.length >= quality.particleCap) return null;
     let particle = this.pool.pop();
     if (!particle) {
       // 풀 소진 시 새로 생성 (경고: 성능 저하 가능)
@@ -458,7 +461,7 @@ export class ParticleSystem {
    */
   text(x, y, displayText, color = "#FFFFFF", fontSize = 18) {
     const p = this._acquire();
-    if (!p) return;
+      if (!p) return;
 
     const life = 1200;
 
