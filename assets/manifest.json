@@ -1,12 +1,164 @@
 {
  "files": [
   {
+   "key": "bg_canyon",
+   "file": "bg-canyon.webp"
+  },
+  {
+   "key": "bg_meadow",
+   "file": "bg-meadow.webp"
+  },
+  {
+   "key": "bg_volcano",
+   "file": "bg-volcano.webp"
+  },
+  {
+   "key": "monster_ancientDragon",
+   "file": "monster-ancientDragon.webp"
+  },
+  {
+   "key": "monster_archfiend",
+   "file": "monster-archfiend.webp"
+  },
+  {
+   "key": "monster_assassin",
+   "file": "monster-assassin.webp"
+  },
+  {
+   "key": "monster_bat",
+   "file": "monster-bat.webp"
+  },
+  {
+   "key": "monster_berserker",
+   "file": "monster-berserker.webp"
+  },
+  {
+   "key": "monster_boss",
+   "file": "monster-boss.webp"
+  },
+  {
+   "key": "monster_chronomancer",
+   "file": "monster-chronomancer.webp"
+  },
+  {
+   "key": "monster_collector",
+   "file": "monster-collector.webp"
+  },
+  {
+   "key": "monster_demonKing",
+   "file": "monster-demonKing.webp"
+  },
+  {
+   "key": "monster_disruptor",
+   "file": "monster-disruptor.webp"
+  },
+  {
+   "key": "monster_dragon",
+   "file": "monster-dragon.webp"
+  },
+  {
+   "key": "monster_finalBoss",
+   "file": "monster-finalBoss.webp"
+  },
+  {
+   "key": "monster_general",
+   "file": "monster-general.webp"
+  },
+  {
+   "key": "monster_ghost",
+   "file": "monster-ghost.webp"
+  },
+  {
+   "key": "monster_golem",
+   "file": "monster-golem.webp"
+  },
+  {
+   "key": "monster_healer",
+   "file": "monster-healer.webp"
+  },
+  {
+   "key": "monster_leech",
+   "file": "monster-leech.webp"
+  },
+  {
+   "key": "monster_mimic",
+   "file": "monster-mimic.webp"
+  },
+  {
+   "key": "monster_mirage",
+   "file": "monster-mirage.webp"
+  },
+  {
+   "key": "monster_necromancer",
+   "file": "monster-necromancer.webp"
+  },
+  {
    "key": "monster_normal",
    "file": "monster-normal.webp"
   },
   {
+   "key": "monster_phoenix_chroma",
+   "file": "monster-phoenix-chroma.webp"
+  },
+  {
+   "key": "monster_phoenix",
+   "file": "monster-phoenix.webp"
+  },
+  {
+   "key": "monster_plaguebearer",
+   "file": "monster-plaguebearer.webp"
+  },
+  {
+   "key": "monster_shadowDragon",
+   "file": "monster-shadowDragon.webp"
+  },
+  {
+   "key": "monster_shielder",
+   "file": "monster-shielder.webp"
+  },
+  {
+   "key": "monster_speed",
+   "file": "monster-speed.webp"
+  },
+  {
+   "key": "monster_splitter",
+   "file": "monster-splitter.webp"
+  },
+  {
+   "key": "monster_summoner",
+   "file": "monster-summoner.webp"
+  },
+  {
+   "key": "monster_swarmling",
+   "file": "monster-swarmling.webp"
+  },
+  {
+   "key": "monster_tank",
+   "file": "monster-tank.webp"
+  },
+  {
+   "key": "monster_teleporter",
+   "file": "monster-teleporter.webp"
+  },
+  {
+   "key": "monster_titanGolem",
+   "file": "monster-titanGolem.webp"
+  },
+  {
+   "key": "monster_voidLord",
+   "file": "monster-voidLord.webp"
+  },
+  {
+   "key": "monster_wormQueen",
+   "file": "monster-wormQueen.webp"
+  },
+  {
    "key": "tower_cannon",
    "file": "tower-cannon.webp"
+  },
+  {
+   "key": "tower_copper",
+   "file": "tower-copper.webp"
   },
   {
    "key": "tower_divide",
@@ -57,6 +209,14 @@
    "file": "tower-random_cheap.webp"
   },
   {
+   "key": "tower_random_expensive",
+   "file": "tower-random_expensive.webp"
+  },
+  {
+   "key": "tower_random_medium",
+   "file": "tower-random_medium.webp"
+  },
+  {
    "key": "tower_repairStation",
    "file": "tower-repairStation.webp"
   },
@@ -65,12 +225,24 @@
    "file": "tower-shredder.webp"
   },
   {
+   "key": "tower_silver",
+   "file": "tower-silver.webp"
+  },
+  {
    "key": "tower_skyDestroyer",
    "file": "tower-skyDestroyer.webp"
   },
   {
    "key": "tower_stun",
    "file": "tower-stun.webp"
+  },
+  {
+   "key": "tower_transcendent_chroma",
+   "file": "tower-transcendent-chroma.webp"
+  },
+  {
+   "key": "tower_transcendent",
+   "file": "tower-transcendent.webp"
   },
   {
    "key": "tower_ultimate",

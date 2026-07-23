@@ -512,10 +512,10 @@ async function initializeGame(difficulty, savedState = null) {
     try { await window.__spritesReady; } catch {}
     const bgKey = { 3: "bg_meadow", 4: "bg_meadow", 5: "bg_canyon", 6: "bg_volcano" }[difficulty];
     const bgImg = getSprite(bgKey);
-    if (bgImg && gameElements.gameContent) {
-      gameElements.gameContent.style.backgroundImage = `linear-gradient(rgba(8,10,30,0.45), rgba(8,10,30,0.45)), url(${bgImg.src})`;
-      gameElements.gameContent.style.backgroundSize = "cover";
-      gameElements.gameContent.style.backgroundPosition = "center";
+    // #gameCanvas 자체의 불투명 CSS 배경을 인라인으로 교체해야 보인다
+    // (#game-content에 걸면 자식 gameCanvas 배경에 완전히 가려짐 — 시각 QA 실측)
+    if (bgImg && gameElements.gameCanvas) {
+      gameElements.gameCanvas.style.background = `linear-gradient(rgba(8,10,30,0.5), rgba(8,10,30,0.5)), url(${bgImg.src}) center / cover no-repeat`;
     }
   }
   } catch (err) {
