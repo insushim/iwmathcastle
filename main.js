@@ -448,6 +448,20 @@ window.addEventListener("DOMContentLoaded", () => {
         key: m.monsterKey, x: Math.round(m.x), y: Math.round(m.y),
         direction: +m.direction.toFixed(2), pathIndex: Math.round(m.pathIndex),
       })),
+    qaPlaceTowerAt: (type, x, y) => {
+      // 지정 좌표에서 가장 가까운 배치 타일에 타워 설치 (경로 인접 검증용)
+      const tiles = [...document.querySelectorAll(".placement-tile")];
+      if (!tiles.length) return;
+      const best = tiles.reduce((a, t) => {
+        const tx = parseInt(t.style.left) + 20, ty = parseInt(t.style.top) + 20;
+        const d = (tx - x) ** 2 + (ty - y) ** 2;
+        return !a || d < a.d ? { t, d, tx, ty } : a;
+      }, null);
+      gold += 10000;
+      pendingTile = { x: best.tx, y: best.ty };
+      placeTower(type);
+      pendingTile = null;
+    },
     qaPlaceTowers: (type, count) => {
       // 타일에 타워 강제 배치 (성능 테스트용)
       const tiles = [...document.querySelectorAll(".placement-tile")].slice(0, count);
@@ -2083,7 +2097,7 @@ function createProjectile(source, target) {
     target,
     speed: 15,
     type: type,
-    size: type === "wizard-auto" ? 13 : 8, // v5.1: 마법사 미사일 크게 (이펙트 체감)
+    size: type === "wizard-auto" ? 15 : 11, // v5.2: 발사체 전반 크게 (어두운 배경 체감 강화)
     color: type === "wizard-auto" ? "#82AAFF" : "#FFFFFF",
   };
 
@@ -2335,16 +2349,22 @@ function handleHit(projectile, timestamp) {
   }
 
   monster.hp -= damage;
-  sfx.play("hit");
-  createDamageText(
-    monster,
-    damage.toFixed(0),
-    source.type === "laser-damage"
-      ? "laser"
-      : source.type === "poison"
-        ? "poison"
-        : "normal",
-  );
+  if (source.type === "laser-damage") {
+    // v5.2: 레이저는 매 프레임 히트 → 텍스트를 0.5초 집계 표시 (프레임마다 "1" 도배가 검은 사다리처럼 보이던 문제 실측)
+    monster._laserAcc = (monster._laserAcc || 0) + damage;
+    if (!monster._laserTextAt || timestamp > monster._laserTextAt + 500) {
+      createDamageText(monster, monster._laserAcc.toFixed(0), "laser");
+      monster._laserAcc = 0;
+      monster._laserTextAt = timestamp;
+    }
+  } else {
+    sfx.play("hit");
+    createDamageText(
+      monster,
+      damage.toFixed(0),
+      source.type === "poison" ? "poison" : "normal",
+    );
+  }
 
   if (monster.hp <= 0) handleMonsterDeath(monster, timestamp);
   updateFullUI();
@@ -2385,6 +2405,10 @@ function wizardAutoAttack(timestamp) {
       { ...wizardCenter, damage: WIZARD_AUTO_ATTACK_STATS.damage },
       bestTarget,
     );
+    // v5.2: 발사 머즐 플래시 (지팡이 끝 반짝임)
+    if (particleSystem && !quality.low) {
+      particleSystem.sparkle(wizardCenter.x + 8, wizardCenter.y - 24, "#9fc6ff");
+    }
     sfx.play("wizard-auto");
   }
 }

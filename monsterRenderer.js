@@ -1,5 +1,5 @@
 // monsterRenderer.js - Canvas 2D Monster Sprite Renderer
-import { drawSpriteCentered } from "./spriteAssets.js";
+import { drawSpriteCentered, getSprite } from "./spriteAssets.js";
 import { quality } from "./perfQuality.js";
 // Pixel-art style sprites using canvas primitives (fillRect, arc, lineTo)
 // Self-contained, no external dependencies
@@ -278,13 +278,21 @@ export class MonsterRenderer {
       : 0;
     ctx.translate(0, bob + flyOffset);
 
-    // v5.1: 단일 프레임 스프라이트 걷기 연출 — 총총 바운스 + 갸우뚱 + 착지 스쿼시
-    // (연속 시간 기반, 몬스터별 위상(options.phase)으로 발맞춰 행진 방지. transform만 쓰므로 웨일북 예산 내)
+    // v5.2: 걷기 애니메이션 — 4프레임 걷기 시트가 있으면 진짜 걸음 사이클,
+    // 없으면 v5.1 총총 연출(바운스+갸우뚱) 폴백. 위상(options.phase)으로 발맞춰 행진 방지.
+    const spriteKey =
+      monsterKey === "mini-splitter" ? "monster_splitter" : `monster_${monsterKey}`;
     const wt = (options.now ?? performance.now()) / 1000;
     const wp = wt * (isBoss ? 5 : 9) + (options.phase || 0);
+    const hasWalkSheet =
+      !options.isFlying && !!getSprite(`${spriteKey}_walk_0`);
+
     if (!options.isStunned) {
       if (options.isFlying) {
         if (!quality.low) ctx.rotate(Math.sin(wp * 0.7) * 0.07); // 활공 기울임
+      } else if (hasWalkSheet) {
+        // 진짜 걷기 프레임 → 미세 바운스만 (프레임이 다리 움직임을 담당)
+        ctx.translate(0, -Math.abs(Math.sin(wp)) * drawSize * 0.025);
       } else {
         const hop = Math.abs(Math.sin(wp)) * drawSize * 0.07;
         ctx.translate(0, -hop);
@@ -301,10 +309,14 @@ export class MonsterRenderer {
       this._drawBossGlow(ctx, drawSize, monsterKey);
     }
 
-    // --- v5: AI 스프라이트 우선 (미로드 시 절차 캐시 폴백) ---
-    const spriteKey =
-      monsterKey === "mini-splitter" ? "monster_splitter" : `monster_${monsterKey}`;
-    if (drawSpriteCentered(ctx, spriteKey, 0, 0, drawSize * 1.25)) {
+    // --- v5: AI 스프라이트 우선 (걷기 프레임 → 정지 스프라이트 → 절차 캐시 폴백) ---
+    const walkKey = hasWalkSheet
+      ? `${spriteKey}_walk_${Math.floor(wp * 0.9) % 4}` // 프레임 ≈ 8fps → 초당 2걸음 사이클
+      : spriteKey;
+    if (
+      drawSpriteCentered(ctx, walkKey, 0, 0, drawSize * 1.25) ||
+      drawSpriteCentered(ctx, spriteKey, 0, 0, drawSize * 1.25)
+    ) {
       this._afterBody(ctx, drawSize, monsterKey, f, isBoss, options);
       ctx.restore();
       if (hp != null && maxHp != null && hp < maxHp) {
@@ -378,7 +390,7 @@ export class MonsterRenderer {
   // v5: 스프라이트 경로에서 몸체 이후 공통 오버레이 (글로우·상태)
   _afterBody(ctx, drawSize, monsterKey, f, isBoss, options) {
     if (options.isElite) this._drawEliteRing(ctx, drawSize, f);
-    this._drawUniversalOutlineGlow(ctx, drawSize, monsterKey, f, isBoss);
+    // v5.2: AI 스프라이트에는 타입색 외곽 글로우 미적용 — 스프라이트 위에서 초록 링 아티팩트로 보임 (실측)
     if (options.isShielded) this._drawShieldEffect(ctx, drawSize);
     if (options.isPoisoned) this._drawPoisonEffect(ctx, drawSize, f);
     if (options.isSlowed) this._drawFrostEffect(ctx, drawSize, f);

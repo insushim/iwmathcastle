@@ -343,15 +343,16 @@ export class ProjectileRenderer {
   renderBeam(ctx, x1, y1, x2, y2, timestamp) {
     ctx.save();
 
+    // v5.2: 어두운 배경에서 얇은 선으로만 보이던 문제 — 굵기·알파 대폭 강화 + 양끝 플레어
     const p = pulse(timestamp, 100);
     const dx = x2 - x1;
     const dy = y2 - y1;
     const len = Math.sqrt(dx * dx + dy * dy);
 
     // Outer glow
-    ctx.globalAlpha = 0.25 + p * 0.1;
-    ctx.strokeStyle = "#FF4444";
-    ctx.lineWidth = 8 + p * 4;
+    ctx.globalAlpha = 0.5 + p * 0.15;
+    ctx.strokeStyle = "#FF3355";
+    ctx.lineWidth = 16 + p * 6;
     ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(x1, y1);
@@ -359,22 +360,38 @@ export class ProjectileRenderer {
     ctx.stroke();
 
     // Mid beam
-    ctx.globalAlpha = 0.6 + p * 0.2;
-    ctx.strokeStyle = "#FF6666";
-    ctx.lineWidth = 3 + p * 2;
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = "#FF7788";
+    ctx.lineWidth = 7 + p * 3;
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
     ctx.stroke();
 
     // Core beam
-    ctx.globalAlpha = 0.9;
+    ctx.globalAlpha = 1;
     ctx.strokeStyle = "#FFFFFF";
-    ctx.lineWidth = 1.5 + p;
+    ctx.lineWidth = 3 + p * 1.5;
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
     ctx.stroke();
+
+    // 발사구 머즐 글로우 + 명중점 플레어 (지지직 튀는 원)
+    const flare = 7 + p * 5;
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = "#FFD0D8";
+    ctx.beginPath();
+    ctx.arc(x1, y1, flare * 0.6, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x2, y2, flare, 0, TWO_PI);
+    ctx.fill();
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = "#FF3355";
+    ctx.beginPath();
+    ctx.arc(x2, y2, flare * 2.2, 0, TWO_PI);
+    ctx.fill();
 
     // Periodic sparks along beam
     const numSparks = Math.floor(len / 20);

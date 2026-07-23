@@ -16,6 +16,45 @@ OUT = os.path.join(ROOT, "assets")
 os.makedirs(OUT, exist_ok=True)
 
 manifest = []
+
+
+def convert_walksheet(stem, im):
+    """2x2 걷기 시트 → 프레임 4장. 프레임 간 앵커 유지를 위해 4프레임 공통(union) bbox로 크롭.
+    시트 순서: 좌상(0)→우상(1)→좌하(2)→우하(3) = 걷기 사이클."""
+    w2, h2 = im.width // 2, im.height // 2
+    frames = [
+        im.crop((0, 0, w2, h2)),
+        im.crop((w2, 0, im.width, h2)),
+        im.crop((0, h2, w2, im.height)),
+        im.crop((w2, h2, im.width, im.height)),
+    ]
+    union = None
+    for fr in frames:
+        b = fr.split()[3].getbbox()
+        if not b:
+            print(f"  ⚠️ {stem}: 빈 프레임 감지 — 시트 변환 스킵")
+            return
+        union = b if union is None else (
+            min(union[0], b[0]), min(union[1], b[1]),
+            max(union[2], b[2]), max(union[3], b[3]),
+        )
+    pad = 8
+    union = (
+        max(0, union[0] - pad), max(0, union[1] - pad),
+        min(w2, union[2] + pad), min(h2, union[3] + pad),
+    )
+    base = stem.replace("-walksheet", "")
+    for i, fr in enumerate(frames):
+        fr = fr.crop(union)
+        if max(fr.size) > 256:
+            r = 256 / max(fr.size)
+            fr = fr.resize((round(fr.width * r), round(fr.height * r)), Image.LANCZOS)
+        out_name = f"{base}-walk-{i}.webp"
+        fr.save(os.path.join(OUT, out_name), "WEBP", quality=90, method=6)
+        manifest.append({"key": f"{base.replace('-', '_')}_walk_{i}", "file": out_name})
+    print(f"  {stem}.png → {base}-walk-0..3.webp (4프레임)")
+
+
 for name in sorted(os.listdir(SRC)):
     if not name.endswith(".png"):
         continue
@@ -24,6 +63,10 @@ for name in sorted(os.listdir(SRC)):
     out_name = stem + ".webp"
     out_path = os.path.join(OUT, out_name)
     im = Image.open(src_path).convert("RGBA")
+
+    if stem.endswith("-walksheet"):
+        convert_walksheet(stem, im)
+        continue
 
     if stem.startswith("bg-"):
         im.save(out_path, "WEBP", quality=82, method=6)
