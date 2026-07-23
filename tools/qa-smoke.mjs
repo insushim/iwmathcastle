@@ -69,6 +69,17 @@ try {
   console.log("게임 상태:", JSON.stringify(state));
   if (state.canvasVisible !== "block") await fail("게임 캔버스 미표시 — 초기화 실패");
 
+  // v5.4 회귀 가드: CSS 괄호 오류로 .wizard 규칙이 깨지면 offsetWidth가 화면폭(1366)이 되어
+  // 마법/기본공격 발사 원점이 683px 어긋난다(화면 가로지르는 선 버그). 48x56 이어야 정상.
+  const wizBox = await page.evaluate(() => {
+    const el = document.getElementById("wizard");
+    return { w: el.offsetWidth, h: el.offsetHeight };
+  });
+  console.log(`마법사 히트박스: ${wizBox.w}x${wizBox.h}`);
+  if (wizBox.w !== 48 || wizBox.h !== 56) {
+    await fail(`마법사 히트박스 ${wizBox.w}x${wizBox.h} (48x56 이어야 함 — .wizard CSS 파싱 확인)`);
+  }
+
   // 웨이브 시작 → 5초 구동 (렌더 루프·스폰·전투 경로 실행)
   await page.click("#startWaveBtn");
   await new Promise((r) => setTimeout(r, 5000));

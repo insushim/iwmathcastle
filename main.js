@@ -443,11 +443,30 @@ window.addEventListener("DOMContentLoaded", () => {
     qaAddGold: (n) => { gold += n; updateFullUI(); },
     qaSetWave: (n) => { currentWave = n; updateFullUI(); },
     qaForceGameOver: () => { castleHealth = 0; checkGameOver(); },
+    qaMoveWizard: (x, y) => {
+      wizardPosition.x = x; wizardPosition.y = y;
+      gameElements.wizardEl.style.transform = `translate(${x}px, ${y}px)`;
+    },
     qaGetMonsters: () =>
       monsters.slice(0, 5).map((m) => ({
         key: m.monsterKey, x: Math.round(m.x), y: Math.round(m.y),
         direction: +m.direction.toFixed(2), pathIndex: Math.round(m.pathIndex),
       })),
+    qaGetProjectiles: () =>
+      projectiles.map((p) => ({
+        type: p.type, x: Math.round(p.x), y: Math.round(p.y),
+        tx: p.target ? Math.round(p.target.x) : null,
+        ty: p.target ? Math.round(p.target.y) : null,
+        dead: p.target ? !!p.target.isDead : "no-target",
+      })),
+    qaGetWizardInfo: () => ({
+      pos: { ...wizardPosition },
+      elW: gameElements.wizardEl?.offsetWidth,
+      elH: gameElements.wizardEl?.offsetHeight,
+      autoCd: WIZARD_AUTO_ATTACK_STATS.cooldownUntil,
+      autoDmg: WIZARD_AUTO_ATTACK_STATS.damage,
+      range: WIZARD_AUTO_ATTACK_STATS.range,
+    }),
     qaPlaceTowerAt: (type, x, y) => {
       // 지정 좌표에서 가장 가까운 배치 타일에 타워 설치 (경로 인접 검증용)
       const tiles = [...document.querySelectorAll(".placement-tile")];
@@ -2371,13 +2390,21 @@ function handleHit(projectile, timestamp) {
 }
 
 // --- 마법사 관리 ---
+// v5.4: 마법사 몸 중심 = 캔버스 렌더와 동일한 스프라이트 상수 기준 (DOM 박스 비의존)
+function wizardCenterPoint() {
+  return {
+    x: wizardPosition.x + wizardSprite.width / 2,
+    y: wizardPosition.y + wizardSprite.height / 2,
+  };
+}
+
 function wizardAutoAttack(timestamp) {
   if (timestamp < (WIZARD_AUTO_ATTACK_STATS.cooldownUntil || 0)) return;
 
-  const wizardEl = gameElements.wizardEl;
-  const wizardCenterX = wizardPosition.x + wizardEl.offsetWidth / 2;
-  const wizardCenterY = wizardPosition.y + wizardEl.offsetHeight / 2;
-  const wizardCenter = { x: wizardCenterX, y: wizardCenterY };
+  // v5.4: 마법사는 캔버스 스프라이트 → 공격 원점은 렌더와 동일한 스프라이트 상수 기준
+  // (구버전은 DOM #wizard의 offsetWidth를 썼는데, CSS 파싱 버그로 offsetWidth=1366이 되어
+  //  발사 원점이 683px 어긋나 마법이 화면을 가로지르는 선으로 보였음)
+  const wizardCenter = wizardCenterPoint();
 
   // [MODIFIED] 마법사 자동 공격도 그리드 사용
   const nearbyMonsters = spatialGrid.getNearby(
@@ -2444,10 +2471,8 @@ async function handleWizardAttack(clickPos = null) {
   const levelBonus = Math.max(0, wizardLevel - spell.level);
   const damageMultiplier = 1 + levelBonus * 0.2;
 
-  const wizardEl = gameElements.wizardEl;
-  const wizardCenterX = wizardPosition.x + wizardEl.offsetWidth / 2;
-  const wizardCenterY = wizardPosition.y + wizardEl.offsetHeight / 2;
-  const wizardCenter = { x: wizardCenterX, y: wizardCenterY };
+  // v5.4: 마법 발사 원점도 스프라이트 상수 기준 (offsetWidth 버그 회피 — wizardAutoAttack 참조)
+  const wizardCenter = wizardCenterPoint();
 
   let spellOrigin = spell.aoe > 0 && clickPos ? clickPos : wizardCenter;
   const aoeSq = spell.aoe * spell.aoe;
@@ -2588,19 +2613,16 @@ async function handleWizardAttack(clickPos = null) {
       wizardPosition.y = spellOrigin.y;
       wizardPosition.x = Math.max(
         0,
-        Math.min(window.innerWidth - wizardEl.offsetWidth, wizardPosition.x),
+        Math.min(window.innerWidth - wizardSprite.width, wizardPosition.x),
       );
       wizardPosition.y = Math.max(
         0,
-        Math.min(window.innerHeight - wizardEl.offsetHeight, wizardPosition.y),
+        Math.min(window.innerHeight - wizardSprite.height, wizardPosition.y),
       );
       gameElements.wizardEl.style.transform = `translate(${Math.round(wizardPosition.x)}px, ${Math.round(wizardPosition.y)}px)`;
 
       sfx.play("blip");
-      const newWizardCenter = {
-        x: wizardPosition.x + wizardEl.offsetWidth / 2,
-        y: wizardPosition.y + wizardEl.offsetHeight / 2,
-      };
+      const newWizardCenter = wizardCenterPoint();
       createMagicEffect(
         newWizardCenter.x,
         newWizardCenter.y,
