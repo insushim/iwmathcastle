@@ -6,5 +6,6 @@
   Cache-Control: public, max-age=60, stale-while-revalidate=300
 # 스프라이트·배경(2.3MB)은 파일 추가만 되고 기존 파일은 거의 안 바뀜 — 7일 캐시 + 백그라운드 재검증
 # (immutable은 파일명 해시가 없어 배포 반영 실패 위험 → 사용 안 함, deploy-cache 교훈)
-/assets/*
+# ⚠️ *.webp 로 한정 — /assets/* 로 하면 manifest.json에도 매칭돼 위 60초 규칙과 헤더가 중복된다(실측).
+/assets/*.webp
   Cache-Control: public, max-age=604800, stale-while-revalidate=86400
