@@ -342,7 +342,19 @@ export class TowerRenderer {
         this._drawParticles(ctx, ts, 0, -16, 6, 16, "#FFFACD", 0.0015),
     };
     const fn = map[towerType];
-    if (fn) fn();
+    // v6 안전망: 오버레이 하나가 던진 예외로 프레임 전체(몬스터·성·이펙트)가
+    // 사라지는 사고를 막는다. 실패는 타입당 1회만 로그하고 그 타워의 장식만 생략.
+    if (fn) {
+      try {
+        fn();
+      } catch (e) {
+        if (!this._overlayFailed) this._overlayFailed = new Set();
+        if (!this._overlayFailed.has(towerType)) {
+          this._overlayFailed.add(towerType);
+          console.error(`[towerRenderer] ${towerType} 오버레이 렌더 실패:`, e);
+        }
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -2359,6 +2371,14 @@ export class TowerRenderer {
     ctx.setLineDash([]);
   }
 
+  // v6 버그수정: 애니메이션 오버레이 맵이 이 메서드를 부르는데 정의가 없어
+  // 매 프레임 TypeError → 그 프레임의 이후 그리기(몬스터·이펙트)가 통째로 중단됐다.
+  // (랜덤 상자로 이 타워가 나오면 화면에서 몬스터가 사라지는 증상 — 실측 재현)
+  // transcendent와 같은 규약: Static은 최소 코어, Animated는 전체 렌더러 위임.
+  _drawGoldMineAnimated(ctx, ts) {
+    this._drawGoldMine(ctx, ts);
+  }
+
   // ---------------------------------------------------------------------------
   // SHREDDER - Spinning sawblade mechanism
   // ---------------------------------------------------------------------------
@@ -2428,6 +2448,10 @@ export class TowerRenderer {
     ctx.globalAlpha = 1;
 
     ctx.restore();
+  }
+
+  _drawShredderAnimated(ctx, ts) {
+    this._drawShredder(ctx, ts);
   }
 
   // ---------------------------------------------------------------------------
@@ -2515,6 +2539,10 @@ export class TowerRenderer {
 
     // Healing particles (green sparkles)
     this._drawParticles(ctx, ts, 0, -22, 5, 16, "#66FF66", 0.001);
+  }
+
+  _drawRepairStationAnimated(ctx, ts) {
+    this._drawRepairStation(ctx, ts);
   }
 
   // ---------------------------------------------------------------------------
@@ -2665,6 +2693,10 @@ export class TowerRenderer {
     }
     ctx.closePath();
     ctx.fill();
+  }
+
+  _drawUltimateAnimated(ctx, ts) {
+    this._drawUltimate(ctx, ts);
   }
 
   // ---------------------------------------------------------------------------

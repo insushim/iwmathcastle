@@ -1664,10 +1664,22 @@ function updateDamageTexts(timestamp, deltaTime) {
   }
 }
 
+// 렌더 실패 로그는 대상별 1회만 (매 프레임 콘솔 폭주 방지)
+const _renderFailures = new Set();
+function logRenderFailure(what, err) {
+  if (_renderFailures.has(what)) return;
+  _renderFailures.add(what);
+  console.error(`[render] ${what} 그리기 실패 — 해당 개체만 생략합니다.`, err);
+}
+
 function renderDynamicLayer() {
   if (!dynamicCtx) return;
   const canvas = dynamicCtx.canvas;
   const now = performance.now();
+  // v6 버그수정: 렌더 중 예외가 나면 ctx.save()가 restore() 없이 쌓여 변환행렬이 누적된다.
+  // 그러면 clearRect가 엉뚱한 영역을 지워 성이 다른 자리에 그려지고 몬스터가 화면에서
+  // 사라진다(실측 재현). 프레임 시작마다 변환을 원점으로 되돌려 사고를 1프레임으로 가둔다.
+  dynamicCtx.setTransform(1, 0, 0, 1, 0, 0);
   dynamicCtx.clearRect(0, 0, canvas.width, canvas.height);
 
   // [V2] 캐슬 캔버스 렌더링
@@ -1678,8 +1690,14 @@ function renderDynamicLayer() {
   }
 
   // [V3] 타워 캔버스 렌더링
+  // 한 타워의 렌더 실패가 뒤따르는 몬스터·이펙트 그리기를 통째로 삼키지 않도록 격리한다.
   for (const t of towers) {
-    towerRenderer.render(dynamicCtx, t.type, t.x, t.y, t.level, now);
+    try {
+      towerRenderer.render(dynamicCtx, t.type, t.x, t.y, t.level, now);
+    } catch (e) {
+      dynamicCtx.setTransform(1, 0, 0, 1, 0, 0);
+      logRenderFailure(`tower:${t.type}`, e);
+    }
   }
 
   // [V3] 레이저 빔 캔버스 렌더링
@@ -1700,6 +1718,7 @@ function renderDynamicLayer() {
   for (const m of monsters) {
     if (m.isDead) continue;
     if (m.isStealthed) dynamicCtx.globalAlpha = 0.15; // v5: 스텔스는 캔버스 알파로
+    try {
     monsterRenderer.render(
       dynamicCtx,
       m.monsterKey,
@@ -1722,6 +1741,10 @@ function renderDynamicLayer() {
         isStunned: !!m.statusEffects.stunned,
       },
     );
+    } catch (e) {
+      dynamicCtx.setTransform(1, 0, 0, 1, 0, 0);
+      logRenderFailure(`monster:${m.monsterKey}`, e);
+    }
     if (m.isStealthed) dynamicCtx.globalAlpha = 1;
   }
 
