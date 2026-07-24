@@ -957,10 +957,10 @@ function positionCastle() {
   if (pathPoints.length > 0) {
     const { castleEl } = gameElements;
     const lastPoint = pathPoints[pathPoints.length - 1];
-    const castleHeight = 100;
+    // v5.8: 캐슬 앵커를 아래로(-50 → -20) — 첨탑이 상단 info-bar에 잘리던 문제
     castleCoords = {
       x: Math.max(10, lastPoint.x),
-      y: Math.max(10, lastPoint.y - castleHeight / 2),
+      y: Math.max(10, lastPoint.y - 20),
     };
     castleEl.style.left = `${castleCoords.x}px`;
     castleEl.style.top = `${castleCoords.y}px`;

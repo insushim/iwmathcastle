@@ -103,11 +103,11 @@ export class CastleRenderer {
   // ----------------------------------------------------------
   // Main render entry point
   // ----------------------------------------------------------
-  render(ctx, x, y, hp, maxHp, timestamp) {
+  render(ctx, x, y, hp, maxHp, timestamp, topSafeY = 64) {
     // v5.6: AI 캐슬 스프라이트 우선 (웅장한 마법 성). 미로드 시 절차 캐슬 폴백.
     const sprite = getSprite("castle_keep");
     if (sprite) {
-      const targetW = 184;
+      const targetW = 170;
       const scl = targetW / sprite.width;
       const targetH = sprite.height * scl;
       // 절차 캐슬의 하단중앙에 스프라이트 하단중앙 정렬 (크리스탈 첨탑은 위로 뻗음)
@@ -115,7 +115,8 @@ export class CastleRenderer {
       const bx = x + this._width / 2;
       const by = y + this._height + 30;
       const dx = Math.round(bx - targetW / 2);
-      const dy = Math.round(by - targetH);
+      // v5.8: 첨탑이 상단 info-bar에 절대 안 잘리도록 하한 클램프 (레이아웃 변동 대비 안전망)
+      const dy = Math.max(topSafeY, Math.round(by - targetH));
       const ratio = Math.max(0, Math.min(1, hp / maxHp));
       ctx.save();
       if (ratio < 0.3) {
