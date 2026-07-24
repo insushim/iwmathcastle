@@ -189,7 +189,7 @@ export async function showTowerSelector(x, y, sfx) {
     tierDot.style.boxShadow = `0 0 6px ${getTierColor(tier)}`;
 
     // v5.1: AI 타워 스프라이트 우선, 없으면 이모지 폴백 (multi-shot 등 스프라이트 미생성 타워)
-    const towerSprite = getSprite(`tower_${key}`);
+    const towerSprite = getSprite(`tower_${key.replace(/-/g, "_")}`);
     const symbolHtml = towerSprite
       ? `<img class="tower-option-img" src="${towerSprite.src}" alt="${towerStat.name}">`
       : towerStat.symbol;

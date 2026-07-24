@@ -17,28 +17,140 @@
    "file": "castle-keep.webp"
   },
   {
+   "key": "monster_ancientDragon_walk_0",
+   "file": "monster-ancientDragon-walk-0.webp"
+  },
+  {
+   "key": "monster_ancientDragon_walk_1",
+   "file": "monster-ancientDragon-walk-1.webp"
+  },
+  {
+   "key": "monster_ancientDragon_walk_2",
+   "file": "monster-ancientDragon-walk-2.webp"
+  },
+  {
+   "key": "monster_ancientDragon_walk_3",
+   "file": "monster-ancientDragon-walk-3.webp"
+  },
+  {
    "key": "monster_ancientDragon",
    "file": "monster-ancientDragon.webp"
+  },
+  {
+   "key": "monster_archfiend_walk_0",
+   "file": "monster-archfiend-walk-0.webp"
+  },
+  {
+   "key": "monster_archfiend_walk_1",
+   "file": "monster-archfiend-walk-1.webp"
+  },
+  {
+   "key": "monster_archfiend_walk_2",
+   "file": "monster-archfiend-walk-2.webp"
+  },
+  {
+   "key": "monster_archfiend_walk_3",
+   "file": "monster-archfiend-walk-3.webp"
   },
   {
    "key": "monster_archfiend",
    "file": "monster-archfiend.webp"
   },
   {
+   "key": "monster_assassin_walk_0",
+   "file": "monster-assassin-walk-0.webp"
+  },
+  {
+   "key": "monster_assassin_walk_1",
+   "file": "monster-assassin-walk-1.webp"
+  },
+  {
+   "key": "monster_assassin_walk_2",
+   "file": "monster-assassin-walk-2.webp"
+  },
+  {
+   "key": "monster_assassin_walk_3",
+   "file": "monster-assassin-walk-3.webp"
+  },
+  {
    "key": "monster_assassin",
    "file": "monster-assassin.webp"
+  },
+  {
+   "key": "monster_bat_walk_0",
+   "file": "monster-bat-walk-0.webp"
+  },
+  {
+   "key": "monster_bat_walk_1",
+   "file": "monster-bat-walk-1.webp"
+  },
+  {
+   "key": "monster_bat_walk_2",
+   "file": "monster-bat-walk-2.webp"
+  },
+  {
+   "key": "monster_bat_walk_3",
+   "file": "monster-bat-walk-3.webp"
   },
   {
    "key": "monster_bat",
    "file": "monster-bat.webp"
   },
   {
+   "key": "monster_berserker_walk_0",
+   "file": "monster-berserker-walk-0.webp"
+  },
+  {
+   "key": "monster_berserker_walk_1",
+   "file": "monster-berserker-walk-1.webp"
+  },
+  {
+   "key": "monster_berserker_walk_2",
+   "file": "monster-berserker-walk-2.webp"
+  },
+  {
+   "key": "monster_berserker_walk_3",
+   "file": "monster-berserker-walk-3.webp"
+  },
+  {
    "key": "monster_berserker",
    "file": "monster-berserker.webp"
   },
   {
+   "key": "monster_boss_walk_0",
+   "file": "monster-boss-walk-0.webp"
+  },
+  {
+   "key": "monster_boss_walk_1",
+   "file": "monster-boss-walk-1.webp"
+  },
+  {
+   "key": "monster_boss_walk_2",
+   "file": "monster-boss-walk-2.webp"
+  },
+  {
+   "key": "monster_boss_walk_3",
+   "file": "monster-boss-walk-3.webp"
+  },
+  {
    "key": "monster_boss",
    "file": "monster-boss.webp"
+  },
+  {
+   "key": "monster_chronomancer_walk_0",
+   "file": "monster-chronomancer-walk-0.webp"
+  },
+  {
+   "key": "monster_chronomancer_walk_1",
+   "file": "monster-chronomancer-walk-1.webp"
+  },
+  {
+   "key": "monster_chronomancer_walk_2",
+   "file": "monster-chronomancer-walk-2.webp"
+  },
+  {
+   "key": "monster_chronomancer_walk_3",
+   "file": "monster-chronomancer-walk-3.webp"
   },
   {
    "key": "monster_chronomancer",
@@ -65,28 +177,140 @@
    "file": "monster-collector.webp"
   },
   {
+   "key": "monster_demonKing_walk_0",
+   "file": "monster-demonKing-walk-0.webp"
+  },
+  {
+   "key": "monster_demonKing_walk_1",
+   "file": "monster-demonKing-walk-1.webp"
+  },
+  {
+   "key": "monster_demonKing_walk_2",
+   "file": "monster-demonKing-walk-2.webp"
+  },
+  {
+   "key": "monster_demonKing_walk_3",
+   "file": "monster-demonKing-walk-3.webp"
+  },
+  {
    "key": "monster_demonKing",
    "file": "monster-demonKing.webp"
+  },
+  {
+   "key": "monster_disruptor_walk_0",
+   "file": "monster-disruptor-walk-0.webp"
+  },
+  {
+   "key": "monster_disruptor_walk_1",
+   "file": "monster-disruptor-walk-1.webp"
+  },
+  {
+   "key": "monster_disruptor_walk_2",
+   "file": "monster-disruptor-walk-2.webp"
+  },
+  {
+   "key": "monster_disruptor_walk_3",
+   "file": "monster-disruptor-walk-3.webp"
   },
   {
    "key": "monster_disruptor",
    "file": "monster-disruptor.webp"
   },
   {
+   "key": "monster_dragon_walk_0",
+   "file": "monster-dragon-walk-0.webp"
+  },
+  {
+   "key": "monster_dragon_walk_1",
+   "file": "monster-dragon-walk-1.webp"
+  },
+  {
+   "key": "monster_dragon_walk_2",
+   "file": "monster-dragon-walk-2.webp"
+  },
+  {
+   "key": "monster_dragon_walk_3",
+   "file": "monster-dragon-walk-3.webp"
+  },
+  {
    "key": "monster_dragon",
    "file": "monster-dragon.webp"
+  },
+  {
+   "key": "monster_finalBoss_walk_0",
+   "file": "monster-finalBoss-walk-0.webp"
+  },
+  {
+   "key": "monster_finalBoss_walk_1",
+   "file": "monster-finalBoss-walk-1.webp"
+  },
+  {
+   "key": "monster_finalBoss_walk_2",
+   "file": "monster-finalBoss-walk-2.webp"
+  },
+  {
+   "key": "monster_finalBoss_walk_3",
+   "file": "monster-finalBoss-walk-3.webp"
   },
   {
    "key": "monster_finalBoss",
    "file": "monster-finalBoss.webp"
   },
   {
+   "key": "monster_general_walk_0",
+   "file": "monster-general-walk-0.webp"
+  },
+  {
+   "key": "monster_general_walk_1",
+   "file": "monster-general-walk-1.webp"
+  },
+  {
+   "key": "monster_general_walk_2",
+   "file": "monster-general-walk-2.webp"
+  },
+  {
+   "key": "monster_general_walk_3",
+   "file": "monster-general-walk-3.webp"
+  },
+  {
    "key": "monster_general",
    "file": "monster-general.webp"
   },
   {
+   "key": "monster_ghost_walk_0",
+   "file": "monster-ghost-walk-0.webp"
+  },
+  {
+   "key": "monster_ghost_walk_1",
+   "file": "monster-ghost-walk-1.webp"
+  },
+  {
+   "key": "monster_ghost_walk_2",
+   "file": "monster-ghost-walk-2.webp"
+  },
+  {
+   "key": "monster_ghost_walk_3",
+   "file": "monster-ghost-walk-3.webp"
+  },
+  {
    "key": "monster_ghost",
    "file": "monster-ghost.webp"
+  },
+  {
+   "key": "monster_golem_walk_0",
+   "file": "monster-golem-walk-0.webp"
+  },
+  {
+   "key": "monster_golem_walk_1",
+   "file": "monster-golem-walk-1.webp"
+  },
+  {
+   "key": "monster_golem_walk_2",
+   "file": "monster-golem-walk-2.webp"
+  },
+  {
+   "key": "monster_golem_walk_3",
+   "file": "monster-golem-walk-3.webp"
   },
   {
    "key": "monster_golem",
@@ -133,12 +357,60 @@
    "file": "monster-leech.webp"
   },
   {
+   "key": "monster_mimic_walk_0",
+   "file": "monster-mimic-walk-0.webp"
+  },
+  {
+   "key": "monster_mimic_walk_1",
+   "file": "monster-mimic-walk-1.webp"
+  },
+  {
+   "key": "monster_mimic_walk_2",
+   "file": "monster-mimic-walk-2.webp"
+  },
+  {
+   "key": "monster_mimic_walk_3",
+   "file": "monster-mimic-walk-3.webp"
+  },
+  {
    "key": "monster_mimic",
    "file": "monster-mimic.webp"
   },
   {
+   "key": "monster_mirage_walk_0",
+   "file": "monster-mirage-walk-0.webp"
+  },
+  {
+   "key": "monster_mirage_walk_1",
+   "file": "monster-mirage-walk-1.webp"
+  },
+  {
+   "key": "monster_mirage_walk_2",
+   "file": "monster-mirage-walk-2.webp"
+  },
+  {
+   "key": "monster_mirage_walk_3",
+   "file": "monster-mirage-walk-3.webp"
+  },
+  {
    "key": "monster_mirage",
    "file": "monster-mirage.webp"
+  },
+  {
+   "key": "monster_necromancer_walk_0",
+   "file": "monster-necromancer-walk-0.webp"
+  },
+  {
+   "key": "monster_necromancer_walk_1",
+   "file": "monster-necromancer-walk-1.webp"
+  },
+  {
+   "key": "monster_necromancer_walk_2",
+   "file": "monster-necromancer-walk-2.webp"
+  },
+  {
+   "key": "monster_necromancer_walk_3",
+   "file": "monster-necromancer-walk-3.webp"
   },
   {
    "key": "monster_necromancer",
@@ -169,12 +441,60 @@
    "file": "monster-phoenix-chroma.webp"
   },
   {
+   "key": "monster_phoenix_walk_0",
+   "file": "monster-phoenix-walk-0.webp"
+  },
+  {
+   "key": "monster_phoenix_walk_1",
+   "file": "monster-phoenix-walk-1.webp"
+  },
+  {
+   "key": "monster_phoenix_walk_2",
+   "file": "monster-phoenix-walk-2.webp"
+  },
+  {
+   "key": "monster_phoenix_walk_3",
+   "file": "monster-phoenix-walk-3.webp"
+  },
+  {
    "key": "monster_phoenix",
    "file": "monster-phoenix.webp"
   },
   {
+   "key": "monster_plaguebearer_walk_0",
+   "file": "monster-plaguebearer-walk-0.webp"
+  },
+  {
+   "key": "monster_plaguebearer_walk_1",
+   "file": "monster-plaguebearer-walk-1.webp"
+  },
+  {
+   "key": "monster_plaguebearer_walk_2",
+   "file": "monster-plaguebearer-walk-2.webp"
+  },
+  {
+   "key": "monster_plaguebearer_walk_3",
+   "file": "monster-plaguebearer-walk-3.webp"
+  },
+  {
    "key": "monster_plaguebearer",
    "file": "monster-plaguebearer.webp"
+  },
+  {
+   "key": "monster_shadowDragon_walk_0",
+   "file": "monster-shadowDragon-walk-0.webp"
+  },
+  {
+   "key": "monster_shadowDragon_walk_1",
+   "file": "monster-shadowDragon-walk-1.webp"
+  },
+  {
+   "key": "monster_shadowDragon_walk_2",
+   "file": "monster-shadowDragon-walk-2.webp"
+  },
+  {
+   "key": "monster_shadowDragon_walk_3",
+   "file": "monster-shadowDragon-walk-3.webp"
   },
   {
    "key": "monster_shadowDragon",
@@ -241,8 +561,40 @@
    "file": "monster-splitter.webp"
   },
   {
+   "key": "monster_summoner_walk_0",
+   "file": "monster-summoner-walk-0.webp"
+  },
+  {
+   "key": "monster_summoner_walk_1",
+   "file": "monster-summoner-walk-1.webp"
+  },
+  {
+   "key": "monster_summoner_walk_2",
+   "file": "monster-summoner-walk-2.webp"
+  },
+  {
+   "key": "monster_summoner_walk_3",
+   "file": "monster-summoner-walk-3.webp"
+  },
+  {
    "key": "monster_summoner",
    "file": "monster-summoner.webp"
+  },
+  {
+   "key": "monster_swarmling_walk_0",
+   "file": "monster-swarmling-walk-0.webp"
+  },
+  {
+   "key": "monster_swarmling_walk_1",
+   "file": "monster-swarmling-walk-1.webp"
+  },
+  {
+   "key": "monster_swarmling_walk_2",
+   "file": "monster-swarmling-walk-2.webp"
+  },
+  {
+   "key": "monster_swarmling_walk_3",
+   "file": "monster-swarmling-walk-3.webp"
   },
   {
    "key": "monster_swarmling",
@@ -269,16 +621,80 @@
    "file": "monster-tank.webp"
   },
   {
+   "key": "monster_teleporter_walk_0",
+   "file": "monster-teleporter-walk-0.webp"
+  },
+  {
+   "key": "monster_teleporter_walk_1",
+   "file": "monster-teleporter-walk-1.webp"
+  },
+  {
+   "key": "monster_teleporter_walk_2",
+   "file": "monster-teleporter-walk-2.webp"
+  },
+  {
+   "key": "monster_teleporter_walk_3",
+   "file": "monster-teleporter-walk-3.webp"
+  },
+  {
    "key": "monster_teleporter",
    "file": "monster-teleporter.webp"
+  },
+  {
+   "key": "monster_titanGolem_walk_0",
+   "file": "monster-titanGolem-walk-0.webp"
+  },
+  {
+   "key": "monster_titanGolem_walk_1",
+   "file": "monster-titanGolem-walk-1.webp"
+  },
+  {
+   "key": "monster_titanGolem_walk_2",
+   "file": "monster-titanGolem-walk-2.webp"
+  },
+  {
+   "key": "monster_titanGolem_walk_3",
+   "file": "monster-titanGolem-walk-3.webp"
   },
   {
    "key": "monster_titanGolem",
    "file": "monster-titanGolem.webp"
   },
   {
+   "key": "monster_voidLord_walk_0",
+   "file": "monster-voidLord-walk-0.webp"
+  },
+  {
+   "key": "monster_voidLord_walk_1",
+   "file": "monster-voidLord-walk-1.webp"
+  },
+  {
+   "key": "monster_voidLord_walk_2",
+   "file": "monster-voidLord-walk-2.webp"
+  },
+  {
+   "key": "monster_voidLord_walk_3",
+   "file": "monster-voidLord-walk-3.webp"
+  },
+  {
    "key": "monster_voidLord",
    "file": "monster-voidLord.webp"
+  },
+  {
+   "key": "monster_wormQueen_walk_0",
+   "file": "monster-wormQueen-walk-0.webp"
+  },
+  {
+   "key": "monster_wormQueen_walk_1",
+   "file": "monster-wormQueen-walk-1.webp"
+  },
+  {
+   "key": "monster_wormQueen_walk_2",
+   "file": "monster-wormQueen-walk-2.webp"
+  },
+  {
+   "key": "monster_wormQueen_walk_3",
+   "file": "monster-wormQueen-walk-3.webp"
   },
   {
    "key": "monster_wormQueen",
@@ -319,6 +735,10 @@
   {
    "key": "tower_minus",
    "file": "tower-minus.webp"
+  },
+  {
+   "key": "tower_multi_shot",
+   "file": "tower-multi-shot.webp"
   },
   {
    "key": "tower_multiply",

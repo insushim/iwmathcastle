@@ -1,5 +1,10 @@
 # Cloudflare Pages 캐싱 규칙 (v6 — 동접 최적화)
-# 스프라이트·배경(2.3MB)은 거의 안 바뀜 — 7일 캐시 + 백그라운드 재검증
+# ⚠️ manifest.json은 신규 에셋(걷기 프레임 등) 추가 시 바뀌는 인덱스 → 단기 캐시.
+#    이게 7일 캐시되면 기존 방문자가 구 manifest를 봐서 새 스프라이트를 아예 요청하지 않는다
+#    (deploy-cache 교훈: 인덱스 파일은 짧게, 해시 없는 자산 파일만 길게).
+/assets/manifest.json
+  Cache-Control: public, max-age=60, stale-while-revalidate=300
+# 스프라이트·배경(2.3MB)은 파일 추가만 되고 기존 파일은 거의 안 바뀜 — 7일 캐시 + 백그라운드 재검증
 # (immutable은 파일명 해시가 없어 배포 반영 실패 위험 → 사용 안 함, deploy-cache 교훈)
 /assets/*
   Cache-Control: public, max-age=604800, stale-while-revalidate=86400

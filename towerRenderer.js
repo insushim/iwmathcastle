@@ -221,7 +221,8 @@ export class TowerRenderer {
     }
 
     // v5: AI 스프라이트 우선 (미로드 시 절차 캐시 폴백)
-    if (!drawSpriteCentered(ctx, `tower_${towerType}`, 0, -14, 78)) {
+    // manifest key는 파일명 규칙상 하이픈이 언더바(multi-shot → tower_multi_shot)라 정규화 필요
+    if (!drawSpriteCentered(ctx, `tower_${towerType.replace(/-/g, "_")}`, 0, -14, 78)) {
       // Draw cached static tower body, or build cache on first call
       const cached = this._getCachedTower(towerType, level);
       ctx.drawImage(cached, -this._cacheOX, -this._cacheOY);
