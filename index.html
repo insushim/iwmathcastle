@@ -8,6 +8,12 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Orbitron:wght@400;700;900&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <script>
+      // v6: 구 배포 주소(GitHub Pages)는 랭킹 API가 없음 — 정식 주소로 자동 이동
+      if (location.hostname.endsWith("github.io")) {
+        location.replace("https://mathcastle.pages.dev" + location.search);
+      }
+    </script>
 </head>
 <body>
     <div id="game-content">
@@ -20,26 +26,42 @@
                     <h1 class="brand-title">INsuworlD</h1>
                     <h2 class="main-title">수학 성 수호자</h2>
                     <p class="main-subtitle">MATH CASTLE GUARDIAN</p>
-                    <div class="version-badge">V3.0</div>
+                    <div class="version-badge">V6.0</div>
                 </div>
                 <div class="difficulty-section">
-                    <h3 class="section-label">학년을 선택하세요</h3>
+                    <h3 class="section-label">학년·학기를 선택하세요</h3>
                     <div class="difficulty-options">
-                        <button class="difficulty-btn" data-difficulty="3">
-                            <span class="diff-grade">3</span>
-                            <span class="diff-label">학년</span>
+                        <button class="difficulty-btn" data-difficulty="3-1">
+                            <span class="diff-grade diff-sem">3-1</span>
+                            <span class="diff-label">3학년 1학기</span>
                         </button>
-                        <button class="difficulty-btn" data-difficulty="4">
-                            <span class="diff-grade">4</span>
-                            <span class="diff-label">학년</span>
+                        <button class="difficulty-btn" data-difficulty="3-2">
+                            <span class="diff-grade diff-sem">3-2</span>
+                            <span class="diff-label">3학년 2학기</span>
                         </button>
-                        <button class="difficulty-btn" data-difficulty="5">
-                            <span class="diff-grade">5</span>
-                            <span class="diff-label">학년</span>
+                        <button class="difficulty-btn" data-difficulty="4-1">
+                            <span class="diff-grade diff-sem">4-1</span>
+                            <span class="diff-label">4학년 1학기</span>
                         </button>
-                        <button class="difficulty-btn" data-difficulty="6">
-                            <span class="diff-grade">6</span>
-                            <span class="diff-label">학년</span>
+                        <button class="difficulty-btn" data-difficulty="4-2">
+                            <span class="diff-grade diff-sem">4-2</span>
+                            <span class="diff-label">4학년 2학기</span>
+                        </button>
+                        <button class="difficulty-btn" data-difficulty="5-1">
+                            <span class="diff-grade diff-sem">5-1</span>
+                            <span class="diff-label">5학년 1학기</span>
+                        </button>
+                        <button class="difficulty-btn" data-difficulty="5-2">
+                            <span class="diff-grade diff-sem">5-2</span>
+                            <span class="diff-label">5학년 2학기</span>
+                        </button>
+                        <button class="difficulty-btn" data-difficulty="6-1">
+                            <span class="diff-grade diff-sem">6-1</span>
+                            <span class="diff-label">6학년 1학기</span>
+                        </button>
+                        <button class="difficulty-btn" data-difficulty="6-2">
+                            <span class="diff-grade diff-sem">6-2</span>
+                            <span class="diff-label">6학년 2학기</span>
                         </button>
                     </div>
                 </div>
@@ -232,8 +254,10 @@
                 </div>
 
                 <div class="ranking-tabs">
-                    <button class="tab-btn active" data-tab="today">오늘의 랭킹</button>
-                    <button class="tab-btn" data-tab="yesterday">어제의 랭킹</button>
+                    <button class="tab-btn active" data-tab="today">오늘</button>
+                    <button class="tab-btn" data-tab="yesterday">어제</button>
+                    <button class="tab-btn" data-tab="week">주간</button>
+                    <button class="tab-btn" data-tab="month">월간</button>
                 </div>
 
                 <div id="ranking-timer" class="ranking-timer"></div>
@@ -243,6 +267,12 @@
                 </div>
                 <div id="yesterdayRanking" class="ranking-content">
                     <ul id="yesterdayRankingList" class="ranking-list"></ul>
+                </div>
+                <div id="weekRanking" class="ranking-content">
+                    <ul id="weekRankingList" class="ranking-list"></ul>
+                </div>
+                <div id="monthRanking" class="ranking-content">
+                    <ul id="monthRankingList" class="ranking-list"></ul>
                 </div>
                 <button class="modal-btn" id="restartFromRankingBtn">게임 다시하기</button>
             </div>

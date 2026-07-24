@@ -1,0 +1,7 @@
+# gitleaks 설정 — 오탐 allowlist
+# assets/manifest.json의 "key"는 스프라이트 이름(bg_canyon 등)이지 API 키가 아님 (28건 전부 오탐 실측)
+[extend]
+useDefault = true
+
+[allowlist]
+paths = ['''assets/manifest\.json''']

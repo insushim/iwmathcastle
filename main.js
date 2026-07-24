@@ -28,6 +28,7 @@ import {
   initializeFirebase,
   submitScore,
   fetchAndShowRankings,
+  startGameSession,
 } from "./firebase.js";
 import * as ui from "./ui.js";
 // --- [V2] 새 모듈 임포트 ---
@@ -145,11 +146,29 @@ let touchStartTime = 0,
 let activeSpell = "fireball";
 let currentProblem = null; // v5: 학습 루프용 현재 문제
 let isReviewProblem = false; // v5: 복습(재출제) 문제 여부
+let isNoteReviewProblem = false; // v6: 오답노트 복습 퀴즈 여부 (보너스 골드)
 let gameSpeed = 1; // 1x or 2x speed multiplier
+let currentWaveModifier = null; // v6: 웨이브 변이 (웨이브 30+)
 let shownProblemIds = new Set(); // Track shown problems to avoid duplicates
 let problemTimerId = null;
 let problemTimerStart = 0;
-const PROBLEM_TIME_LIMIT = 30000; // 30 seconds
+// v6: 학기 표기 마이그레이션 ("3" → "3-1") — 구 세이브·체크포인트 호환
+function migrateDifficulty(d) {
+  const s = String(d || "");
+  return /^\d$/.test(s) ? `${s}-1` : s;
+}
+function difficultyLabel(d) {
+  const m = String(d || "").match(/^(\d)-(\d)$/);
+  return m ? `${m[1]}학년 ${m[2]}학기` : `${d}학년`;
+}
+// v6: 30초 고정 폐지 — 유형별 제한시간(t: 1=한줄연산 2=복합 3=도형·측정 4=문장제) + 저학년(3~4학년) +5초
+const PROBLEM_TIME_BY_TYPE = { 1: 20000, 2: 35000, 3: 45000, 4: 50000 };
+let currentProblemTimeLimit = 30000;
+function problemTimeLimit(problem) {
+  const base = PROBLEM_TIME_BY_TYPE[problem && problem.t] || 30000;
+  const grade = parseInt(selectedDifficulty, 10);
+  return base + (grade <= 4 ? 5000 : 0);
+}
 let correctAnswer = 0,
   selectedTowerForUpgrade = null,
   selectedDifficulty = null,
@@ -444,6 +463,8 @@ window.addEventListener("DOMContentLoaded", () => {
     },
     qaAddGold: (n) => { gold += n; updateFullUI(); },
     qaSetWave: (n) => { currentWave = n; updateFullUI(); },
+    qaTimeLimit: (p) => problemTimeLimit(p), // v6: 유형별 제한시간 검증용
+    qaWaveModifier: (w) => simCore.waveModifier(w, seededRand(dailySeedForWave(w))),
     qaForceGameOver: () => { castleHealth = 0; checkGameOver(); },
     qaMoveWizard: (x, y) => {
       wizardPosition.x = x; wizardPosition.y = y;
@@ -546,6 +567,7 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 
 async function initializeGame(difficulty, savedState = null) {
+  difficulty = migrateDifficulty(difficulty); // v6: 구 학년 표기("3") → 학기 표기("3-1")
   const {
     difficultyModal,
     gameCanvas,
@@ -560,11 +582,20 @@ async function initializeGame(difficulty, savedState = null) {
     await loadGradeProblems(difficulty);
     categorizeAnswers();
     learnLoop.resetQueue();
+    // v6: 지난 판 오답노트에서 최대 3문항을 웨이브 1~3 복습 퀴즈로 (보너스 골드)
+    if (!savedState) {
+      const seeded = learnLoop.seedReviewFromNote(difficulty);
+      if (seeded > 0)
+        setTimeout(
+          () => showMessage(`📒 지난 판 오답 ${seeded}문제가 복습 퀴즈로 나와요! (맞히면 보너스 골드)`),
+          1200,
+        );
+    }
 
   // v5: 학년별 AI 배경 (없으면 기존 CSS 배경 유지)
   {
     try { await window.__spritesReady; } catch {}
-    const bgKey = { 3: "bg_meadow", 4: "bg_meadow", 5: "bg_canyon", 6: "bg_volcano" }[difficulty];
+    const bgKey = { 3: "bg_meadow", 4: "bg_meadow", 5: "bg_canyon", 6: "bg_volcano" }[parseInt(difficulty, 10)];
     const bgImg = getSprite(bgKey);
     // #gameCanvas 자체의 불투명 CSS 배경을 인라인으로 교체해야 보인다
     // (#game-content에 걸면 자식 gameCanvas 배경에 완전히 가려짐 — 시각 QA 실측)
@@ -579,6 +610,10 @@ async function initializeGame(difficulty, savedState = null) {
     return;
   }
   selectedDifficulty = difficulty;
+  // v6: 랭킹 치트 방어용 세션 토큰 발급 (비동기·실패해도 게임 계속)
+  // 이어하기면 세이브의 웨이브를 기준선으로 넘겨, 서버 최소 플레이 시간이
+  // "이번 세션에 진행한 웨이브"로 계산되게 한다(정상 기록 오거절 방지).
+  startGameSession(savedState && savedState.currentWave ? savedState.currentWave : 1);
   difficultyModal.style.display = "none";
   gameCanvas.style.display = "block";
   gameUI.style.display = "block";
@@ -847,6 +882,17 @@ function generatePath() {
   drawRoad(points, pathWidth);
 }
 
+// v6: 오늘의 시드 — KST 8:50 컷 날짜 + 학기 + 웨이브로 결정 (전국 공통 웨이브 조성)
+function dailySeedForWave(wave) {
+  const day = new Date(Date.now() + 9 * 3600e3 - (8 * 3600e3 + 50 * 60e3))
+    .toISOString()
+    .split("T")[0];
+  const s = `${day}|${selectedDifficulty}`;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h ^ Math.imul(wave, 2654435761)) + 1;
+}
+
 // 결정론 난수 (seed) — 조약돌 위치 고정용
 function seededRand(seed) {
   let s = seed % 2147483647;
@@ -1049,7 +1095,12 @@ function recreateTower(towerData) {
   }
   tower.rangeSq = tower.range * tower.range;
 
+  // v6: 각성 단계 복원
+  const savedAwaken = towerData.awaken || 0;
+  for (let i = 0; i < savedAwaken; i++) simCore.applyTowerAwaken(tower);
+
   tower.el.className = `tower tower-${tower.type}`;
+  if (savedAwaken > 0) tower.el.classList.add("tower-awakened");
   tower.el.style.left = `${x}px`;
   tower.el.style.top = `${y}px`;
   tower.el.onclick = () => {
@@ -1064,7 +1115,7 @@ function recreateTower(towerData) {
   }
   const levelIndicator = document.createElement("div");
   levelIndicator.className = "tower-level";
-  levelIndicator.textContent = tower.level;
+  levelIndicator.textContent = savedAwaken > 0 ? `★${savedAwaken}` : tower.level;
   tower.el.appendChild(levelIndicator);
   tower.levelIndicator = levelIndicator;
   gameCanvas.appendChild(tower.el);
@@ -1356,6 +1407,14 @@ function updateMonsters(timestamp, deltaTime) {
 
     let isStunned = false;
     monster.currentSpeed = monster.baseSpeed;
+
+    // v6: 웨이브 변이 "재생" — 매초 최대 체력의 1% 회복
+    if (currentWaveModifier?.regenPctPerSec && monster.hp < monster.maxHp) {
+      monster.hp = Math.min(
+        monster.maxHp,
+        monster.hp + monster.maxHp * currentWaveModifier.regenPctPerSec * (deltaTime / 1000),
+      );
+    }
 
     // v5: 상태 표시는 캔버스 렌더러가 담당 (DOM classList 제거 — 웨일북 최적화)
     if (monster.statusEffects.slowed) {
@@ -1771,7 +1830,18 @@ function startWave() {
 
   // 웨이브 수·조성은 simCore가 단일 진실원 (밸런스 프로브와 공유)
   monstersInWave = simCore.monstersInWave(currentWave);
-  const waveComposition = simCore.buildWaveComposition(currentWave);
+  // v6: "오늘의 시드" — 같은 날·같은 학기는 전국 어디서나 같은 웨이브 조성·변이
+  // (일간 랭킹 = 같은 조건에서의 순위 경쟁이 되도록)
+  const dailyRng = seededRand(dailySeedForWave(currentWave));
+  const waveComposition = simCore.buildWaveComposition(currentWave, dailyRng);
+
+  // v6: 웨이브 변이 (30+) — 후반 조합 변주 (역시 일일 시드)
+  currentWaveModifier = simCore.waveModifier(currentWave, dailyRng);
+  if (currentWaveModifier) {
+    showMessage(
+      `${currentWaveModifier.icon} 웨이브 변이: ${currentWaveModifier.name} — ${currentWaveModifier.desc}`,
+    );
+  }
 
   shuffleArray(waveComposition);
 
@@ -1837,8 +1907,13 @@ function spawnMonster(type, position = null, isSpecialSpawn = false) {
     }
   }
 
+  // v6: 웨이브 변이 적용 (이속·골드)
+  const modSpeed = currentWaveModifier?.speedFactor || 1;
+  if (currentWaveModifier?.goldFactor)
+    goldReward = Math.ceil(goldReward * currentWaveModifier.goldFactor);
+
   const finalMaxHp = Math.floor(maxHp * eliteHpMultiplier);
-  const finalSpeed = stats.speed * eliteSpeedMultiplier;
+  const finalSpeed = stats.speed * eliteSpeedMultiplier * modSpeed;
 
   const monster = {
     ...stats,
@@ -2118,7 +2193,27 @@ function placeTower(type) {
 
 function upgradeTower() {
   const tower = selectedTowerForUpgrade;
-  if (!tower || tower.level >= simCore.TOWER_MAX_LEVEL) return;
+  if (!tower) return;
+  // v6: 레벨 10 도달 후에는 각성 (골드 대량 소모 티어업 — 후반 골드 싱크)
+  if (tower.level >= simCore.TOWER_MAX_LEVEL) {
+    if ((tower.awaken || 0) >= simCore.TOWER_MAX_AWAKEN) return;
+    const awakenCost = simCore.towerAwakenCost(tower);
+    if (gold < awakenCost) return showMessage("골드가 부족합니다!");
+    gold -= awakenCost;
+    simCore.applyTowerAwaken(tower);
+    tower.el.classList.add("tower-awakened");
+    if (tower.levelIndicator)
+      tower.levelIndicator.textContent = `★${tower.awaken}`;
+    showUpgradeNotification(
+      `✨ ${tower.name} 각성 ${tower.awaken}단계! 공격력이 크게 올랐습니다!`,
+    );
+    sfx.play("powerup");
+    if (particleSystem) particleSystem.screenFlash("#ffd166", 400, 0.15);
+    hideModal(gameElements.towerUpgradeSelector);
+    gameElements.rangeIndicator.style.display = "none";
+    updateFullUI();
+    return;
+  }
   const cost = simCore.towerUpgradeCost(tower);
   if (gold < cost) return showMessage("골드가 부족합니다!");
   gold -= cost;
@@ -2369,6 +2464,14 @@ function handleHit(projectile, timestamp) {
 
   let damage = source.damage;
 
+  // v6: 웨이브 변이 — 강철 피부(타워 피해↓) / 마법 억제(마법사 피해↓)
+  if (currentWaveModifier) {
+    if (source.type && currentWaveModifier.towerDamageFactor)
+      damage *= currentWaveModifier.towerDamageFactor;
+    if (!source.type && currentWaveModifier.wizardDamageFactor)
+      damage *= currentWaveModifier.wizardDamageFactor;
+  }
+
   if (monster.statusEffects.shredded) {
     damage *= 1 + monster.statusEffects.shredded.factor;
   }
@@ -2551,10 +2654,15 @@ function wizardAutoAttack(timestamp) {
   if (bestTarget) {
     WIZARD_AUTO_ATTACK_STATS.cooldownUntil =
       timestamp + WIZARD_AUTO_ATTACK_STATS.cooldown;
-    createProjectile(
-      { ...wizardCenter, damage: WIZARD_AUTO_ATTACK_STATS.damage },
-      bestTarget,
+    // v6: 마법사 오토어택 DPS를 총 타워 DPS의 25%로 캡 — 타워가 주력이 되도록
+    const totalTowerDps = towers.reduce((s, t) => s + simCore.towerDps(t), 0);
+    const cappedDamage = simCore.cappedWizardAutoDamage(
+      WIZARD_AUTO_ATTACK_STATS.damage,
+      WIZARD_AUTO_ATTACK_STATS.cooldown,
+      totalTowerDps,
+      WIZARD_AUTO_ATTACK_STATS.initialDamage,
     );
+    createProjectile({ ...wizardCenter, damage: cappedDamage }, bestTarget);
     // v5.2: 발사 머즐 플래시 (지팡이 끝 반짝임)
     if (particleSystem && !quality.low) {
       particleSystem.sparkle(wizardCenter.x + 8, wizardCenter.y - 24, "#9fc6ff");
@@ -2592,6 +2700,7 @@ async function handleWizardAttack(clickPos = null) {
   wizardCooldowns[activeSpell] = nowPerf + spell.cooldown;
 
   const levelBonus = Math.max(0, wizardLevel - spell.level);
+  // v6 교차검증 수정: 변이 "마법 억제"는 handleHit에서 단일 적용 — 여기서 곱하면 이중 적용(0.4²) 버그
   const damageMultiplier = 1 + levelBonus * 0.2;
 
   // v5.4: 마법 발사 원점도 스프라이트 상수 기준 (offsetWidth 버그 회피 — wizardAutoAttack 참조)
@@ -3025,13 +3134,15 @@ function showMathProblem() {
   gamePaused = true;
   problemAnswered = false;
 
-  // v5: 간격 반복 — 재출제 시점이 된 오답 문제 우선
+  // v5: 간격 반복 — 재출제 시점이 된 오답 문제 우선 (v6: 오답노트 복습 퀴즈 포함)
   let problem = null;
   isReviewProblem = false;
+  isNoteReviewProblem = false;
   const review = learnLoop.popDueReview(currentWave);
   if (review) {
-    problem = review;
+    problem = review.problem;
     isReviewProblem = true;
+    isNoteReviewProblem = review.fromNote;
   }
 
   // Filter out already-shown problems
@@ -3099,17 +3210,20 @@ function showMathProblem() {
     }
   }
 
-  // v5: 복습 문제 뱃지
+  // v5: 복습 문제 뱃지 (v6: 오답노트 복습은 보너스 골드 표시)
   const reviewBadge = document.getElementById("mathCombo");
   if (isReviewProblem && reviewBadge) {
-    reviewBadge.textContent = "🔁 복습 문제! 이번엔 맞혀보자";
+    reviewBadge.textContent = isNoteReviewProblem
+      ? "📒 지난 판 오답노트 복습! 맞히면 보너스 골드 +100"
+      : "🔁 복습 문제! 이번엔 맞혀보자";
     reviewBadge.style.display = "block";
   }
 
   currentProblem = problem;
   ui.showMathProblemUI(problem, options, checkAnswer);
 
-  // Start 30-second timer
+  // v6: 유형별 제한시간 시작
+  currentProblemTimeLimit = problemTimeLimit(problem);
   startProblemTimer();
 }
 
@@ -3184,9 +3298,15 @@ function checkAnswer(answer, clickedBtn) {
     } else {
       // [V2] 콤보 시스템 적용
       const comboResult = comboSystem.addCorrect();
-      const totalGold = simCore.answerReward(
+      let totalGold = simCore.answerReward(
         currentWave, comboResult.multiplier, comboResult.bonusGold,
       );
+      // v6: 오답노트 복습 퀴즈 정답 — 보너스 골드 + 노트에서 제거
+      if (isNoteReviewProblem && currentProblem) {
+        totalGold += 100;
+        learnLoop.clearFromNote(selectedDifficulty, currentProblem.q);
+        showMessage("📒 오답노트 복습 성공! 보너스 +100골드");
+      }
       // v5: 학습=화력 — 정답 시 마법 쿨다운 30% 감소
       learnLoop.recordCorrect(isReviewProblem);
       if (isReviewProblem)
@@ -3240,7 +3360,8 @@ function checkAnswer(answer, clickedBtn) {
     );
     resultDiv.textContent = `오답! 💡 ${hint}`;
     resultDiv.style.color = "#ff3366";
-    if (currentProblem) learnLoop.recordWrong(currentProblem, currentWave);
+    if (currentProblem)
+      learnLoop.recordWrong(currentProblem, currentWave, isNoteReviewProblem);
     gold = Math.max(0, gold - simCore.WRONG_PENALTY.gold);
     castleHealth = Math.max(0, castleHealth - simCore.WRONG_PENALTY.castleHp);
     score = Math.max(0, score - simCore.WRONG_PENALTY.score);
@@ -3283,7 +3404,7 @@ function startProblemTimer() {
     timerFill.classList.remove("warning");
     // Force reflow
     void timerFill.offsetWidth;
-    timerFill.style.transition = `width ${PROBLEM_TIME_LIMIT}ms linear`;
+    timerFill.style.transition = `width ${currentProblemTimeLimit}ms linear`;
     timerFill.style.width = "0%";
   }
 
@@ -3292,13 +3413,13 @@ function startProblemTimer() {
     if (timerFill && !problemAnswered) {
       timerFill.classList.add("warning");
     }
-  }, PROBLEM_TIME_LIMIT - 10000);
+  }, currentProblemTimeLimit - 10000);
 
   problemTimerId = setTimeout(() => {
     if (!problemAnswered) {
       handleTimeOut();
     }
-  }, PROBLEM_TIME_LIMIT);
+  }, currentProblemTimeLimit);
 }
 
 function clearProblemTimer() {
@@ -3414,7 +3535,7 @@ function checkGameOver() {
     localStorage.removeItem("mathcastle:save");
     document.getElementById("finalScore").textContent = score;
     document.getElementById("finalWave").textContent = currentWave;
-    // v5: 학습 리포트 한 줄
+    // v5: 학습 리포트 한 줄 (v6: 취약 유형 + 오답노트 확장)
     {
       const modal = gameElements.gameOverModal;
       let learnLine = modal.querySelector(".learn-report");
@@ -3426,6 +3547,46 @@ function checkGameOver() {
         (anchor || modal.firstElementChild || modal).appendChild(learnLine);
       }
       learnLine.textContent = `📚 ${learnLoop.accuracyText()}`;
+
+      // v6: 유형별 취약점 한 줄
+      let weakLine = modal.querySelector(".weakness-line");
+      if (!weakLine) {
+        weakLine = document.createElement("div");
+        weakLine.className = "weakness-line";
+        weakLine.style.cssText = "margin-top:4px;font-size:13px;color:#9fc6ff;";
+        learnLine.after(weakLine);
+      }
+      const weakness = learnLoop.weaknessText();
+      weakLine.textContent = weakness;
+      weakLine.style.display = weakness ? "block" : "none";
+
+      // v6: 오답노트 — 이번 판 틀린 문제 + 풀이 힌트 복습 (localStorage 저장 → 다음 판 복습 퀴즈)
+      learnLoop.saveWrongNote(selectedDifficulty);
+      let noteBox = modal.querySelector(".wrongnote-box");
+      if (!noteBox) {
+        noteBox = document.createElement("div");
+        noteBox.className = "wrongnote-box";
+        noteBox.style.cssText =
+          "margin-top:10px;max-height:150px;overflow-y:auto;text-align:left;font-size:13px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,209,102,0.25);border-radius:10px;padding:10px;";
+        weakLine.after(noteBox);
+      }
+      const wrongs = learnLoop.getSessionWrongs();
+      if (wrongs.length) {
+        noteBox.style.display = "block";
+        noteBox.innerHTML =
+          `<div style="color:#ffd166;font-weight:700;margin-bottom:6px;">📒 오답노트 (${wrongs.length}문제) — 다음 판 시작 때 복습 퀴즈로 나와요</div>` +
+          wrongs
+            .slice(0, 8)
+            .map(
+              (w) =>
+                `<div style="margin-bottom:6px;"><b>${ui.formatMath(w.q)}</b><br><span style="color:#8ee08e;">💡 ${learnLoop.getSolutionHint(w.q, w.a)}</span></div>`,
+            )
+            .join("") +
+          (wrongs.length > 8 ? `<div style="color:#889;">…외 ${wrongs.length - 8}문제</div>` : "");
+      } else {
+        noteBox.style.display = "block";
+        noteBox.innerHTML = `<div style="color:#8ee08e;">🎉 이번 판은 틀린 문제가 없어요! 완벽!</div>`;
+      }
     }
     const finalComboEl = document.getElementById("finalCombo");
     if (finalComboEl) finalComboEl.textContent = comboSystem.maxCombo || 0;
@@ -3511,6 +3672,7 @@ async function saveAndSubmit() {
   const finalPlayerName = playerName.trim() || "익명";
 
   try {
+    learnLoop.saveWrongNote(selectedDifficulty); // v6: 종료 전 오답노트 저장
     await submitScore(finalPlayerName, score, currentWave, selectedDifficulty);
 
     gameRunning = false;
@@ -3544,10 +3706,18 @@ function readSavedState() {
     const v5json = localStorage.getItem("mathcastle:save");
     if (v5json) {
       const wrapped = JSON.parse(v5json);
-      if (wrapped && wrapped.version >= 5 && wrapped.data) return wrapped.data;
+      if (wrapped && wrapped.version >= 5 && wrapped.data) {
+        // v6: 세이브 v5(학년 표기) → v6(학기 표기) 마이그레이션
+        wrapped.data.difficulty = migrateDifficulty(wrapped.data.difficulty);
+        return wrapped.data;
+      }
     }
     const legacy = localStorage.getItem("towerDefenseSave");
-    if (legacy) return JSON.parse(legacy); // v4 형식 그대로 호환
+    if (legacy) {
+      const st = JSON.parse(legacy); // v4 형식 그대로 호환
+      if (st) st.difficulty = migrateDifficulty(st.difficulty);
+      return st;
+    }
   } catch (e) {
     console.warn("세이브 읽기 실패:", e);
   }
@@ -3912,7 +4082,7 @@ function openStageSelect(difficulty, progress) {
   const info = document.getElementById("stageSelectInfo");
   if (!modal || !grid) return initializeGame(difficulty);
 
-  info.textContent = `${difficulty}학년 · 최고 스테이지 ${progress.highest} — 타워와 골드는 그대로 이어집니다`;
+  info.textContent = `${difficultyLabel(difficulty)} · 최고 스테이지 ${progress.highest} — 타워와 골드는 그대로 이어집니다`;
   grid.innerHTML = "";
   for (let s = 1; s <= progress.highest; s++) {
     const cleared = s < progress.highest;
@@ -4103,6 +4273,7 @@ function buildGameState() {
     towers: towers.map((tower) => ({
       type: tower.type,
       level: tower.level,
+      awaken: tower.awaken || 0, // v6: 각성 단계
       tile: {
         x: parseInt(tower.el.style.left),
         y: parseInt(tower.el.style.top),
@@ -4131,7 +4302,7 @@ function saveGame(silent = false) {
   // v5: 게임ID 네임스페이스 + 버전 래퍼 (마이그레이션 체인용)
   localStorage.setItem(
     "mathcastle:save",
-    JSON.stringify({ version: 5, data: gameState }),
+    JSON.stringify({ version: 6, data: gameState }),
   );
   localStorage.removeItem("towerDefenseSave"); // 구 키 정리
   if (!silent) {

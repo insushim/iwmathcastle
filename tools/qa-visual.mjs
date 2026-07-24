@@ -25,7 +25,7 @@ const browser = await puppeteer.launch({
   args: ["--disable-gpu", "--no-sandbox", "--mute-audio"],
 });
 
-for (const grade of [3, 5, 6]) {
+for (const grade of ["3-1", "5-1", "6-2"]) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1366, height: 768 });
   await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle0" });

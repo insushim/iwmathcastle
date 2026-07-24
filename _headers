@@ -1,0 +1,5 @@
+# Cloudflare Pages 캐싱 규칙 (v6 — 동접 최적화)
+# 스프라이트·배경(2.3MB)은 거의 안 바뀜 — 7일 캐시 + 백그라운드 재검증
+# (immutable은 파일명 해시가 없어 배포 반영 실패 위험 → 사용 안 함, deploy-cache 교훈)
+/assets/*
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400

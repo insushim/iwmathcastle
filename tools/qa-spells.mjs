@@ -31,7 +31,7 @@ page.on("pageerror", (e) => errors.push(e.message));
 page.on("console", (m) => { if (m.type() === "error" && !m.text().includes("Failed to load resource") && !m.text().toLowerCase().includes("firebase")) errors.push(m.text()); });
 
 await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle0" });
-await page.click('.difficulty-btn[data-difficulty="5"]');
+await page.click('.difficulty-btn[data-difficulty="5-1"]');
 await new Promise((r) => setTimeout(r, 1500));
 await page.click("#startWaveBtn");
 await new Promise((r) => setTimeout(r, 3000)); // 몬스터 스폰 대기

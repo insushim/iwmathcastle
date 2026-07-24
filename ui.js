@@ -3,6 +3,7 @@
 // 파일 분리에 따른 import 구문 수정
 import { gameElements } from "./constants.js";
 import { TOWER_STATS } from "./gameData.js";
+import * as simCore from "./simCore.js";
 import { hideModal, showModal, showMessage } from "./utils.js";
 import { stageOfWave, waveInStage } from "./stageProgress.js";
 import { getSprite } from "./spriteAssets.js";
@@ -282,7 +283,9 @@ export function showTowerUpgradeSelector(
   const nextDps = tower.dps ? Math.floor(tower.dps * 1.15) : null;
   const nextRange = Math.floor(tower.range * 1.05);
 
-  let statsHtml = `<b>${tower.name}</b> <span style="color: var(--accent-cyan);">(Lv.${tower.level})</span><br>`;
+  const awaken = tower.awaken || 0;
+  const awakenBadge = awaken > 0 ? ` <span style="color:#ffd166;">★${awaken}</span>` : "";
+  let statsHtml = `<b>${tower.name}</b> <span style="color: var(--accent-cyan);">(Lv.${tower.level}${awakenBadge})</span><br>`;
 
   if (tower.level < 10) {
     if (tower.damage) {
@@ -303,8 +306,15 @@ export function showTowerUpgradeSelector(
   infoDiv.innerHTML = statsHtml;
 
   if (tower.level >= 10) {
-    upgradeBtn.textContent = `최대 레벨`;
-    upgradeBtn.disabled = true;
+    // v6: 레벨 10 이후 각성 — 골드 대량 소모로 상위 티어 (최대 3단계)
+    if (awaken < simCore.TOWER_MAX_AWAKEN) {
+      const awakenCost = simCore.towerAwakenCost(tower);
+      upgradeBtn.textContent = `✨ 각성 ${awaken + 1}단계 (${awakenCost}G)`;
+      upgradeBtn.disabled = gold < awakenCost;
+    } else {
+      upgradeBtn.textContent = `최대 각성 (★${awaken})`;
+      upgradeBtn.disabled = true;
+    }
   } else {
     upgradeBtn.textContent = `업그레이드 (${cost}G)`;
     upgradeBtn.disabled = gold < cost;
@@ -457,6 +467,17 @@ function updateRankingTimer(nextUpdateTime) {
   }, 1000);
 }
 
+// v6 교차검증 수정(codex): 랭킹 이름은 다른 사용자가 넣은 값 — innerHTML 직행은 저장형
+// 마크업 삽입 경로다. 서버가 정규화·필터링해도 표시 단계에서 한 번 더 이스케이프한다.
+function esc(v) {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function populateRankingList(listElement, scores, limit, emptyMessage) {
   listElement.innerHTML = "";
   if (scores.length === 0) {
@@ -465,9 +486,9 @@ function populateRankingList(listElement, scores, limit, emptyMessage) {
     const medals = ["🥇", "🥈", "🥉"];
     scores.slice(0, limit).forEach((data, index) => {
       const li = document.createElement("li");
-      const difficultyText = data.difficulty ? ` / ${data.difficulty}학년` : "";
+      const difficultyText = data.difficulty ? ` / ${difficultyBadge(data.difficulty)}` : "";
       const medal = index < 3 ? medals[index] + " " : "";
-      li.innerHTML = `<span>${medal}${index + 1}. ${data.name}</span> <span>${data.score}점 (W${data.wave}${difficultyText})</span>`;
+      li.innerHTML = `<span>${medal}${index + 1}. ${esc(data.name)}</span> <span>${Number(data.score) || 0}점 (W${Number(data.wave) || 0}${esc(difficultyText)})</span>`;
       listElement.appendChild(li);
     });
   }
@@ -480,7 +501,14 @@ let gradeFilterWired = false;
 
 function filterByGrade(scores) {
   if (!rankingGradeFilter) return scores;
-  return scores.filter((d) => Number(d.difficulty) === rankingGradeFilter);
+  // v6: 학기 표기("3-1")·구 학년 표기("3") 모두 학년 자리로 매칭
+  return scores.filter((d) => parseInt(d.difficulty, 10) === rankingGradeFilter);
+}
+
+// v6: 난이도 표기 ("3-1" → "3-1", 구 "3" → "3학년")
+function difficultyBadge(d) {
+  if (!d) return "";
+  return String(d).includes("-") ? String(d) : `${d}학년`;
 }
 
 function wireGradeFilter() {
@@ -499,28 +527,27 @@ function wireGradeFilter() {
   );
 }
 
-export function displayRankings(
-  hallOfFameScores,
-  todayScores,
-  yesterdayScores,
-  nextUpdateTime,
-) {
-  lastRankingData = {
-    hallOfFameScores,
-    todayScores,
-    yesterdayScores,
-    nextUpdateTime,
-  };
+// v6: 일간·주간·월간 — 객체 하나로 받는다 { hallOfFame, today, yesterday, week, month, nextUpdateTime }
+export function displayRankings(data) {
+  lastRankingData = data;
   wireGradeFilter();
   renderRankings();
 }
 
 function renderRankings() {
-  const { hallOfFameScores, todayScores, yesterdayScores, nextUpdateTime } =
-    lastRankingData;
+  const {
+    hallOfFame: hallOfFameScores,
+    today: todayScores,
+    yesterday: yesterdayScores,
+    week: weekScores = [],
+    month: monthScores = [],
+    nextUpdateTime,
+  } = lastRankingData;
   const hofList = document.getElementById("hallOfFame");
   const todayList = document.getElementById("todayRankingList");
   const yesterdayList = document.getElementById("yesterdayRankingList");
+  const weekList = document.getElementById("weekRankingList");
+  const monthList = document.getElementById("monthRankingList");
 
   const hofFiltered = filterByGrade(hallOfFameScores);
   hofList.innerHTML = "";
@@ -529,8 +556,8 @@ function renderRankings() {
     hofFiltered.slice(0, 5).forEach((data, index) => {
       const entry = document.createElement("div");
       entry.className = "fame-entry";
-      const difficultyText = data.difficulty ? ` (${data.difficulty}학년)` : "";
-      entry.innerHTML = `${medal[index]} ${data.name}: ${data.score}점 (W${data.wave})${difficultyText}`;
+      const difficultyText = data.difficulty ? ` (${difficultyBadge(data.difficulty)})` : "";
+      entry.innerHTML = `${medal[index]} ${esc(data.name)}: ${Number(data.score) || 0}점 (W${Number(data.wave) || 0})${esc(difficultyText)}`;
       hofList.appendChild(entry);
     });
   } else {
@@ -539,23 +566,27 @@ function renderRankings() {
       : "<div class='fame-entry'>명예의 전당이 비어있습니다.</div>";
   }
 
+  // v6 교차검증 수정: KST(+9h) 변환 누락으로 UTC 8:50 기준이 되던 버그 — 서버 kstDayKey와 동일 로직
   const now = new Date();
-  const rankingDate = new Date(
-    now.getTime() - (8 * 60 * 60 * 1000 + 50 * 60 * 1000),
-  );
-  const isNewDay =
-    now.toISOString().split("T")[0] === rankingDate.toISOString().split("T")[0];
-  const todayEmptyMessage = isNewDay
+  const kstNow = new Date(now.getTime() + 9 * 3600e3);
+  const isAfterCut =
+    kstNow.getUTCHours() * 60 + kstNow.getUTCMinutes() >= 8 * 60 + 50;
+  const todayEmptyMessage = isAfterCut
     ? "오늘의 랭커가 아직 없습니다!"
     : "오전 8:50부터 새로운 랭킹이 시작됩니다!";
 
-  populateRankingList(todayList, todayScores, 50, todayEmptyMessage);
+  populateRankingList(todayList, filterByGrade(todayScores), 50, todayEmptyMessage);
   populateRankingList(
     yesterdayList,
-    yesterdayScores,
+    filterByGrade(yesterdayScores),
     50,
     "어제의 랭킹 데이터가 없습니다.",
   );
+  // v6: 주간·월간 (이름별 최고 기록)
+  if (weekList)
+    populateRankingList(weekList, filterByGrade(weekScores), 50, "이번 주 랭킹이 아직 없습니다!");
+  if (monthList)
+    populateRankingList(monthList, filterByGrade(monthScores), 50, "이번 달 랭킹이 아직 없습니다!");
 
   updateRankingTimer(nextUpdateTime);
 }

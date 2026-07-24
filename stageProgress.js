@@ -63,14 +63,20 @@ function writeAll(data) {
 
 /** 학년별 진행: { highest: 도달 최고 스테이지, checkpoints: { [stage]: 스테이지 시작 시점 스냅샷 } } */
 export function getProgress(difficulty) {
-  return readAll()[String(difficulty)] || { highest: 1, checkpoints: {} };
+  const all = readAll();
+  const k = String(difficulty);
+  // v6: 학기 키("3-1")에 진행이 없으면 구 학년 키("3") 진행을 이어받는다 (1학기만)
+  const legacy = k.endsWith("-1") ? all[k.split("-")[0]] : null;
+  return all[k] || legacy || { highest: 1, checkpoints: {} };
 }
 
 /** 스테이지 클리어 시 다음 스테이지 시작 스냅샷 기록 (재클리어 시 덮어씀 = 더 좋아진 상태 반영) */
 export function recordCheckpoint(difficulty, stage, snapshot) {
   const all = readAll();
   const k = String(difficulty);
-  const cur = all[k] || { highest: 1, checkpoints: {} };
+  // v6 교차검증 수정: getProgress의 구 학년 키("3") 폴백을 승계 — all[k] 직접 참조 시
+  // 첫 신규 체크포인트 기록이 legacy 진행을 빈 객체로 덮어 유실하던 버그
+  const cur = getProgress(difficulty);
   cur.checkpoints[String(stage)] = snapshot;
   cur.highest = Math.max(cur.highest, stage);
   all[k] = cur;

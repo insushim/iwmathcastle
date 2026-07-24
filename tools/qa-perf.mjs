@@ -29,7 +29,7 @@ const browser = await puppeteer.launch({
 const page = await browser.newPage();
 await page.setViewport({ width: 1366, height: 768 });
 await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle0" });
-await page.click('.difficulty-btn[data-difficulty="4"]');
+await page.click('.difficulty-btn[data-difficulty="4-1"]');
 await new Promise((r) => setTimeout(r, 1500));
 
 // 최악 장면 셋업: 웨이브 25, 타워 14기

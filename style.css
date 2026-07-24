@@ -288,6 +288,31 @@ body {
     letter-spacing: 1px;
 }
 
+/* v6: 각성 타워 글로우 */
+.tower-awakened {
+    box-shadow: 0 0 14px rgba(255, 209, 102, 0.8), 0 0 28px rgba(255, 209, 102, 0.35);
+    border-radius: 8px;
+}
+.tower-awakened .tower-level {
+    background: linear-gradient(135deg, #ffd166, #ff9f1c);
+    color: #1a1a2e;
+    font-weight: 900;
+}
+
+/* v6: 학기 버튼 (3-1 등 3글자 표기) */
+.diff-grade.diff-sem {
+    font-size: 26px;
+    letter-spacing: 0;
+}
+.difficulty-options {
+    max-width: 440px;
+    margin: 0 auto;
+}
+.difficulty-btn .diff-label {
+    font-size: 10px;
+    letter-spacing: 0;
+}
+
 .menu-actions {
     display: flex;
     gap: 10px;

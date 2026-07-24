@@ -109,13 +109,17 @@ export function waveHpMultiplier(wave) {
   if (wave > 20) m += (wave - 20) * 0.15;
   if (wave > 40) m += (wave - 40) * 0.25;
   if (wave > 60) m += (wave - 60) * 0.4;
+  // v6: 웨이브 45+ 지수항 — "언젠가는 반드시 뚫리는" 서바이벌 구조 (라이브 최고기록 W79 실측 근거)
+  // 1.09^(w-45) = 프로브 보정값: 95% 탐욕봇(풀각성)이 W55~59에서 사망 (--gate 판정 기준)
+  if (wave > 45) m *= Math.pow(1.09, wave - 45);
   return m;
 }
 
 export function difficultyHpMultiplier(difficulty) {
   // v5 재조정: 학년은 콘텐츠 선택이지 난이도 선택이 아님 — 1+0.15g(3학년 1.45, 6학년 1.9)
   // 는 상위 학년 부당 페널티 (프로브: 동일 정답률에서 6학년만 조기 사망). 완만한 차등만 유지.
-  return 1 + Math.max(0, Number(difficulty) - 3) * 0.08;
+  // v6: 학기 표기("3-1") 호환 — parseInt로 학년 자리만 읽는다
+  return 1 + Math.max(0, parseInt(difficulty, 10) - 3) * 0.08;
 }
 
 export function waveGoldMultiplier(wave) {
@@ -171,4 +175,55 @@ export function towerDps(stats) {
   if (stats.dps) return stats.dps;
   if (!stats.damage || !stats.cooldown) return 0;
   return (stats.damage * 1000) / stats.cooldown;
+}
+
+// ---------- v6: 타워 각성 (레벨 10 이후 골드 싱크) ----------
+export const TOWER_MAX_AWAKEN = 3;
+
+export function towerAwakenCost(tower) {
+  const baseCost =
+    tower.cost === 0 || tower.type === "ultimate" || tower.type === "transcendent"
+      ? 350
+      : tower.cost;
+  // 기본 타워(50G): 1000 → 2000 → 4000. 후반 골드가 계속 쓸 곳이 있게 지수 상승
+  return baseCost * 20 * Math.pow(2, tower.awaken || 0);
+}
+
+export function applyTowerAwaken(tower) {
+  // 티어당 DPS 약 ×1.42 (프로브 보정: ×1.7·×0.9는 풀각성 시 무한 압도 실측 → 하향)
+  tower.awaken = (tower.awaken || 0) + 1;
+  tower.damage = Math.floor(tower.damage * 1.35);
+  if (tower.dps) tower.dps = Math.floor(tower.dps * 1.35);
+  tower.range = Math.floor(tower.range * 1.1);
+  tower.rangeSq = tower.range * tower.range;
+  if (tower.cooldown) tower.cooldown = Math.max(200, Math.floor(tower.cooldown * 0.95));
+  return tower;
+}
+
+// ---------- v6: 마법사 성장 캡 — 오토어택 DPS ≤ 총 타워 DPS의 25% ----------
+// 타워가 주력이 되도록. 타워가 없거나 극초반이면 기본 데미지는 보장.
+export const WIZARD_DPS_CAP_RATIO = 0.25;
+
+export function cappedWizardAutoDamage(damage, cooldownMs, totalTowerDps, initialDamage = 1.5) {
+  const capDamage = Math.max(
+    initialDamage,
+    (totalTowerDps * WIZARD_DPS_CAP_RATIO * cooldownMs) / 1000,
+  );
+  return Math.min(damage, capDamage);
+}
+
+// ---------- v6: 웨이브 변이 (모디파이어) — 웨이브 30+ 후반 조합 변주 ----------
+export const WAVE_MODIFIERS = [
+  { id: "ironhide", name: "강철 피부", icon: "🛡️", desc: "타워 피해 30% 감소", towerDamageFactor: 0.7 },
+  { id: "swift", name: "신속", icon: "💨", desc: "몬스터 이동 속도 30% 증가", speedFactor: 1.3 },
+  { id: "nullfield", name: "마법 억제", icon: "🚫", desc: "마법사 피해 60% 감소", wizardDamageFactor: 0.4 },
+  { id: "regen", name: "재생", icon: "💚", desc: "몬스터가 매초 최대 체력의 1% 회복", regenPctPerSec: 0.01 },
+  { id: "golden", name: "황금 웨이브", icon: "💰", desc: "처치 골드 +50%", goldFactor: 1.5 },
+];
+
+export function waveModifier(wave, rand = Math.random) {
+  if (wave < 30) return null;
+  if (wave % 20 === 0 || wave % 25 === 0) return null; // 대형 보스 웨이브는 보스 자체가 변수
+  if (rand() < 0.25) return null; // 25%는 변이 없는 평범한 웨이브
+  return WAVE_MODIFIERS[Math.floor(rand() * WAVE_MODIFIERS.length)];
 }

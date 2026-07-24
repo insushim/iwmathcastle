@@ -42,7 +42,7 @@ const check = (name, cond, detail = "") => {
 await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle0" });
 
 // ① 첫 플레이 — 스테이지 모달 없이 바로 시작
-await page.click('.difficulty-btn[data-difficulty="4"]');
+await page.click('.difficulty-btn[data-difficulty="4-1"]');
 await new Promise((r) => setTimeout(r, 1500));
 const firstPlay = await page.evaluate(() => ({
   stageModalVisible: getComputedStyle(document.getElementById("stageSelectModal")).display !== "none",
@@ -67,7 +67,7 @@ for (let i = 0; i < 90; i++) {
   checkpoint = await page.evaluate(() => {
     try {
       const j = JSON.parse(localStorage.getItem("mathcastle:stages"));
-      return j && j.data && j.data["4"] ? j.data["4"] : null;
+      return j && j.data && j.data["4-1"] ? j.data["4-1"] : null;
     } catch { return null; }
   });
   if (checkpoint) break;
@@ -82,7 +82,7 @@ if (checkpoint) {
 
 // ③ 재접속 — 난이도 클릭 시 스테이지 선택 모달
 await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle0" });
-await page.click('.difficulty-btn[data-difficulty="4"]');
+await page.click('.difficulty-btn[data-difficulty="4-1"]');
 await new Promise((r) => setTimeout(r, 800));
 const reopen = await page.evaluate(() => {
   const modal = document.getElementById("stageSelectModal");

@@ -54,7 +54,7 @@ try {
   await page.screenshot({ path: join(SHOT_DIR, "smoke-1-menu.png") });
 
   // 학년 4 선택
-  const gradeBtn = await page.$('.difficulty-btn[data-difficulty="4"]');
+  const gradeBtn = await page.$('.difficulty-btn[data-difficulty="4-1"]');
   if (!gradeBtn) await fail("학년 선택 버튼 없음");
   await gradeBtn.click();
   await new Promise((r) => setTimeout(r, 2000));
