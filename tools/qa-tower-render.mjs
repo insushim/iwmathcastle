@@ -4,6 +4,7 @@
 // towerRenderer가 매 프레임 TypeError → 그 뒤에 그려지는 몬스터·이펙트가 통째로 사라졌다.
 // 이 테스트는 각 타워를 실제 게임에 세우고 (1) 콘솔 에러 0 (2) 몬스터가 계속 그려지는지 확인한다.
 import puppeteer from "puppeteer";
+import { seedSkipHowTo } from "./qa-common.mjs";
 import http from "http"; import fs from "fs"; import path from "path";
 const MIME={".js":"text/javascript",".json":"application/json",".html":"text/html",".css":"text/css",".webp":"image/webp",".png":"image/png"};
 const PORT=8097;
@@ -17,6 +18,7 @@ await p.setViewport({width:1440,height:900});
 const errors=[];
 p.on("console",m=>{if(m.type()==="error")errors.push(m.text());});
 p.on("pageerror",e=>errors.push("PAGEERROR: "+e.message));
+  await seedSkipHowTo(p);
 await p.goto(`http://localhost:${PORT}/`,{waitUntil:"networkidle0",timeout:30000});
 await new Promise(r=>setTimeout(r,1500));
 await p.click('.difficulty-btn[data-difficulty="4-1"]');

@@ -1,6 +1,6 @@
 // main.js - V2 Upgraded
 
-import { gameElements } from "./constants.js";
+import { gameElements, isTouchLike } from "./constants.js";
 import {
   TOWER_STATS,
   MONSTER_STATS,
@@ -187,6 +187,15 @@ let pathCanvas = null,
 let placementTiles = [];
 let pauseStartTimePerf = 0;
 
+// --- [UX] 마법사 근접 건설 ---
+// 마법사가 올라선 배치 타일. 매 프레임 전체 타일을 훑으면 낭비라 좌표를 캐시해두고
+// 마법사가 실제로 움직였을 때만 재계산한다.
+let focusedTile = null;
+let tileIndex = []; // { el, x, y, cx, cy } — 타일 생성 시 1회 구축
+let lastFocusScanPos = { x: -9999, y: -9999 };
+const BUILD_REACH = 46; // 타일 중심에서 이 거리(px) 안이면 건설 가능
+let lastActionHint = "";
+
 // --- [PERFORMANCE] Canvas 렌더링을 위한 변수 ---
 let dynamicCtx;
 // --- [NEW] 공간 분할 그리드 인스턴스 ---
@@ -371,6 +380,77 @@ function showWaveAnnounce(waveNum) {
 }
 
 // --- [V2] 설정 모달 ---
+// --- [UX] 게임 방법 안내 ------------------------------------------------------
+const HOWTO_KEY = "mathcastle:howto";
+
+function readHowToPrefs() {
+  try {
+    const v = JSON.parse(localStorage.getItem(HOWTO_KEY));
+    // 구버전이 이 키에 boolean 등 원시값을 넣었다면 이후 p.hideUntil 대입이
+    // strict mode에서 TypeError를 던져 모달이 안 닫힌다 → 객체일 때만 채택
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch {
+    // 사파리 프라이빗 모드 등 — 읽기 실패해도 게임은 계속돼야 한다
+    return {};
+  }
+}
+
+function writeHowToPrefs(prefs) {
+  try {
+    localStorage.setItem(HOWTO_KEY, JSON.stringify(prefs));
+  } catch {
+    /* 사파리 프라이빗 모드 등 — 저장 실패해도 게임은 계속돼야 한다 */
+  }
+}
+
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+function shouldShowHowTo() {
+  const p = readHowToPrefs();
+  if (p.never) return false;
+  return p.hideUntil !== todayKey();
+}
+
+function openHowToPlay() {
+  const modal = gameElements.howToPlayModal;
+  if (!modal) return;
+  const cb = document.getElementById("howToPlayHideToday");
+  if (cb) cb.checked = false;
+  showModal(modal);
+}
+
+function setupHowToPlay() {
+  const modal = gameElements.howToPlayModal;
+  if (!modal) return;
+  if (isTouchLike) document.body.classList.add("is-touch");
+
+  const close = () => {
+    const cb = document.getElementById("howToPlayHideToday");
+    if (cb?.checked) {
+      const p = readHowToPrefs();
+      p.hideUntil = todayKey();
+      writeHowToPrefs(p);
+    }
+    hideModal(modal);
+  };
+
+  document.getElementById("closeHowToPlayBtn")?.addEventListener("click", close);
+  document.getElementById("howToPlayNeverBtn")?.addEventListener("click", () => {
+    const p = readHowToPrefs();
+    p.never = true;
+    writeHowToPrefs(p);
+    hideModal(modal);
+  });
+  document
+    .getElementById("howToPlayBtn")
+    ?.addEventListener("click", openHowToPlay);
+
+  if (shouldShowHowTo()) openHowToPlay();
+}
+
 function setupSettingsModal() {
   const musicSlider = document.getElementById("musicVolume");
   const sfxSlider = document.getElementById("sfxVolume");
@@ -547,6 +627,7 @@ window.addEventListener("DOMContentLoaded", () => {
   // [V2] 메뉴 파티클 & 음악
   initMenuParticles();
   setupSettingsModal();
+  setupHowToPlay();
   setupAchievementModal();
 
   // [V2] 첫 사용자 인터랙션에서 음악 시작
@@ -716,7 +797,7 @@ async function initializeGame(difficulty, savedState = null) {
   populateSpellbook();
   updateFullUI();
   startWaveBtn.disabled = false;
-  startWaveBtn.textContent = "🚀 시작";
+  setStartWaveLabel("🚀 시작");
 
   if (!gameLoop.isRunning) {
     lastFrameTime = performance.now();
@@ -1017,6 +1098,8 @@ function createPlacementTiles() {
   const { gameCanvas } = gameElements;
   placementTiles.forEach((tile) => tile.remove());
   placementTiles = [];
+  clearTileFocus();
+  tileIndex = [];
   const tileSize = 40,
     gap = 10,
     castleBuffer = 120,
@@ -1059,8 +1142,16 @@ function createPlacementTiles() {
 
       gameCanvas.appendChild(tile);
       placementTiles.push(tile);
+      tileIndex.push({
+        el: tile,
+        x,
+        y,
+        cx: x + tileSize / 2,
+        cy: y + tileSize / 2,
+      });
     }
   }
+  lastFocusScanPos = { x: -9999, y: -9999 }; // 다음 프레임에 강제 재탐색
 }
 
 function recreateTower(towerData) {
@@ -1183,7 +1274,12 @@ function updateSpatialGrid() {
 }
 
 function updateWizard(deltaTime) {
-  if (isDraggingWizard) return;
+  // 터치 드래그 중에도 타일 포커스·힌트는 갱신해야 한다(모바일의 이동 수단이므로)
+  if (isDraggingWizard) {
+    updateTileFocus();
+    updateActionHint();
+    return;
+  }
   let dx = 0,
     dy = 0;
   if (keysPressed["w"] || keysPressed["W"] || keysPressed["ArrowUp"]) dy -= 1;
@@ -1217,6 +1313,203 @@ function updateWizard(deltaTime) {
       ),
     );
     gameElements.wizardEl.style.transform = `translate(${Math.round(wizardPosition.x)}px, ${Math.round(wizardPosition.y)}px)`;
+  }
+
+  updateTileFocus();
+  updateActionHint();
+}
+
+// --- [UX] 마법사 근접 건설 ---------------------------------------------------
+
+function clearTileFocus() {
+  if (focusedTile) {
+    focusedTile.classList.remove("tile-focus");
+    focusedTile.removeAttribute("data-build-hint");
+  }
+  focusedTile = null;
+}
+
+/** 마법사가 올라선 배치 타일을 찾아 하이라이트한다. 마법사가 움직였을 때만 재탐색. */
+function updateTileFocus() {
+  if (!gameRunning || gamePaused) {
+    clearTileFocus();
+    return;
+  }
+  const c = wizardCenterPoint();
+  const moved =
+    Math.abs(c.x - lastFocusScanPos.x) > 4 ||
+    Math.abs(c.y - lastFocusScanPos.y) > 4;
+  // 건설창이 열려 있는 동안에는 대상 타일이 바뀌면 혼란스러우니 고정
+  if (!moved || buildStep !== "idle") return;
+  lastFocusScanPos = c;
+
+  const reachSq = BUILD_REACH * BUILD_REACH;
+  let best = null,
+    bestD = Infinity;
+  for (const t of tileIndex) {
+    if (t.el.style.display === "none") continue; // 이미 타워가 선 자리
+    const d = (t.cx - c.x) ** 2 + (t.cy - c.y) ** 2;
+    if (d < bestD && d <= reachSq) {
+      best = t;
+      bestD = d;
+    }
+  }
+  const nextEl = best ? best.el : null;
+  if (nextEl === focusedTile) return;
+  clearTileFocus();
+  if (nextEl) {
+    nextEl.classList.add("tile-focus");
+    nextEl.setAttribute("data-build-hint", isTouchLike ? "탭하여 건설" : "E 건설");
+    focusedTile = nextEl;
+  }
+}
+
+/** 지금 무엇을 누르면 되는지 한 줄로 알려준다 (상황이 바뀔 때만 DOM 갱신). */
+function updateActionHint() {
+  const el = gameElements.actionHint;
+  if (!el) return;
+  let text = "";
+  let build = false;
+  if (!gameRunning || gamePaused) {
+    text = "";
+  } else if (buildStep !== "idle") {
+    text = isTouchLike
+      ? "🏗️ 지을 타워를 고르세요 · 빈 곳을 탭하면 취소"
+      : "🏗️ 타워를 고르세요 — <kbd>1</kbd>~<kbd>9</kbd> 선택 · <kbd>Esc</kbd> 취소";
+    build = true;
+  } else if (focusedTile) {
+    text = isTouchLike
+      ? "🏗️ 빛나는 타일을 탭하면 타워를 지어요"
+      : "🏗️ <kbd>E</kbd> 여기에 타워 건설 · <kbd>Space</kbd> 마법 공격";
+    build = true;
+  } else if (!waveInProgress) {
+    text = isTouchLike
+      ? "🚀 시작 버튼을 누르면 웨이브가 시작돼요"
+      : "<kbd>Enter</kbd> 웨이브 시작 · <kbd>WASD</kbd> 이동 · 빛나는 타일에서 <kbd>E</kbd> 건설";
+  } else {
+    text = isTouchLike
+      ? "마법사를 끌어서 이동 · 화면을 탭하면 마법 공격"
+      : "<kbd>WASD</kbd> 이동 · <kbd>Space</kbd> 마법 공격 · 빛나는 타일에서 <kbd>E</kbd> 건설";
+  }
+  if (text !== lastActionHint) {
+    lastActionHint = text;
+    el.innerHTML = text;
+  }
+  el.classList.toggle("show", !!text);
+  el.classList.toggle("hint-build", build);
+}
+
+/**
+ * E: 마법사가 서 있는 타일에 타워를 짓는다(열려 있으면 닫는 토글).
+ * ⚠️ Space에 이 역할을 겸하게 두면 안 된다 — 배치 타일이 50px 격자로 화면을 거의 다 덮어서
+ *    마법사는 대부분의 위치에서 타일 위에 있고, 그러면 전투 중 Space가 항상 건설창으로
+ *    가로채여 마법을 못 쏘게 된다(교차검증 지적). Space는 언제나 공격이다.
+ */
+function handleBuildKey() {
+  if (buildStep !== "idle") {
+    resetBuildProcess(); // 열려 있으면 닫기 (토글)
+    updateActionHint();
+    return;
+  }
+  if (focusedTile) openTowerSelectorForTile(focusedTile);
+}
+
+function openTowerSelectorForTile(tile) {
+  const x = parseInt(tile.style.left);
+  const y = parseInt(tile.style.top);
+  if (pendingTile && (pendingTile.x !== x || pendingTile.y !== y))
+    resetBuildProcess();
+  pendingTile = { x, y };
+  buildStep = "selecting_tower";
+  ui.showTowerSelector(x, y, sfx);
+  if (isMobile) ui.showTowerInfoTooltip(null, x, y);
+  updateActionHint();
+}
+
+// 컨트롤 바 단축키 — 버튼에 배지로 표시되는 것들과 1:1
+const CONTROL_HOTKEYS = {
+  Enter: "startWaveBtn",
+  p: "pauseBtn",
+  n: "forceNextWaveBtn",
+  q: "saveGameBtn",
+  f: "fullscreenBtn",
+};
+
+/** 게임 단축키 처리. 가드 → 건설 → 컨트롤 순서로 내려간다. */
+function handleGameKeydown(e) {
+  // 이름 입력 등 텍스트 필드에서는 게임 단축키가 가로채면 안 된다
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable))
+    return;
+
+  keysPressed[e.key] = true;
+
+  // 브라우저 조합키(Ctrl+P 인쇄, Cmd+F 찾기 등)를 뺏지 않는다
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  // 길게 누르면 OS 자동반복으로 keydown이 연타된다 — 토글류가 무작위 상태로 끝난다
+  if (e.repeat) return;
+
+  // 모달(수학 문제·게임오버·설정 등)이 떠 있으면 게임 단축키는 전부 막는다.
+  // 수학 문제 중에도 gamePaused=true이므로 P로 풀어버리면 문제 흐름이 깨진다.
+  const modalOpen = !!document.querySelector(".modal.show");
+  if (!gameRunning || gamePaused) {
+    if (gameRunning && gamePaused && !modalOpen && e.key.toLowerCase() === "p") {
+      e.preventDefault();
+      document.getElementById("pauseBtn")?.click();
+    }
+    return;
+  }
+  if (modalOpen) return;
+
+  const key = e.key.toLowerCase();
+
+  if (e.code === "Space") {
+    e.preventDefault();
+    handleWizardAttack();
+    return;
+  }
+  if (key === "e") {
+    e.preventDefault();
+    handleBuildKey();
+    return;
+  }
+  if (e.key === "Escape" && buildStep !== "idle") {
+    e.preventDefault();
+    resetBuildProcess();
+    updateActionHint();
+    return;
+  }
+  // 건설창이 열려 있을 때 1~9로 타워 즉시 선택
+  if (buildStep !== "idle" && /^[1-9]$/.test(e.key)) {
+    e.preventDefault();
+    const opts = document.querySelectorAll("#towerSelector .tower-option");
+    opts[parseInt(e.key, 10) - 1]?.click();
+    return;
+  }
+
+  const id = CONTROL_HOTKEYS[e.key] || CONTROL_HOTKEYS[key];
+  if (!id) return;
+  const btn = document.getElementById(id);
+  if (!btn || btn.disabled) return;
+  e.preventDefault();
+  // 건설창을 열어둔 채 웨이브가 시작되면 UI가 겹친 채로 남는다 — 먼저 정리
+  if (buildStep !== "idle") {
+    resetBuildProcess();
+    updateActionHint();
+  }
+  btn.click();
+}
+
+/** 시작 버튼 라벨 — textContent로 바꾸면 안의 단축키 배지(Enter)가 지워지므로 항상 이 함수로. */
+function setStartWaveLabel(text, withHint = true) {
+  const btn = gameElements.startWaveBtn;
+  if (!btn) return;
+  btn.textContent = text;
+  if (withHint && !isTouchLike) {
+    const hint = document.createElement("span");
+    hint.className = "key-hint";
+    hint.textContent = "Enter";
+    btn.appendChild(hint);
   }
 }
 
@@ -1869,7 +2162,7 @@ function startWave() {
   shuffleArray(waveComposition);
 
   startWaveBtn.disabled = true;
-  startWaveBtn.textContent = `🌊...`;
+  setStartWaveLabel(`🌊...`, false);
   let spawnCount = 0;
   const spawnInterval = simCore.spawnIntervalMs(currentWave, gameSpeed);
 
@@ -2269,7 +2562,11 @@ function sellTower() {
   const matchingTile = placementTiles.find(
     (t) => parseInt(t.style.left) === tileX && parseInt(t.style.top) === tileY,
   );
-  if (matchingTile) matchingTile.style.display = "block";
+  if (matchingTile) {
+    matchingTile.style.display = "block";
+    // 마법사가 그 자리에 선 채 판매하면 '이동 없음'이라 재탐색이 스킵된다 → 강제 무효화
+    lastFocusScanPos = { x: -9999, y: -9999 };
+  }
   if (tower.laserBeam) tower.laserBeam.remove();
   tower.el.remove();
   towers = towers.filter((t) => t.id !== tower.id);
@@ -2337,7 +2634,11 @@ function deleteWeakestTower() {
   const matchingTile = placementTiles.find(
     (t) => parseInt(t.style.left) === tileX && parseInt(t.style.top) === tileY,
   );
-  if (matchingTile) matchingTile.style.display = "block";
+  if (matchingTile) {
+    matchingTile.style.display = "block";
+    // 마법사가 그 자리에 선 채 판매하면 '이동 없음'이라 재탐색이 스킵된다 → 강제 무효화
+    lastFocusScanPos = { x: -9999, y: -9999 };
+  }
   if (towerToDelete.laserBeam) towerToDelete.laserBeam.remove();
   towerToDelete.el.remove();
   towers = towers.filter((t) => t.id !== towerToDelete.id);
@@ -3505,7 +3806,7 @@ function checkWaveCompletion() {
   ) {
     waveInProgress = false;
     gameElements.startWaveBtn.disabled = false;
-    gameElements.startWaveBtn.textContent = "🚀 시작";
+    setStartWaveLabel("🚀 시작");
 
     // [V2] 웨이브 클리어 업적 체크
     const clearTime = (performance.now() - waveStartTime) / 1000;
@@ -3672,7 +3973,7 @@ function forceNextWave(isFromError = false) {
     startWave();
   } else {
     gameElements.startWaveBtn.disabled = false;
-    gameElements.startWaveBtn.textContent = "🚀 시작";
+    setStartWaveLabel("🚀 시작");
     showMathProblem();
   }
 }
@@ -3891,13 +4192,7 @@ function setupEventListeners() {
   });
 
   gameElements.gameCanvas.addEventListener("click", handleCanvasClick);
-  window.addEventListener("keydown", (e) => {
-    keysPressed[e.key] = true;
-    if (e.code === "Space" && gameRunning && !gamePaused) {
-      e.preventDefault();
-      handleWizardAttack();
-    }
-  });
+  window.addEventListener("keydown", handleGameKeydown);
   window.addEventListener("keyup", (e) => {
     delete keysPressed[e.key];
   });
@@ -4088,6 +4383,10 @@ function togglePause() {
 
   if (gamePaused) {
     pauseStartTimePerf = performance.now();
+    // 일시정지 중엔 게임 루프가 멈춰 updateTileFocus/updateActionHint가 아예 호출되지 않는다
+    // → 여기서 직접 지우지 않으면 하이라이트와 힌트가 화면에 그대로 남는다
+    clearTileFocus();
+    updateActionHint();
   } else {
     if (pauseStartTimePerf > 0) {
       const pauseDurationPerf = performance.now() - pauseStartTimePerf;
@@ -4179,27 +4478,33 @@ function handleCanvasClick(e) {
 
 function handleTileTap(e) {
   e.preventDefault();
-  const tile = e.currentTarget;
-  const x = parseInt(tile.style.left);
-  const y = parseInt(tile.style.top);
-  if (pendingTile && (pendingTile.x !== x || pendingTile.y !== y))
-    resetBuildProcess();
-  pendingTile = { x, y };
-  buildStep = "selecting_tower";
-  ui.showTowerSelector(x, y, sfx);
-  if (isMobile) ui.showTowerInfoTooltip(null, x, y);
+  openTowerSelectorForTile(e.currentTarget);
 }
 
 function handleBuildStep(action, type, event) {
   if (action === "reset") {
     resetBuildProcess();
+    updateActionHint();
+  } else if (action === "preview") {
+    // 데스크톱 hover 미리보기 — 아직 짓지 않고 사거리만 보여준다
+    if (buildStep !== "idle") showRangeIndicatorFor(type);
+  } else if (action === "preview-off") {
+    gameElements.rangeIndicator.style.display = "none";
   } else if (action === "select") {
     const currentTowerType = type;
+    // 데스크톱: 한 번 클릭하면 바로 건설(사거리는 hover로 이미 확인됨).
+    // 모바일: hover가 없으므로 기존대로 선택 → 한 번 더 눌러 확정(오조작 방지).
+    if (!isTouchLike && buildStep !== "idle") {
+      placeTower(currentTowerType);
+      updateActionHint();
+      return;
+    }
     if (
       buildStep === "confirming_build" &&
       pendingTowerType === currentTowerType
     ) {
       placeTower(currentTowerType);
+      updateActionHint();
       return;
     }
     if (
@@ -4239,6 +4544,9 @@ function resetBuildProcess() {
   buildStep = "idle";
   pendingTile = null;
   pendingTowerType = null;
+  // 타워가 서면 그 타일은 숨겨진다 → 포커스를 버리고 다음 프레임에 다시 찾게 한다
+  clearTileFocus();
+  lastFocusScanPos = { x: -9999, y: -9999 };
 }
 
 function showRangeIndicatorFor(type) {

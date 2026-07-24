@@ -6,6 +6,7 @@ import { readFileSync, existsSync } from "fs";
 import { join, extname, dirname } from "path";
 import { fileURLToPath } from "url";
 import puppeteer from "puppeteer";
+import { seedSkipHowTo } from "./qa-common.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 8933;
@@ -29,6 +30,8 @@ await page.setViewport({ width: 1366, height: 768 });
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 page.on("console", (m) => { if (m.type() === "error" && !m.text().includes("Failed to load resource") && !m.text().toLowerCase().includes("firebase")) errors.push(m.text()); });
+
+await seedSkipHowTo(page);
 
 await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle0" });
 await page.click('.difficulty-btn[data-difficulty="5-1"]');

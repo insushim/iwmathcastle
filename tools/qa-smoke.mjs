@@ -10,6 +10,7 @@ import { readFileSync, existsSync, mkdirSync } from "fs";
 import { join, extname, dirname } from "path";
 import { fileURLToPath } from "url";
 import puppeteer from "puppeteer";
+import { seedSkipHowTo } from "./qa-common.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = Number(process.argv[2]) || 8931;
@@ -45,6 +46,7 @@ const fail = async (msg) => { console.error(`❌ FAIL: ${msg}`); await cleanup(1
 const cleanup = async (code) => { await browser.close(); server.close(); process.exit(code); };
 
 try {
+  await seedSkipHowTo(page);
   await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle0", timeout: 20000 });
   // 대상 검증 (엉뚱한 앱 검수 방지)
   const title = await page.title();

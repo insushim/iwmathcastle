@@ -75,6 +75,9 @@
                     <button class="menu-btn" id="showAchievementsBtn">
                         <span class="btn-icon">🎖️</span> 업적
                     </button>
+                    <button class="menu-btn" id="howToPlayBtn">
+                        <span class="btn-icon">❓</span> 게임 방법
+                    </button>
                     <button class="menu-btn" id="settingsBtn">
                         <span class="btn-icon">⚙️</span> 설정
                     </button>
@@ -142,10 +145,13 @@
                 <div class="combo-multiplier">x<span id="comboMultiplier">1</span></div>
             </div>
 
+            <!-- 상황별 조작 힌트 (플레이 중 무엇을 눌러야 하는지 실시간 안내) -->
+            <div id="action-hint" class="action-hint" aria-live="polite"></div>
+
             <!-- 하단 컨트롤 바 -->
             <div id="control-bar">
                 <div class="control-left">
-                    <button class="ctrl-btn primary" id="startWaveBtn" aria-label="웨이브 시작">🚀 시작<span class="key-hint">S</span></button>
+                    <button class="ctrl-btn primary" id="startWaveBtn" aria-label="웨이브 시작">🚀 시작<span class="key-hint">Enter</span></button>
                     <button class="ctrl-btn" id="pauseBtn" aria-label="일시정지">⏸️<span class="key-hint">P</span></button>
                     <button class="ctrl-btn" id="forceNextWaveBtn" aria-label="다음 웨이브">⏭️<span class="key-hint">N</span></button>
                     <button class="ctrl-btn speed-btn" id="speedBtn" title="게임 속도" aria-label="게임 속도 변경">1x</button>
@@ -304,6 +310,65 @@
                     </label>
                 </div>
                 <button class="modal-btn" id="closeSettingsBtn">닫기</button>
+            </div>
+        </div>
+
+        <!-- ===== 게임 방법 (첫 실행 시 자동 표시) ===== -->
+        <div class="modal" id="howToPlayModal" role="dialog" aria-modal="true" aria-labelledby="howToPlayTitle">
+            <div class="modal-content howto-modal">
+                <h2 class="modal-title" id="howToPlayTitle">🧙‍♂️ 게임 방법</h2>
+                <div class="howto-body">
+                    <div class="howto-goal">
+                        몬스터가 <b>성(🏰)</b>에 닿지 못하게 막아요. 성의 체력이 0이 되면 끝이에요!
+                    </div>
+                    <div class="howto-step">
+                        <div class="howto-icon">🕹️</div>
+                        <div class="howto-text">
+                            <b>마법사 움직이기</b>
+                            <span class="howto-desc desktop-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 또는 방향키로 움직여요. <kbd>Shift</kbd>를 누르면 빨라져요</span>
+                            <span class="howto-desc mobile-only">마법사를 손가락으로 끌어서 움직여요</span>
+                        </div>
+                    </div>
+                    <div class="howto-step howto-highlight">
+                        <div class="howto-icon">🏗️</div>
+                        <div class="howto-text">
+                            <b>타워 짓기</b>
+                            <span class="howto-desc desktop-only">빈 <b>타일 위로 걸어가면</b> 타일이 빛나요. 그때 <kbd>E</kbd>를 누르고 타워를 고르세요 (<kbd>1</kbd>~<kbd>9</kbd>로도 골라요)</span>
+                            <span class="howto-desc mobile-only">빛나는 <b>타일을 탭</b>하고 원하는 타워를 고르세요</span>
+                        </div>
+                    </div>
+                    <div class="howto-step">
+                        <div class="howto-icon">⚔️</div>
+                        <div class="howto-text">
+                            <b>직접 공격하기</b>
+                            <span class="howto-desc desktop-only"><kbd>Space</kbd>를 누르면 마법을 쏴요. 타일 위에 서 있어도 공격은 <kbd>Space</kbd>예요</span>
+                            <span class="howto-desc mobile-only">화면을 탭하면 그 자리에 마법을 써요</span>
+                        </div>
+                    </div>
+                    <div class="howto-step">
+                        <div class="howto-icon">🧮</div>
+                        <div class="howto-text">
+                            <b>수학 문제로 골드 벌기</b>
+                            <span class="howto-desc">문제를 맞히면 골드를 받아요. 골드로 타워를 짓고 더 세게 키워요</span>
+                        </div>
+                    </div>
+                    <div class="howto-step">
+                        <div class="howto-icon">🚀</div>
+                        <div class="howto-text">
+                            <b>웨이브 시작</b>
+                            <span class="howto-desc desktop-only">준비되면 <kbd>Enter</kbd>나 시작 버튼을 눌러요</span>
+                            <span class="howto-desc mobile-only">준비되면 아래 <b>🚀 시작</b> 버튼을 눌러요</span>
+                        </div>
+                    </div>
+                </div>
+                <label class="howto-check">
+                    <input type="checkbox" id="howToPlayHideToday">
+                    <span>오늘 하루 보지 않기</span>
+                </label>
+                <div class="modal-buttons">
+                    <button class="modal-btn primary" id="closeHowToPlayBtn">시작하기</button>
+                    <button class="modal-btn" id="howToPlayNeverBtn">다시 보지 않기</button>
+                </div>
             </div>
         </div>
 

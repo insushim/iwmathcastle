@@ -9,6 +9,7 @@ import { readFileSync, existsSync } from "fs";
 import { join, extname, dirname } from "path";
 import { fileURLToPath } from "url";
 import puppeteer from "puppeteer";
+import { seedSkipHowTo } from "./qa-common.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 8935;
@@ -38,6 +39,8 @@ const check = (name, cond, detail = "") => {
   if (cond) { pass++; console.log(`  ✅ ${name}`); }
   else { fail++; console.log(`  ❌ ${name} ${detail}`); }
 };
+
+await seedSkipHowTo(page);
 
 await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle0" });
 
@@ -81,6 +84,7 @@ if (checkpoint) {
 }
 
 // ③ 재접속 — 난이도 클릭 시 스테이지 선택 모달
+  await seedSkipHowTo(page);
 await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle0" });
 await page.click('.difficulty-btn[data-difficulty="4-1"]');
 await new Promise((r) => setTimeout(r, 800));

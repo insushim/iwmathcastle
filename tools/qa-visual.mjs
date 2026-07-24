@@ -5,6 +5,7 @@ import { readFileSync, existsSync, mkdirSync } from "fs";
 import { join, extname, dirname } from "path";
 import { fileURLToPath } from "url";
 import puppeteer from "puppeteer";
+import { seedSkipHowTo } from "./qa-common.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 8936;
@@ -28,6 +29,7 @@ const browser = await puppeteer.launch({
 for (const grade of ["3-1", "5-1", "6-2"]) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1366, height: 768 });
+  await seedSkipHowTo(page);
   await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle0" });
   await page.click(`.difficulty-btn[data-difficulty="${grade}"]`);
   await new Promise((r) => setTimeout(r, 2000));

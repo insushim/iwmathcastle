@@ -1,7 +1,7 @@
 // ui.js
 
 // 파일 분리에 따른 import 구문 수정
-import { gameElements } from "./constants.js";
+import { gameElements, isTouchLike } from "./constants.js";
 import { TOWER_STATS } from "./gameData.js";
 import * as simCore from "./simCore.js";
 import { hideModal, showModal, showMessage } from "./utils.js";
@@ -171,10 +171,12 @@ export async function showTowerSelector(x, y, sfx) {
   const container = document.createElement("div");
   container.className = "tower-options-container";
 
+  let optionIndex = 0;
   for (const key in TOWER_STATS) {
     const towerStat = TOWER_STATS[key];
     if (towerStat.cost <= 0 && !towerStat.isRandom) continue;
     if (towerStat.cost <= 0 && towerStat.name.includes("수호자")) continue;
+    optionIndex++;
 
     const tier = getTowerTier(key, towerStat);
     const option = document.createElement("div");
@@ -196,6 +198,14 @@ export async function showTowerSelector(x, y, sfx) {
     option.innerHTML = `<div class="tower-option-symbol">${symbolHtml}</div><div class="tower-option-name">${towerStat.name}</div><div class="tower-option-cost">${towerStat.cost}G</div>`;
     option.appendChild(tierDot);
 
+    // 앞의 9개는 숫자키로 바로 지을 수 있다 — 몇 번인지 보이게 배지를 단다
+    if (!isTouchLike && optionIndex <= 9) {
+      const keyBadge = document.createElement("div");
+      keyBadge.className = "tower-option-key";
+      keyBadge.textContent = optionIndex;
+      option.appendChild(keyBadge);
+    }
+
     if (towerStat.targetType === "air") {
       const airLabel = document.createElement("div");
       airLabel.className = "tower-option-air-label";
@@ -210,11 +220,19 @@ export async function showTowerSelector(x, y, sfx) {
     };
     option.addEventListener("click", handleSelect);
     option.addEventListener("touchend", handleSelect);
-    if (!isMobile) {
-      option.addEventListener("mouseover", (e) =>
-        showTowerInfoTooltip(towerStat, e.clientX, e.clientY),
-      );
-      option.addEventListener("mouseout", hideTowerInfoTooltip);
+    if (!isTouchLike) {
+      // 데스크톱은 클릭 한 번에 짓는다 — 그래서 사거리·비용 미리보기를 hover로 먼저 보여준다.
+      // ⚠️ mouseover/out은 자식(숫자 배지 등) 사이를 지날 때도 재발화한다 → enter/leave 사용.
+      option.addEventListener("mouseenter", (e) => {
+        showTowerInfoTooltip(towerStat, e.clientX, e.clientY);
+        buildStepCallback("preview", e.currentTarget.dataset.towerType, e);
+      });
+      // 미리보기를 켰으면 끄는 짝도 있어야 한다 — 없으면 선택창 밖으로 커서를 빼도
+      // 사거리 원이 화면에 남는다(교차검증 지적).
+      option.addEventListener("mouseleave", (e) => {
+        hideTowerInfoTooltip();
+        buildStepCallback("preview-off", null, e);
+      });
     }
     container.appendChild(option);
   }

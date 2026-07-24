@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from "fs";
 import { join, extname, dirname } from "path";
 import { fileURLToPath } from "url";
 import puppeteer from "puppeteer";
+import { seedSkipHowTo } from "./qa-common.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const THROTTLE = Number(process.argv[2]) || 4;
@@ -28,6 +29,7 @@ const browser = await puppeteer.launch({
 });
 const page = await browser.newPage();
 await page.setViewport({ width: 1366, height: 768 });
+  await seedSkipHowTo(page);
 await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle0" });
 await page.click('.difficulty-btn[data-difficulty="4-1"]');
 await new Promise((r) => setTimeout(r, 1500));
