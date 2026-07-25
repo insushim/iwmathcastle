@@ -3393,3 +3393,121 @@ body.is-touch .mobile-only { display: inline; }
     display: block;
     padding: 0.08em 0.35em 0;
 }
+
+/* ==========================================================================
+   v6.2 모바일·태블릿 — 세로 화면 안내 + 안전영역
+   ========================================================================== */
+
+/* 세로 안내는 기본 숨김. JS 없이 미디어쿼리로만 켜지므로 스크립트 로드 전에도 바로 보인다. */
+#rotateNotice {
+    display: none;
+}
+
+/* 좁은 세로 화면 = 폰 세로. 태블릿 세로(≥768px)는 게임판이 들어와서 막지 않는다. */
+@media (orientation: portrait) and (max-width: 767px) {
+    #rotateNotice {
+        display: flex;
+        position: fixed;
+        inset: 0;
+        z-index: 100000;          /* 모든 모달 위 */
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 24px calc(24px + env(safe-area-inset-right)) 24px calc(24px + env(safe-area-inset-left));
+        background:
+            radial-gradient(circle at 50% 40%, rgba(168, 85, 247, 0.18), transparent 60%),
+            var(--bg-primary, #0a0e1a);
+        color: #fff;
+    }
+
+    .rotate-inner { max-width: 320px; }
+
+    .rotate-phone {
+        font-size: 64px;
+        line-height: 1;
+        margin-bottom: 18px;
+        /* 눕히는 동작을 그대로 보여준다 — 글보다 빨리 읽힌다 */
+        animation: rotateHint 2.4s ease-in-out infinite;
+        transform-origin: 50% 50%;
+    }
+
+    #rotateNotice h2 {
+        font-family: var(--font-display, inherit);
+        font-size: 24px;
+        margin: 0 0 12px;
+        color: var(--accent-cyan, #00e5ff);
+    }
+
+    #rotateNotice p {
+        margin: 0 0 10px;
+        font-size: 15px;
+        line-height: 1.6;
+        color: rgba(255, 255, 255, 0.85);
+    }
+
+    #rotateNotice .rotate-hint {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.55);
+    }
+
+    /* 안내가 떠 있는 동안 뒤에서 게임이 도는 걸 막는다(터치 오작동·배터리) */
+    body:has(#rotateNotice) #game-content { pointer-events: none; }
+}
+
+@keyframes rotateHint {
+    0%, 45%   { transform: rotate(0deg); }
+    60%, 90%  { transform: rotate(-90deg); }
+    100%      { transform: rotate(0deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .rotate-phone { animation: none; }
+}
+
+/* 노치·홈바 침범 방지 — viewport-fit=cover와 짝 */
+@supports (padding: env(safe-area-inset-left)) {
+    #info-bar {
+        padding-left: calc(12px + env(safe-area-inset-left));
+        padding-right: calc(12px + env(safe-area-inset-right));
+    }
+    .game-controls,
+    #gameControls {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+}
+
+/* ── 낮은 가로 화면(폰 가로 ≈390px) — 바를 얇게 해 플레이 영역을 확보 ────────── */
+@media (orientation: landscape) and (max-height: 500px) {
+    #control-bar {
+        padding: 4px 10px calc(4px + env(safe-area-inset-bottom));
+        gap: 6px;
+    }
+    #control-bar .ctrl-btn {
+        padding: 6px 10px;
+        font-size: 13px;
+        min-height: 34px;
+    }
+    /* 물리 키보드가 없는 기기에서 단축키 배지는 자리만 차지한다 */
+    body.is-touch .key-hint { display: none; }
+
+    #info-bar {
+        padding-top: 4px;
+        padding-bottom: 4px;
+    }
+    #info-bar .info-item {
+        padding: 4px 8px;
+        font-size: 13px;
+    }
+}
+
+/* 터치 기기에서는 키보드 배지·키 안내를 전부 감춘다(화면 크기와 무관) */
+body.is-touch .key-hint,
+body.is-touch kbd {
+    display: none;
+}
+
+/* 터치 조작에 최소 44px 타깃 확보 — 애플 HIG 권장치 */
+@media (pointer: coarse) {
+    .ctrl-btn { min-height: 44px; min-width: 44px; }
+    .tower-option { min-height: 76px; }
+}

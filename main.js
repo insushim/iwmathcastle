@@ -1107,7 +1107,18 @@ function createPlacementTiles() {
     pathBufferSq = pathBuffer * pathBuffer;
   const castleBufferSq = castleBuffer * castleBuffer;
 
-  for (let y = gap; y < window.innerHeight - tileSize; y += tileSize + gap) {
+  // 상단 정보바·하단 컨트롤바는 fixed 오버레이라 그 아래 타일은 눌러도 가려서 못 쓴다.
+  // 데스크톱은 화면이 높아 티가 안 났지만 폰 가로(390px)에선 아래 두 줄이 통째로 먹혔다(실측).
+  // 실제 바 높이를 재서 그만큼 비운다 — 바 크기가 바뀌어도 따라간다.
+  const barBottom =
+    document.getElementById("control-bar")?.getBoundingClientRect().top ??
+    window.innerHeight;
+  const barTop =
+    document.getElementById("info-bar")?.getBoundingClientRect().bottom ?? 0;
+  const fieldTop = Math.max(gap, Math.round(barTop) + gap);
+  const fieldBottom = Math.min(window.innerHeight, Math.round(barBottom));
+
+  for (let y = fieldTop; y < fieldBottom - tileSize; y += tileSize + gap) {
     for (let x = gap; x < window.innerWidth - tileSize; x += tileSize + gap) {
       const tilePos = { x: x + tileSize / 2, y: y + tileSize / 2 };
       let onPath = false;
@@ -1282,10 +1293,15 @@ function updateWizard(deltaTime) {
   }
   let dx = 0,
     dy = 0;
-  if (keysPressed["w"] || keysPressed["W"] || keysPressed["ArrowUp"]) dy -= 1;
-  if (keysPressed["s"] || keysPressed["S"] || keysPressed["ArrowDown"]) dy += 1;
-  if (keysPressed["a"] || keysPressed["A"] || keysPressed["ArrowLeft"]) dx -= 1;
-  if (keysPressed["d"] || keysPressed["D"] || keysPressed["ArrowRight"])
+  // ⚠️ 한/영이 "한글"이면 keydown의 e.key가 ㅈㅁㄴㅇ로 온다 — 물리 키(e.code=KeyW…)도 함께 본다.
+  //    이걸 빼면 한글 상태에서 마법사가 아예 안 움직인다(실측 재현).
+  if (keysPressed["w"] || keysPressed["W"] || keysPressed["KeyW"] || keysPressed["ArrowUp"])
+    dy -= 1;
+  if (keysPressed["s"] || keysPressed["S"] || keysPressed["KeyS"] || keysPressed["ArrowDown"])
+    dy += 1;
+  if (keysPressed["a"] || keysPressed["A"] || keysPressed["KeyA"] || keysPressed["ArrowLeft"])
+    dx -= 1;
+  if (keysPressed["d"] || keysPressed["D"] || keysPressed["KeyD"] || keysPressed["ArrowRight"])
     dx += 1;
 
   // [V3] 마법사 스프라이트 방향, 갤럽, 애니메이션 업데이트
@@ -1451,6 +1467,9 @@ function handleGameKeydown(e) {
     return;
 
   keysPressed[e.key] = true;
+  // 한글 입력 상태에서는 e.key가 "ㄷ"(E)·"ㅈ"(W)처럼 오거나 "Process"로 온다.
+  // e.code는 물리 키 위치라 IME와 무관하게 KeyE·KeyW로 유지된다 → 둘 다 기록해 둔다.
+  if (e.code) keysPressed[e.code] = true;
 
   // 브라우저 조합키(Ctrl+P 인쇄, Cmd+F 찾기 등)를 뺏지 않는다
   if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -1477,7 +1496,8 @@ function handleGameKeydown(e) {
     handleWizardAttack();
     return;
   }
-  if (key === "e") {
+  // 한글 상태에서도 건설이 되도록 물리 키를 함께 본다(key="ㄷ" 또는 "Process"로 오는 경우)
+  if (key === "e" || e.code === "KeyE") {
     e.preventDefault();
     handleBuildKey();
     return;
@@ -1488,11 +1508,14 @@ function handleGameKeydown(e) {
     updateActionHint();
     return;
   }
-  // 건설창이 열려 있을 때 1~9로 타워 즉시 선택
-  if (buildStep !== "idle" && /^[1-9]$/.test(e.key)) {
+  // 건설창이 열려 있을 때 1~9로 타워 즉시 선택 (Digit/Numpad 물리 키도 인정)
+  const digit = /^[1-9]$/.test(e.key)
+    ? e.key
+    : /^(?:Digit|Numpad)([1-9])$/.exec(e.code || "")?.[1];
+  if (buildStep !== "idle" && digit) {
     e.preventDefault();
     const opts = document.querySelectorAll("#towerSelector .tower-option");
-    opts[parseInt(e.key, 10) - 1]?.click();
+    opts[parseInt(digit, 10) - 1]?.click();
     return;
   }
   // 건설창에서 방향키 = 커서 이동. 타워가 숫자키보다 많아서 10번째 이후는 이 길로만 닿는다.
@@ -1512,7 +1535,10 @@ function handleGameKeydown(e) {
     return;
   }
 
-  const id = CONTROL_HOTKEYS[e.key] || CONTROL_HOTKEYS[key];
+  // 컨트롤 단축키(P·N·Q·F)도 한글 상태에서 e.key가 ㅔㅜㅂㄹ로 오므로 물리 키로 되돌려 찾는다
+  const physical = /^Key([A-Z])$/.exec(e.code || "")?.[1].toLowerCase();
+  const id =
+    CONTROL_HOTKEYS[e.key] || CONTROL_HOTKEYS[key] || CONTROL_HOTKEYS[physical];
   if (!id) return;
   const btn = document.getElementById(id);
   if (!btn || btn.disabled) return;
@@ -4220,6 +4246,14 @@ function setupEventListeners() {
   window.addEventListener("keydown", handleGameKeydown);
   window.addEventListener("keyup", (e) => {
     delete keysPressed[e.key];
+    // keydown에서 e.code도 기록했으므로 여기서도 지운다 — 안 지우면 키를 뗐는데도
+    // 마법사가 그 방향으로 계속 걸어간다.
+    if (e.code) delete keysPressed[e.code];
+  });
+  // 한/영 전환·탭 이동 중에는 keyup을 못 받는 경우가 있다 — 그러면 그 키가 눌린 채로 남아
+  // 마법사가 혼자 걸어간다. 포커스를 잃으면 눌림 상태를 전부 비운다.
+  window.addEventListener("blur", () => {
+    for (const k of Object.keys(keysPressed)) delete keysPressed[k];
   });
 
   gameElements.wizardEl.addEventListener(
