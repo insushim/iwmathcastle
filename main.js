@@ -182,6 +182,11 @@ let lastFrameTime = 0;
 let isForcedProgress = false;
 let currentProblemSet = [];
 let pathPoints = [];
+// 길과 길 사이의 "타워를 놓을 수 있는 가로 띠". generatePath가 계산하고
+// createPlacementTiles가 그 안에만 타일을 깐다 — 둘이 같은 계산을 공유해야
+// 길에 먹히는 줄이 안 생긴다.
+let tileBands = [];
+let roadRowYs = [];
 let pathCanvas = null,
   pathCtx = null; // v5.6: 길 전용 캔버스 (한 번만 그림, z-index 1)
 let placementTiles = [];
@@ -543,6 +548,15 @@ window.addEventListener("DOMContentLoaded", () => {
     },
     qaAddGold: (n) => { gold += n; updateFullUI(); },
     qaSetWave: (n) => { currentWave = n; updateFullUI(); },
+    // 레이아웃 실측용 — 길 y좌표·타워 밴드·플레이 영역을 그대로 노출한다.
+    // 스크린샷만으로는 "길 두 줄이 붙었다"를 수치로 못 잡는다(실측 교훈).
+    qaLayout: () => ({
+      play: playfieldBounds(),
+      scale: worldScale(),
+      bands: tileBands.map((b) => ({ top: Math.round(b.top), h: Math.round(b.h) })),
+      roads: roadRowYs.map((y) => Math.round(y)),
+      roadWidth: Math.round(50 * worldScale()),
+    }),
     qaTimeLimit: (p) => problemTimeLimit(p), // v6: 유형별 제한시간 검증용
     qaWaveModifier: (w) => simCore.waveModifier(w, seededRand(dailySeedForWave(w))),
     qaForceGameOver: () => { castleHealth = 0; checkGameOver(); },
@@ -708,7 +722,7 @@ async function initializeGame(difficulty, savedState = null) {
     (damageTexts = []));
   ((gold = simCore.INITIAL_GOLD), (score = 0), (castleHealth = simCore.INITIAL_CASTLE_HP), (currentWave = 1));
   ((monstersInWave = 10), (monstersSpawned = 0), (wizardLevel = 1));
-  wizardPosition = { x: 100, y: 200 };
+  wizardPosition = defaultWizardPosition();
   ((gameRunning = true), (gamePaused = false), (waveInProgress = false));
 
   // Canvas 초기화
@@ -886,8 +900,10 @@ function regenerateLayout() {
     .querySelectorAll(".path, .placement-tile")
     .forEach((el) => el.remove());
   generatePath();
-  createPlacementTiles();
+  // 성 위치를 먼저 확정해야 createPlacementTiles가 성 주변을 제대로 비운다.
+  // (반대 순서면 직전 레이아웃의 성 좌표로 비워서 성에 타일이 겹쳤다.)
   positionCastle();
+  createPlacementTiles();
 
   // [NEW] 창 크기가 변경되면 공간 분할 그리드도 다시 생성합니다.
   if (spatialGrid) {
@@ -921,33 +937,71 @@ const debouncedRegenerateLayout = debounce(regenerateLayout, 250);
 function generatePath() {
   const { gameCanvas } = gameElements;
   pathPoints = [];
+  const ws = worldScale();
   // 좁은 화면에선 길도 같이 좁힌다. 폭 50 그대로면 길 세 줄(150px)이
   // 플레이 높이(≈220px)를 거의 다 먹어 타워 놓을 자리가 안 남는다(실측: 타일 25→6개).
-  const pathWidth = Math.round(50 * worldScale());
+  const pathWidth = Math.round(50 * ws);
   const vw = window.innerWidth;
-  const vh = window.innerHeight;
 
-  // HUD 여백 확보 (상단 info-bar, 하단 control-bar)
-  const topMargin = 55;
-  const bottomMargin = 60;
-  const playTop = topMargin;
-  const playBottom = vh - bottomMargin;
-  const playH = playBottom - playTop;
+  const { top: playTop, height: playH } = playfieldBounds();
 
-  // v5.7: 최상단 길을 아래로 내려 위에 타워 1줄 + 캐슬 첨탑 여유 확보
-  // (기존 playH*0.05는 너무 위 → 캐슬 잘림·상단 타워 불가)
-  // v6.2: 135px 고정이면 폰 가로(플레이 높이 ≈220px)에서 이 한 값이 세로의 60%를 먹어
-  //       길 세 줄이 서로 붙어버린다(실기 재현). 좁을 땐 같이 줄인다.
-  const topRowY = playTop + Math.min(135, playH * 0.32);
+  // ── 길 줄 수와 타워 밴드를 "하나의 세로 예산"으로 함께 배치 ──────────────
+  // v6.2까지는 길 y를 0.32/0.5/0.88 같은 고정 비율로 두고, 타일은 그것과
+  // 무관한 고정 격자로 깔았다. 데스크톱(플레이 높이 785px)에선 우연히 맞았지만
+  // 폰 가로(273px)에선 위 두 줄 간격이 44px밖에 안 돼 길이 서로 붙어
+  // 한 덩어리가 되고, 격자 줄들이 통째로 길에 먹혔다(실측: 타일 34개 중
+  // 19개가 맨 윗줄, 나머지는 오른쪽 끝 — 가운데가 전부 길).
+  // 이제는 [밴드][길][밴드][길]… 로 번갈아 쌓아서 길 사이마다 타워 한 줄이
+  // 들어갈 자리를 "설계상" 보장한다. 화면이 아무리 낮아도 깨지지 않는다.
+  const roadVisual = pathWidth + Math.round(18 * ws); // 글로우 테두리까지 실제 차지폭
+  const step = tileStep();
+  let rows = 3; // 길(가로줄) 개수
+  let bands = 4; // 타워를 놓는 가로 밴드 개수
+  for (let r = 3; r >= 2; r--) {
+    if (r * roadVisual + (r + 1) * step <= playH) {
+      rows = r;
+      bands = r + 1; // 맨 아래에도 밴드 하나 더 (데스크톱)
+      break;
+    }
+    if (r * roadVisual + r * step <= playH) {
+      rows = r;
+      bands = r; // 낮은 화면 — 맨 아래 밴드는 포기하고 길 개수를 지킨다
+      break;
+    }
+    if (r === 2) {
+      rows = 2;
+      bands = 2;
+    }
+  }
 
-  const points = [
-    { x: vw - 10, y: playTop + playH * 0.88 },
-    { x: vw * 0.2, y: playTop + playH * 0.88 },
-    { x: vw * 0.2, y: playTop + playH * 0.5 },
-    { x: vw * 0.8, y: playTop + playH * 0.5 },
-    { x: vw * 0.8, y: topRowY },
-    { x: 70, y: topRowY },
-  ];
+  // 극단적으로 낮은 창(바 두 개가 거의 맞닿는 경우)에서도 음수가 되지 않게.
+  // 밴드가 0이면 타일이 안 깔릴 뿐, 길·성은 정상 배치된다.
+  const bandH = Math.max(0, (playH - rows * roadVisual) / bands);
+  const roadYs = (roadRowYs = []);
+  tileBands = [];
+  let cursor = playTop;
+  for (let i = 0; i < bands; i++) {
+    tileBands.push({ top: cursor, h: bandH });
+    cursor += bandH;
+    if (i < rows) {
+      roadYs.push(cursor + roadVisual / 2);
+      cursor += roadVisual;
+    }
+  }
+
+  // ── 뱀길(serpentine) — 오른쪽 아래로 들어와 지그재그로 올라가 왼쪽 위 성으로 ──
+  // roadYs[0]이 최상단(성이 있는 줄), 마지막이 최하단(몬스터 입구).
+  // 꺾는 x는 줄 번호로 정한다(i % 2). 줄이 2개로 줄어도 마지막 꺾임이
+  // 오른쪽(0.8vw)에 남아 성이 있는 윗줄이 화면을 가로지른다 — 줄 수로 인덱싱하면
+  // 2줄일 때 왼쪽(0.2vw)에서 꺾여 윗줄이 78px짜리 토막이 된다(740×300 실측).
+  const turnX = [vw * 0.2, vw * 0.8];
+  const points = [{ x: vw - 10, y: roadYs[rows - 1] }];
+  for (let i = rows - 1; i >= 1; i--) {
+    const x = turnX[i % 2];
+    points.push({ x, y: roadYs[i] });
+    points.push({ x, y: roadYs[i - 1] });
+  }
+  points.push({ x: 70, y: roadYs[0] });
 
   for (let i = 0; i < points.length - 1; i++) {
     const p1 = points[i];
@@ -1012,15 +1066,19 @@ function drawRoad(corners, w) {
   };
 
   const TWO_PI = Math.PI * 2;
+  // 테두리도 길 폭과 같이 줄인다. 18px 고정이면 낮은 화면에서 길 폭(31px)보다
+  // 테두리가 더 두꺼워져 길 세 줄이 글로우로 이어 붙어 한 덩어리로 보인다.
+  const ws = worldScale();
+  const rim = Math.round(18 * ws);
   // 1) 바깥 마법 글로우 테두리 (정적이라 shadowBlur 1회 허용)
   ctx.save();
   ctx.shadowColor = "rgba(130,100,220,0.5)";
-  ctx.shadowBlur = 20;
-  traceStroke(w + 18, "#20172c");
+  ctx.shadowBlur = Math.round(20 * ws);
+  traceStroke(w + rim, "#20172c");
   ctx.restore();
   // 2) 어두운 흙 가장자리(파인 느낌) → 3) 본 노면 → 4) 밝은 중앙 트랙
-  traceStroke(w + 8, "#33291e");
-  traceStroke(w + 2, "#4a3b2a");
+  traceStroke(w + Math.round(8 * ws), "#33291e");
+  traceStroke(w + Math.round(2 * ws), "#4a3b2a");
   traceStroke(w, "#6b5640");
   // 5) 안쪽 그림자(가장자리 어둡게 — 길이 파인 입체감)
   ctx.save();
@@ -1088,10 +1146,18 @@ function positionCastle() {
   if (pathPoints.length > 0) {
     const { castleEl } = gameElements;
     const lastPoint = pathPoints[pathPoints.length - 1];
+    // .castle 박스(140px) 아래로 체력바가 32px 더 튀어나온다(실측: y+244~y+283).
+    // 낮은 화면에선 이 꼬리가 하단 컨트롤 바 밑으로 숨어 체력이 안 보였다
+    // (740×300 실측: 27px 가림). 발자국 전체가 플레이 영역에 들어오도록 올려 붙인다.
+    const CASTLE_FOOTPRINT = 176;
+    const pf = playfieldBounds();
     // v5.8: 캐슬 앵커를 아래로(-50 → -20) — 첨탑이 상단 info-bar에 잘리던 문제
     castleCoords = {
       x: Math.max(10, lastPoint.x),
-      y: Math.max(10, lastPoint.y - 20),
+      y: Math.max(
+        10,
+        Math.min(lastPoint.y - 20, pf.bottom - CASTLE_FOOTPRINT),
+      ),
     };
     castleEl.style.left = `${castleCoords.x}px`;
     castleEl.style.top = `${castleCoords.y}px`;
@@ -1107,25 +1173,32 @@ function createPlacementTiles() {
   // 타일 자체는 줄이지 않는다 — 손가락 터치 타깃이라 40px 아래로는 누르기 어렵다.
   // 대신 길·성 주변 여유(버퍼)만 화면에 맞춰 좁혀 놓을 자리를 확보한다.
   const ws = worldScale();
-  const tileSize = 40,
+  const tileSize = TILE_SIZE,
     gap = Math.round(10 * ws),
     castleBuffer = 120 * ws,
-    pathBuffer = 50 * ws,
+    // 길 중심에서 이만큼 떨어져야 놓을 수 있다. 길 폭에 비례해야
+    // 좁은 길인데 넓게 비워두는(= 놓을 자리를 스스로 없애는) 일이 없다.
+    pathBuffer = Math.max(28, 25 * ws + tileSize / 2),
     pathBufferSq = pathBuffer * pathBuffer;
   const castleBufferSq = castleBuffer * castleBuffer;
 
-  // 상단 정보바·하단 컨트롤바는 fixed 오버레이라 그 아래 타일은 눌러도 가려서 못 쓴다.
-  // 데스크톱은 화면이 높아 티가 안 났지만 폰 가로(390px)에선 아래 두 줄이 통째로 먹혔다(실측).
-  // 실제 바 높이를 재서 그만큼 비운다 — 바 크기가 바뀌어도 따라간다.
-  const barBottom =
-    document.getElementById("control-bar")?.getBoundingClientRect().top ??
-    window.innerHeight;
-  const barTop =
-    document.getElementById("info-bar")?.getBoundingClientRect().bottom ?? 0;
-  const fieldTop = Math.max(gap, Math.round(barTop) + gap);
-  const fieldBottom = Math.min(window.innerHeight, Math.round(barBottom));
+  // 타일 줄은 generatePath가 길 사이에 확보해 둔 밴드 안에만 깐다.
+  // (예전엔 화면 위에서부터 고정 간격으로 깔아서, 줄이 통째로 길과 겹치면
+  //  그 줄이 전부 사라졌다 — 폰 가로에서 5줄 중 2줄만 살아남던 원인.)
+  const rowYs = [];
+  const bands = tileBands.length
+    ? tileBands
+    : [{ top: playfieldBounds().top, h: playfieldBounds().height }];
+  for (const band of bands) {
+    const n = Math.max(0, Math.floor((band.h + gap) / (tileSize + gap)));
+    if (n === 0) continue;
+    const used = n * tileSize + (n - 1) * gap;
+    const start = band.top + (band.h - used) / 2;
+    for (let k = 0; k < n; k++)
+      rowYs.push(Math.round(start + k * (tileSize + gap)));
+  }
 
-  for (let y = fieldTop; y < fieldBottom - tileSize; y += tileSize + gap) {
+  for (const y of rowYs) {
     for (let x = gap; x < window.innerWidth - tileSize; x += tileSize + gap) {
       const tilePos = { x: x + tileSize / 2, y: y + tileSize / 2 };
       let onPath = false;
@@ -1450,14 +1523,53 @@ function openTowerSelectorForTile(tile) {
 }
 
 /**
+ * 타워를 놓는 칸의 한 변. 손가락 터치 타깃이라 화면이 작아져도 줄이지 않는다.
+ * (줄이면 놓을 자리는 늘지만 아이들이 못 누른다 — 대신 길 폭·여백을 줄인다.)
+ */
+const TILE_SIZE = 40;
+
+/**
+ * 실제로 플레이할 수 있는 세로 구간 (상단 info-bar 아래 ~ 하단 control-bar 위).
+ * 바 높이를 상수로 박아두면 CSS가 바뀔 때 어긋난다 — 실측이 유일 진실원.
+ * 폰 가로에선 바가 CSS로 얇아져서 상수 55/60보다 30px 가까이 여유가 더 있다.
+ * 바가 아직 안 그려진 초기 호출은 상수로 폴백한다.
+ */
+function playfieldBounds() {
+  const infoB = document
+    .getElementById("info-bar")
+    ?.getBoundingClientRect().bottom;
+  const ctrlT = document
+    .getElementById("control-bar")
+    ?.getBoundingClientRect().top;
+  const top = infoB > 0 ? Math.round(infoB) : 55;
+  const bottom =
+    ctrlT > 0 ? Math.round(ctrlT) : window.innerHeight - 60;
+  return { top, bottom, height: Math.max(120, bottom - top) };
+}
+
+/**
  * 화면이 낮을 때 월드 요소를 줄이는 배율.
  * 데스크톱 기준 플레이 높이(≈560px)를 1.0으로 두고, 폰 가로처럼 낮은 화면에서 비례 축소한다.
- * 0.62 아래로는 안 내린다 — 더 줄이면 성이 뭉개져 알아보기 어렵다.
+ * 0.55 아래로는 안 내린다 — 더 줄이면 성이 뭉개져 알아보기 어렵다.
  * ⚠️ 히트박스·밸런스에 영향을 주지 않도록 "그리는 크기"에만 쓴다.
  */
 function worldScale() {
-  const playH = window.innerHeight - 55 - 60;
-  return Math.max(0.62, Math.min(1, playH / 560));
+  return Math.max(0.55, Math.min(1, playfieldBounds().height / 560));
+}
+
+/** 타일 한 칸이 차지하는 세로(타일 + 줄 간격). 길 배치 예산 계산의 단위. */
+function tileStep() {
+  return TILE_SIZE + Math.round(10 * worldScale());
+}
+
+/**
+ * 마법사 시작 위치. 고정 (100,200)이면 플레이 높이가 213px인 화면에서
+ * 성 체력바(y 213~252) 위에 겹쳐 서서 체력이 안 보였다(740×300 실측).
+ * 데스크톱(플레이 높이 788)에서의 y=200을 그대로 재현하면서 낮은 화면만 따라 올라온다.
+ */
+function defaultWizardPosition() {
+  const pf = playfieldBounds();
+  return { x: 100, y: Math.round(pf.top + Math.min(157, pf.height * 0.2)) };
 }
 
 /**
@@ -2087,9 +2199,10 @@ function renderDynamicLayer() {
 
   // [V3] 타워 캔버스 렌더링
   // 한 타워의 렌더 실패가 뒤따르는 몬스터·이펙트 그리기를 통째로 삼키지 않도록 격리한다.
+  const towerScale = worldScale();
   for (const t of towers) {
     try {
-      towerRenderer.render(dynamicCtx, t.type, t.x, t.y, t.level, now);
+      towerRenderer.render(dynamicCtx, t.type, t.x, t.y, t.level, now, towerScale);
     } catch (e) {
       dynamicCtx.setTransform(1, 0, 0, 1, 0, 0);
       logRenderFailure(`tower:${t.type}`, e);

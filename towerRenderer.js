@@ -208,7 +208,13 @@ export class TowerRenderer {
    * @param {number} level - tower level (1+)
    * @param {number} timestamp - performance.now() for animations
    */
-  render(ctx, towerType, x, y, level, timestamp) {
+  /**
+   * @param {number} scale 월드 배율. 낮은 화면(폰 가로)에서 성·길과 같이 줄어든다.
+   *   1이면 데스크톱과 완전히 동일한 경로 — 기존 렌더는 한 픽셀도 안 바뀐다.
+   *   ⚠️ ctx.scale은 쓰지 않는다(비정수 스케일이 비트맵 fast path를 깨서
+   *      저사양에서 30fps로 반락한 실측이 있다). drawImage 대상 크기만 조절한다.
+   */
+  render(ctx, towerType, x, y, level, timestamp, scale = 1) {
     ctx.save();
     ctx.translate(Math.round(x), Math.round(y));
 
@@ -222,10 +228,28 @@ export class TowerRenderer {
 
     // v5: AI 스프라이트 우선 (미로드 시 절차 캐시 폴백)
     // manifest key는 파일명 규칙상 하이픈이 언더바(multi-shot → tower_multi_shot)라 정규화 필요
-    if (!drawSpriteCentered(ctx, `tower_${towerType.replace(/-/g, "_")}`, 0, -14, 78)) {
+    if (
+      !drawSpriteCentered(
+        ctx,
+        `tower_${towerType.replace(/-/g, "_")}`,
+        0,
+        -14 * scale,
+        78 * scale,
+      )
+    ) {
       // Draw cached static tower body, or build cache on first call
       const cached = this._getCachedTower(towerType, level);
-      ctx.drawImage(cached, -this._cacheOX, -this._cacheOY);
+      if (scale === 1) {
+        ctx.drawImage(cached, -this._cacheOX, -this._cacheOY);
+      } else {
+        ctx.drawImage(
+          cached,
+          -this._cacheOX * scale,
+          -this._cacheOY * scale,
+          cached.width * scale,
+          cached.height * scale,
+        );
+      }
     }
 
     // Draw animated overlays on top (glows, particles, rotating elements)
