@@ -557,6 +557,8 @@ window.addEventListener("DOMContentLoaded", () => {
       roads: roadRowYs.map((y) => Math.round(y)),
       roadWidth: Math.round(50 * worldScale()),
     }),
+    qaPathPoints: () => pathPoints.map((p) => ({ x: p.x, y: p.y })),
+    qaTowers: () => towers.map((t) => ({ x: t.x, y: t.y, type: t.type })),
     qaTimeLimit: (p) => problemTimeLimit(p), // v6: 유형별 제한시간 검증용
     qaWaveModifier: (w) => simCore.waveModifier(w, seededRand(dailySeedForWave(w))),
     qaForceGameOver: () => { castleHealth = 0; checkGameOver(); },
@@ -621,9 +623,12 @@ window.addEventListener("DOMContentLoaded", () => {
       const tiles = [...document.querySelectorAll(".placement-tile")].slice(0, count);
       tiles.forEach((tile) => {
         gold += 10000;
+        // pendingTile은 타일의 '좌상단'이다 — placeTower가 +20으로 중심을 잡는다.
+        // 여기서 미리 +20을 하면 20px 어긋난 자리에 지어져(실측) 타워가
+        // 길 쪽으로 밀려 앉는다. 실제 탭 경로(handleTileTap)와 같은 값을 넘긴다.
         pendingTile = {
-          x: parseInt(tile.style.left) + 20,
-          y: parseInt(tile.style.top) + 20,
+          x: parseInt(tile.style.left),
+          y: parseInt(tile.style.top),
         };
         placeTower(type);
       });
@@ -919,15 +924,41 @@ function regenerateLayout() {
     gameElements.dynamicLayerCanvas.height = window.innerHeight;
   }
 
+  // 길이 움직이면(창 크기 변경·레이아웃 개편·예전 세이브 불러오기) 예전 자리에
+  // 있던 타워가 길 한복판에 남는다(사용자 신고: "타워가 길로 내려왔잖아").
+  // 놓을 수 있는 칸이 없어진 타워는 가장 가까운 빈 칸으로 옮긴다 —
+  // 지어 둔 타워를 잃지 않으면서 길 위에 걸터앉은 모양도 없앤다.
+  const takenTiles = new Set();
   towers.forEach((tower) => {
     const tileX = parseInt(tower.el.style.left);
     const tileY = parseInt(tower.el.style.top);
-    const matchingTile = placementTiles.find((t) => {
+    let matchingTile = placementTiles.find((t) => {
       const tX = parseInt(t.style.left);
       const tY = parseInt(t.style.top);
       return Math.abs(tX - tileX) < 10 && Math.abs(tY - tileY) < 10;
     });
+    if (!matchingTile) {
+      let best = null,
+        bestD = Infinity;
+      for (const t of tileIndex) {
+        if (takenTiles.has(t.el)) continue;
+        const d = getDistanceSq({ x: tower.x, y: tower.y }, { x: t.cx, y: t.cy });
+        if (d < bestD) {
+          bestD = d;
+          best = t;
+        }
+      }
+      if (best) {
+        matchingTile = best.el;
+        tower.el.style.left = `${best.x}px`;
+        tower.el.style.top = `${best.y}px`;
+        tower.x = best.cx;
+        tower.y = best.cy;
+        tower.target = null; // 사거리 밖으로 옮겨졌을 수 있으니 조준 초기화
+      }
+    }
     if (matchingTile) {
+      takenTiles.add(matchingTile);
       matchingTile.style.display = "none";
     }
   });
@@ -953,7 +984,7 @@ function generatePath() {
   // 19개가 맨 윗줄, 나머지는 오른쪽 끝 — 가운데가 전부 길).
   // 이제는 [밴드][길][밴드][길]… 로 번갈아 쌓아서 길 사이마다 타워 한 줄이
   // 들어갈 자리를 "설계상" 보장한다. 화면이 아무리 낮아도 깨지지 않는다.
-  const roadVisual = pathWidth + Math.round(18 * ws); // 글로우 테두리까지 실제 차지폭
+  const roadVisual = roadVisualWidth(); // 글로우 테두리까지 실제 차지폭
   const step = tileStep();
   let rows = 3; // 길(가로줄) 개수
   let bands = 4; // 타워를 놓는 가로 밴드 개수
@@ -1090,36 +1121,120 @@ function drawRoad(corners, w) {
   // 6) 밟아 다져진 밝은 중앙 트랙
   traceStroke(w * 0.5, "#8a6f4e");
 
-  // 7) 돌길 질감 — 입체 자갈(그림자+본체+하이라이트)로 진짜 돌길처럼
+  // ── 노면 질감 ────────────────────────────────────────────────────────
+  // 예전엔 10px마다 비슷한 크기의 자갈을 하나씩 깔았다(길 전체 350개+).
+  // 균일한 밀도의 작은 원이 끝없이 반복돼 "환공포증 걸리겠다"는 소리를 들었다.
+  // 대신 진짜 흙길처럼: ① 수레바퀴 자국(세로 결) ② 큰 얼룩으로 색 변주
+  // ③ 드문드문 박힌 큼직한 돌. 점의 개수를 1/10로 줄이고 크기 편차를 키운다.
   const rnd = seededRand(1337);
   ctx.save();
-  for (let i = 0; i < pathPoints.length; i += 2) {
+
+  // i번째 점의 법선(px,py)과 진행방향(tx,ty). 결·자국·얼룩·돌이 공통으로 쓴다.
+  const frameAt = (i) => {
     const p = pathPoints[i];
     const nx = i + 1 < pathPoints.length ? pathPoints[i + 1].x - p.x : 0;
     const ny = i + 1 < pathPoints.length ? pathPoints[i + 1].y - p.y : 0;
     const len = Math.hypot(nx, ny) || 1;
-    const perpX = -ny / len,
-      perpY = nx / len;
+    return { p, px: -ny / len, py: nx / len, tx: nx / len, ty: ny / len };
+  };
+  const k = Math.max(0.6, w / 50); // 길이 좁아지면 질감도 같이 작아진다
+
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // 7-a) 큰 얼룩 — 마른 흙/젖은 흙의 색 변주. 크고 옅게 겹쳐 깔아
+  //      "같은 점의 반복"이 아니라 자연스러운 얼룩덜룩함을 만든다.
+  for (let i = 0; i < pathPoints.length; i += 11) {
+    const { p, px, py, tx, ty } = frameAt(i);
     const spread = (rnd() - 0.5) * (w - 8);
-    const cx = p.x + perpX * spread;
-    const cy = p.y + perpY * spread;
-    const r = 2.2 + rnd() * 4;
+    const cx = p.x + px * spread;
+    const cy = p.y + py * spread;
+    // 길 방향으로 길쭉하게 눕힌다. 동그란 얼룩은 물자국처럼 도드라져 보이지만,
+    // 진행 방향으로 늘이면 결과 섞여 흙색 변주로만 읽힌다.
+    const r = w * (0.3 + rnd() * 0.4);
+    ctx.fillStyle =
+      rnd() > 0.45 ? "rgba(170,139,99,0.10)" : "rgba(58,44,28,0.11)";
+    ctx.beginPath();
+    ctx.ellipse(
+      cx,
+      cy,
+      r * (1.6 + rnd() * 1.2),
+      r * (0.16 + rnd() * 0.16),
+      Math.atan2(ty, tx),
+      0,
+      TWO_PI,
+    );
+    ctx.fill();
+  }
+
+  // 7-b) 흙 결 — 진행 방향으로 난 짧은 선. 점이 아니라 '선'이라
+  //      아무리 많아도 물방울 패턴으로 안 읽히고, 다져진 흙처럼 보인다.
+  for (let i = 0; i < pathPoints.length - 2; i += 3) {
+    if (rnd() > 0.62) continue;
+    const { p, px, py, tx, ty } = frameAt(i);
+    const off = (rnd() - 0.5) * (w - 5);
+    const x0 = p.x + px * off;
+    const y0 = p.y + py * off;
+    const len = (5 + rnd() * 24) * k;
+    ctx.strokeStyle =
+      rnd() > 0.5
+        ? `rgba(130,106,75,${(0.09 + rnd() * 0.11).toFixed(3)})`
+        : `rgba(56,43,28,${(0.07 + rnd() * 0.1).toFixed(3)})`;
+    ctx.lineWidth = (0.8 + rnd() * 1.8) * k;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x0 + tx * len, y0 + ty * len);
+    ctx.stroke();
+  }
+
+  // 7-c) 수레바퀴 자국 — 길을 따라 이어지는 두 줄 + 가운데 밟힌 마루.
+  //      길에 방향감을 주고 결과 어우러져 '다니는 길'로 읽힌다.
+  for (const [off, color, width] of [
+    [-0.2, "rgba(52,39,25,0.26)", 4.2],
+    [0.18, "rgba(52,39,25,0.22)", 3.6],
+    [-0.01, "rgba(176,146,105,0.16)", 5.0],
+  ]) {
+    ctx.beginPath();
+    for (let i = 0; i < pathPoints.length; i += 3) {
+      const { p, px, py } = frameAt(i);
+      // 오프셋을 흔들어 자로 잰 듯한 평행선을 피한다
+      const wobble = off * w + Math.sin(i * 0.07 + off * 9) * (w * 0.045);
+      const x = p.x + px * wobble;
+      const y = p.y + py * wobble;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width * k;
+    ctx.stroke();
+  }
+
+  // 7-d) 박힌 돌 — 22점(≈110px)에 하나꼴로 드물게. 예전엔 10px마다 하나씩
+  //      비슷한 크기로 깔려 있었다(길 전체 350개+). 개수를 1/10로 줄이고
+  //      크기 편차를 키워 '우연히 박힌 돌'로 보이게 한다.
+  for (let i = 0; i < pathPoints.length; i += 22) {
+    if (rnd() > 0.72) continue; // 규칙적인 간격도 깨준다
+    const { p, px, py } = frameAt(i);
+    const spread = (rnd() - 0.5) * (w - 14);
+    const cx = p.x + px * spread;
+    const cy = p.y + py * spread;
+    const big = rnd() > 0.7;
+    const r = (big ? 5.5 + rnd() * 4 : 2.5 + rnd() * 2.5) * k;
     const rot = rnd() * Math.PI;
-    // 그림자
-    ctx.fillStyle = "rgba(30,22,14,0.45)";
+    const squash = 0.55 + rnd() * 0.3;
+    // 그림자 → 본체 → 하이라이트 (박힌 입체감)
+    ctx.fillStyle = "rgba(28,20,12,0.42)";
     ctx.beginPath();
-    ctx.ellipse(cx + 0.9, cy + 1.1, r, r * 0.8, rot, 0, TWO_PI);
+    ctx.ellipse(cx + 1, cy + 1.3, r, r * squash, rot, 0, TWO_PI);
     ctx.fill();
-    // 돌 본체 (색 변주)
-    const base = 95 + rnd() * 55;
-    ctx.fillStyle = `rgba(${(base + 28) | 0},${(base + 8) | 0},${(base - 22) | 0},0.55)`;
+    const base = 92 + rnd() * 62;
+    ctx.fillStyle = `rgba(${(base + 26) | 0},${(base + 6) | 0},${(base - 24) | 0},0.62)`;
     ctx.beginPath();
-    ctx.ellipse(cx, cy, r, r * 0.8, rot, 0, TWO_PI);
+    ctx.ellipse(cx, cy, r, r * squash, rot, 0, TWO_PI);
     ctx.fill();
-    // 하이라이트 (좌상단)
-    ctx.fillStyle = "rgba(210,188,150,0.28)";
+    ctx.fillStyle = "rgba(214,192,154,0.26)";
     ctx.beginPath();
-    ctx.ellipse(cx - r * 0.28, cy - r * 0.3, r * 0.42, r * 0.3, rot, 0, TWO_PI);
+    ctx.ellipse(cx - r * 0.3, cy - r * squash * 0.35, r * 0.4, r * squash * 0.34, rot, 0, TWO_PI);
     ctx.fill();
   }
   // 8) 가장자리 이끼/풀 틴트 (드문드문)
@@ -1176,9 +1291,11 @@ function createPlacementTiles() {
   const tileSize = TILE_SIZE,
     gap = Math.round(10 * ws),
     castleBuffer = 120 * ws,
-    // 길 중심에서 이만큼 떨어져야 놓을 수 있다. 길 폭에 비례해야
-    // 좁은 길인데 넓게 비워두는(= 놓을 자리를 스스로 없애는) 일이 없다.
-    pathBuffer = Math.max(28, 25 * ws + tileSize / 2),
+    // 길 중심에서 이만큼은 떨어져야 놓을 수 있다.
+    // = 길이 보이는 폭의 절반 + 타일 절반 + 여유 2px.
+    // 이보다 작으면 타일이 길 테두리를 파고들고, 그 위에 선 타워 스프라이트(78px)가
+    // 길에 걸터앉은 것처럼 보인다(사용자 신고: "타워가 길로 내려왔잖아").
+    pathBuffer = roadVisualWidth() / 2 + tileSize / 2 + 2,
     pathBufferSq = pathBuffer * pathBuffer;
   const castleBufferSq = castleBuffer * castleBuffer;
 
@@ -1560,6 +1677,16 @@ function worldScale() {
 /** 타일 한 칸이 차지하는 세로(타일 + 줄 간격). 길 배치 예산 계산의 단위. */
 function tileStep() {
   return TILE_SIZE + Math.round(10 * worldScale());
+}
+
+/**
+ * 길이 화면에서 실제로 차지하는 폭 — 노면(50) + 바깥 테두리(18)까지.
+ * 길 배치(generatePath)와 타일 여백(createPlacementTiles)이 반드시 같은 값을 써야
+ * 타일이 길 위로 올라타지 않는다.
+ */
+function roadVisualWidth() {
+  const ws = worldScale();
+  return Math.round(50 * ws) + Math.round(18 * ws);
 }
 
 /**

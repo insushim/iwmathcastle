@@ -264,24 +264,36 @@ export async function showTowerSelector(x, y, sfx) {
   towerSelector.classList.add("show");
 
   const canvasRect = gameCanvas.getBoundingClientRect();
-  const selectorRect = towerSelector.getBoundingClientRect();
+  // ⚠️ getBoundingClientRect는 transform이 반영된 값이다. 이 창은 열릴 때
+  // selectorPopIn(scale 0.85)이 걸려 있어서 rect로 재면 실제보다 15% 작게 나오고,
+  // 그 값으로 위치를 잡으면 애니메이션이 끝난 뒤 화면 밖으로 삐져나온다(실측 17~25px).
+  // offsetWidth/Height는 레이아웃 크기라 transform의 영향을 받지 않는다.
+  const selW = towerSelector.offsetWidth;
+  const selH = towerSelector.offsetHeight;
 
   const tileCenterX = canvasRect.left + x + 20;
   const tileCenterY = canvasRect.top + y + 20;
 
-  let finalX = tileCenterX - selectorRect.width / 2;
+  let finalX = tileCenterX - selW / 2;
 
   if (finalX < 10) {
     finalX = 10;
   }
-  if (finalX + selectorRect.width > window.innerWidth - 10) {
-    finalX = window.innerWidth - selectorRect.width - 10;
+  if (finalX + selW > window.innerWidth - 10) {
+    finalX = window.innerWidth - selW - 10;
   }
 
-  let finalY = tileCenterY - selectorRect.height - 20;
-  if (finalY < 10) {
+  // 기본은 타일 위, 자리가 없으면 아래.
+  // ⚠️ 예전엔 아래로 뒤집기만 하고 그게 화면에 들어오는지는 안 봤다. 폰 가로
+  // (높이 360)에선 창 높이가 353이라 아래로 뒤집으면 통째로 화면 밖으로 나가
+  // 타워 20종이 하나도 안 보였다(실측: 325px 넘침 · 0/20). 마지막에 화면 안으로
+  // 반드시 밀어 넣는다. 창이 화면보다 크면 위에 붙이고 내부 스크롤에 맡긴다.
+  const margin = 8;
+  let finalY = tileCenterY - selH - 20;
+  if (finalY < margin) {
     finalY = tileCenterY + 40;
   }
+  finalY = Math.max(margin, Math.min(finalY, window.innerHeight - selH - margin));
 
   towerSelector.style.left = `${finalX}px`;
   towerSelector.style.top = `${finalY}px`;
