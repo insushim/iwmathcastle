@@ -12,6 +12,10 @@ const isMobile = /Mobi/i.test(window.navigator.userAgent);
 let buildStepCallback = null;
 let rankingUpdateInterval = null;
 
+// 건설창 방향키 커서 — 타워가 숫자키(1~9)보다 많아서 나머지는 방향키로만 닿는다.
+// -1 = 아직 키보드를 안 썼음(마우스만 쓰는 사람에겐 아무 표시도 하지 않는다).
+let towerCursor = -1;
+
 // Track previous values for animated number transitions
 let prevGold = 100;
 let prevScore = 0;
@@ -168,6 +172,7 @@ export async function showTowerSelector(x, y, sfx) {
   const { towerSelector, gameCanvas } = gameElements;
   await sfx.init();
   towerSelector.innerHTML = "";
+  towerCursor = -1; // 창을 새로 열면 커서도 초기화
   const container = document.createElement("div");
   container.className = "tower-options-container";
 
@@ -221,9 +226,14 @@ export async function showTowerSelector(x, y, sfx) {
     option.addEventListener("click", handleSelect);
     option.addEventListener("touchend", handleSelect);
     if (!isTouchLike) {
+      const myIndex = optionIndex - 1;
       // 데스크톱은 클릭 한 번에 짓는다 — 그래서 사거리·비용 미리보기를 hover로 먼저 보여준다.
       // ⚠️ mouseover/out은 자식(숫자 배지 등) 사이를 지날 때도 재발화한다 → enter/leave 사용.
       option.addEventListener("mouseenter", (e) => {
+        // 마우스가 주도권을 잡으면 키보드 하이라이트는 지우되 커서 위치는 여기로 옮긴다
+        // — 그래야 마우스로 옮긴 뒤 방향키를 눌렀을 때 엉뚱한 곳에서 시작하지 않는다.
+        clearTowerCursorMark();
+        towerCursor = myIndex;
         showTowerInfoTooltip(towerStat, e.clientX, e.clientY);
         buildStepCallback("preview", e.currentTarget.dataset.towerType, e);
       });
@@ -276,6 +286,84 @@ export async function showTowerSelector(x, y, sfx) {
   towerSelector.style.left = `${finalX}px`;
   towerSelector.style.top = `${finalY}px`;
   towerSelector.style.visibility = "visible";
+}
+
+/* ── 건설창 방향키 내비게이션 ─────────────────────────────────
+   타워가 15종인데 숫자 배지는 1~9까지뿐이라, 나머지는 방향키로만 고를 수 있다.
+   마우스 클릭·숫자키는 그대로 살아 있고 이건 세 번째 입력 수단이다. */
+
+function towerOptionEls() {
+  return Array.from(
+    gameElements.towerSelector?.querySelectorAll(".tower-option") || [],
+  );
+}
+
+function clearTowerCursorMark() {
+  for (const el of towerOptionEls()) el.classList.remove("kb-cursor");
+}
+
+/** 커서를 idx로 옮기고 하이라이트·사거리 미리보기·툴팁을 함께 갱신한다. */
+function applyTowerCursor(opts, idx) {
+  clearTowerCursorMark();
+  towerCursor = idx;
+  const el = opts[idx];
+  if (!el) return;
+  el.classList.add("kb-cursor");
+  // 목록이 스크롤되는 높이라 커서가 창 밖으로 나가면 따라 스크롤해 준다
+  el.scrollIntoView({ block: "nearest", inline: "nearest" });
+  const rect = el.getBoundingClientRect();
+  const stat = TOWER_STATS[el.dataset.towerType];
+  if (stat) showTowerInfoTooltip(stat, rect.left + rect.width / 2, rect.top);
+  buildStepCallback?.("preview", el.dataset.towerType, null);
+}
+
+/**
+ * 방향키로 커서를 옮긴다. 그리드가 auto-fill이라 열 수가 창 너비에 따라 달라지므로
+ * CSS를 파싱하지 않고 첫 줄과 offsetTop이 같은 칸 수로 열 수를 실측한다.
+ * @returns {boolean} 키를 실제로 소비했는지
+ */
+export function moveTowerCursor(dx, dy) {
+  const opts = towerOptionEls();
+  if (!opts.length) return false;
+
+  if (towerCursor < 0 || towerCursor >= opts.length) {
+    // 첫 입력: 위/왼쪽이면 끝에서, 아래/오른쪽이면 처음에서 시작
+    applyTowerCursor(opts, dx < 0 || dy < 0 ? opts.length - 1 : 0);
+    return true;
+  }
+
+  let idx = towerCursor;
+  if (dx) {
+    idx = (idx + dx + opts.length) % opts.length; // 좌우는 줄바꿈까지 이어서 순환
+  } else if (dy) {
+    const firstTop = opts[0].offsetTop;
+    const cols = Math.max(1, opts.filter((o) => o.offsetTop === firstTop).length);
+    const next = idx + dy * cols;
+    if (next >= 0 && next < opts.length) {
+      idx = next;
+    } else {
+      // 위아래 끝 — 같은 열을 유지한 채 반대편 줄로 감싼다
+      const col = idx % cols;
+      if (dy > 0) {
+        idx = col;
+      } else {
+        idx = col;
+        while (idx + cols < opts.length) idx += cols;
+      }
+    }
+  }
+  applyTowerCursor(opts, idx);
+  return true;
+}
+
+/** Enter로 커서에 놓인 타워를 확정한다. 커서를 아직 안 썼으면 false(기존 Enter 동작 유지). */
+export function activateTowerCursor() {
+  const opts = towerOptionEls();
+  const el = opts[towerCursor];
+  if (!el) return false;
+  hideTowerInfoTooltip();
+  el.click();
+  return true;
 }
 
 export function showTowerUpgradeSelector(

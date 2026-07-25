@@ -1375,7 +1375,7 @@ function updateActionHint() {
   } else if (buildStep !== "idle") {
     text = isTouchLike
       ? "🏗️ 지을 타워를 고르세요 · 빈 곳을 탭하면 취소"
-      : "🏗️ 타워를 고르세요 — <kbd>1</kbd>~<kbd>9</kbd> 선택 · <kbd>Esc</kbd> 취소";
+      : "🏗️ 타워를 고르세요 — <kbd>←→↑↓</kbd> 이동 · <kbd>Enter</kbd> 건설 · <kbd>1</kbd>~<kbd>9</kbd> 바로 · <kbd>Esc</kbd> 취소";
     build = true;
   } else if (focusedTile) {
     text = isTouchLike
@@ -1426,6 +1426,14 @@ function openTowerSelectorForTile(tile) {
   updateActionHint();
 }
 
+// 건설창 커서 이동 방향
+const BUILD_CURSOR_KEYS = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+};
+
 // 컨트롤 바 단축키 — 버튼에 배지로 표시되는 것들과 1:1
 const CONTROL_HOTKEYS = {
   Enter: "startWaveBtn",
@@ -1446,8 +1454,9 @@ function handleGameKeydown(e) {
 
   // 브라우저 조합키(Ctrl+P 인쇄, Cmd+F 찾기 등)를 뺏지 않는다
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  // 길게 누르면 OS 자동반복으로 keydown이 연타된다 — 토글류가 무작위 상태로 끝난다
-  if (e.repeat) return;
+  // 길게 누르면 OS 자동반복으로 keydown이 연타된다 — 토글류가 무작위 상태로 끝난다.
+  // 예외: 건설창의 방향키 커서는 꾹 눌러 훑는 게 자연스러워서 자동반복을 허용한다.
+  if (e.repeat && !(buildStep !== "idle" && e.key.startsWith("Arrow"))) return;
 
   // 모달(수학 문제·게임오버·설정 등)이 떠 있으면 게임 단축키는 전부 막는다.
   // 수학 문제 중에도 gamePaused=true이므로 P로 풀어버리면 문제 흐름이 깨진다.
@@ -1484,6 +1493,22 @@ function handleGameKeydown(e) {
     e.preventDefault();
     const opts = document.querySelectorAll("#towerSelector .tower-option");
     opts[parseInt(e.key, 10) - 1]?.click();
+    return;
+  }
+  // 건설창에서 방향키 = 커서 이동. 타워가 숫자키보다 많아서 10번째 이후는 이 길로만 닿는다.
+  // ⚠️ 화살표는 마법사 이동키도 겸한다 — 여기서 소비할 땐 keysPressed에서 지워야
+  //    건설창을 보는 동안 마법사가 슬금슬금 움직이지 않는다.
+  if (buildStep !== "idle" && BUILD_CURSOR_KEYS[e.key]) {
+    e.preventDefault();
+    delete keysPressed[e.key];
+    const [dx, dy] = BUILD_CURSOR_KEYS[e.key];
+    ui.moveTowerCursor(dx, dy);
+    return;
+  }
+  // 건설창에서 Enter = 커서에 놓인 타워로 확정. 커서를 안 쓴 상태면 기존 Enter(웨이브 시작)로 흘린다.
+  if (buildStep !== "idle" && e.key === "Enter" && ui.activateTowerCursor()) {
+    e.preventDefault();
+    updateActionHint();
     return;
   }
 

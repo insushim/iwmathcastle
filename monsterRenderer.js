@@ -284,8 +284,9 @@ export class MonsterRenderer {
       monsterKey === "mini-splitter" ? "monster_splitter" : `monster_${monsterKey}`;
     const wt = (options.now ?? performance.now()) / 1000;
     const wp = wt * (isBoss ? 5 : 9) + (options.phase || 0);
-    const hasWalkSheet =
-      !options.isFlying && !!getSprite(`${spriteKey}_walk_0`);
+    // 비행체(박쥐 등)의 4프레임 시트는 걷기가 아니라 날갯짓 사이클이다 —
+    // 예전엔 여기서 isFlying을 통째로 배제해서, 시트를 만들어 놓고도 정지 그림만 떠 있었다.
+    const hasWalkSheet = !!getSprite(`${spriteKey}_walk_0`);
 
     if (!options.isStunned) {
       if (options.isFlying) {
@@ -310,8 +311,11 @@ export class MonsterRenderer {
     }
 
     // --- v5: AI 스프라이트 우선 (걷기 프레임 → 정지 스프라이트 → 절차 캐시 폴백) ---
+    // 지상 ≈ 8fps(초당 2걸음). 작은 비행체는 날갯짓이 걸음보다 빨라야 살아 있어 보여서
+    // 1.6배(≈13fps)로 돌리고, 날개가 큰 비행 보스(드래곤류)는 느린 그대로 둔다.
+    const frameHz = options.isFlying && !isBoss ? 1.6 : 0.9;
     const walkKey = hasWalkSheet
-      ? `${spriteKey}_walk_${Math.floor(wp * 0.9) % 4}` // 프레임 ≈ 8fps → 초당 2걸음 사이클
+      ? `${spriteKey}_walk_${((Math.floor(wp * frameHz) % 4) + 4) % 4}`
       : spriteKey;
     if (
       drawSpriteCentered(ctx, walkKey, 0, 0, drawSize * 1.25) ||
