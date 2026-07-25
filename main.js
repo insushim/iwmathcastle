@@ -921,7 +921,9 @@ const debouncedRegenerateLayout = debounce(regenerateLayout, 250);
 function generatePath() {
   const { gameCanvas } = gameElements;
   pathPoints = [];
-  const pathWidth = 50;
+  // 좁은 화면에선 길도 같이 좁힌다. 폭 50 그대로면 길 세 줄(150px)이
+  // 플레이 높이(≈220px)를 거의 다 먹어 타워 놓을 자리가 안 남는다(실측: 타일 25→6개).
+  const pathWidth = Math.round(50 * worldScale());
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
@@ -934,7 +936,9 @@ function generatePath() {
 
   // v5.7: 최상단 길을 아래로 내려 위에 타워 1줄 + 캐슬 첨탑 여유 확보
   // (기존 playH*0.05는 너무 위 → 캐슬 잘림·상단 타워 불가)
-  const topRowY = playTop + 135;
+  // v6.2: 135px 고정이면 폰 가로(플레이 높이 ≈220px)에서 이 한 값이 세로의 60%를 먹어
+  //       길 세 줄이 서로 붙어버린다(실기 재현). 좁을 땐 같이 줄인다.
+  const topRowY = playTop + Math.min(135, playH * 0.32);
 
   const points = [
     { x: vw - 10, y: playTop + playH * 0.88 },
@@ -1100,10 +1104,13 @@ function createPlacementTiles() {
   placementTiles = [];
   clearTileFocus();
   tileIndex = [];
+  // 타일 자체는 줄이지 않는다 — 손가락 터치 타깃이라 40px 아래로는 누르기 어렵다.
+  // 대신 길·성 주변 여유(버퍼)만 화면에 맞춰 좁혀 놓을 자리를 확보한다.
+  const ws = worldScale();
   const tileSize = 40,
-    gap = 10,
-    castleBuffer = 120,
-    pathBuffer = 50,
+    gap = Math.round(10 * ws),
+    castleBuffer = 120 * ws,
+    pathBuffer = 50 * ws,
     pathBufferSq = pathBuffer * pathBuffer;
   const castleBufferSq = castleBuffer * castleBuffer;
 
@@ -1440,6 +1447,42 @@ function openTowerSelectorForTile(tile) {
   ui.showTowerSelector(x, y, sfx);
   if (isMobile) ui.showTowerInfoTooltip(null, x, y);
   updateActionHint();
+}
+
+/**
+ * 화면이 낮을 때 월드 요소를 줄이는 배율.
+ * 데스크톱 기준 플레이 높이(≈560px)를 1.0으로 두고, 폰 가로처럼 낮은 화면에서 비례 축소한다.
+ * 0.62 아래로는 안 내린다 — 더 줄이면 성이 뭉개져 알아보기 어렵다.
+ * ⚠️ 히트박스·밸런스에 영향을 주지 않도록 "그리는 크기"에만 쓴다.
+ */
+function worldScale() {
+  const playH = window.innerHeight - 55 - 60;
+  return Math.max(0.62, Math.min(1, playH / 560));
+}
+
+/**
+ * 터치 기기에서만 전체화면을 시도한다(주소창 제거 = 플레이 영역 확보).
+ * 데스크톱은 창 모드가 자연스러우니 건드리지 않는다.
+ * 실패(iOS·권한 거부)해도 조용히 넘어간다 — 게임 진행에는 지장이 없다.
+ */
+function requestGameFullscreen() {
+  if (!isTouchLike || document.fullscreenElement) return;
+  const el = document.documentElement;
+  const req =
+    el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+  if (!req) return;
+  try {
+    const p = req.call(el, { navigationUI: "hide" });
+    if (p && p.catch) p.catch(() => {});
+  } catch {
+    /* 사용자 제스처 밖 호출·미지원 — 무시 */
+  }
+  // 가로 고정까지 되면 회전 안내를 볼 일이 없다(안드로이드 크롬만 지원)
+  try {
+    screen.orientation?.lock?.("landscape").catch(() => {});
+  } catch {
+    /* 미지원 */
+  }
 }
 
 // 건설창 커서 이동 방향
@@ -2030,7 +2073,16 @@ function renderDynamicLayer() {
   if (castleCoords.x != null) {
     const cx = castleCoords.x - castleRenderer.width / 2 + 50;
     const cy = castleCoords.y - castleRenderer.height + 100;
-    castleRenderer.render(dynamicCtx, cx, cy, castleHealth, 100, now);
+    castleRenderer.render(
+      dynamicCtx,
+      cx,
+      cy,
+      castleHealth,
+      100,
+      now,
+      64,
+      worldScale(),
+    );
   }
 
   // [V3] 타워 캔버스 렌더링
@@ -4116,6 +4168,10 @@ function setupEventListeners() {
     btn.addEventListener("click", (e) => {
       if (gameInitialized) return;
       sfx.init().then(() => sfx.play("blip"));
+      // 폰 가로는 주소창이 세로를 80px 넘게 먹어 게임판이 눌린다(실기 실측).
+      // 전체화면은 사용자 제스처 안에서만 허용되므로 이 클릭에 얹어 요청한다.
+      // iOS Safari는 요소 전체화면을 막아 실패하는데, 실패해도 게임은 그대로 진행된다.
+      requestGameFullscreen();
       const difficulty = e.currentTarget.dataset.difficulty;
       const progress = stageProgress.getProgress(difficulty);
       // 도달한 스테이지가 있으면 스테이지 선택, 처음이면 바로 시작

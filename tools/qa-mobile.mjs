@@ -30,12 +30,16 @@ mkdirSync(SHOTS, { recursive: true });
 const DEVICES = [
   { name: "phone-portrait",  w: 390,  h: 844,  touch: true,  ua: "iPhone" },
   { name: "phone-landscape", w: 844,  h: 390,  touch: true,  ua: "iPhone" },
+  // ⚠️ 실기 조건: 안드로이드 가로에서 주소창이 세로를 ~80px 먹는다.
+  //    이걸 빼고 테스트하면 "통과했는데 실기에선 눌려 보이는" 상태를 놓친다(실측).
+  { name: "android-landscape-urlbar", w: 900, h: 310, touch: true, ua: "android" },
   { name: "tablet-portrait", w: 820,  h: 1180, touch: true,  ua: "iPad" },
   { name: "tablet-landscape",w: 1180, h: 820,  touch: true,  ua: "iPad" },
 ];
 const UAS = {
   iPhone: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
   iPad: "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+  android: "Mozilla/5.0 (Linux; Android 14; SM-S918N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36",
 };
 
 const browser = await puppeteer.launch({
@@ -101,6 +105,20 @@ try {
     });
     check("가로 스크롤 없음(화면에 들어옴)", !fit.overflowX,
       `doc ${fit.docW} vs win ${fit.winW}`);
+
+    // 성이 플레이 영역을 얼마나 먹는가 — 실기에서 "눌려 보이는" 것의 정체
+    if (d.name.includes("landscape") || d.name.includes("tablet")) {
+      const world = await page.evaluate(() => {
+        const info = document.getElementById("info-bar")?.getBoundingClientRect().bottom ?? 0;
+        const bar = document.getElementById("control-bar")?.getBoundingClientRect().top ?? window.innerHeight;
+        const playH = Math.round(bar - info);
+        const tiles = document.querySelectorAll(".placement-tile").length;
+        const rows = new Set([...document.querySelectorAll(".placement-tile")].map(t => t.style.top)).size;
+        return { playH, tiles, rows, castleH: window.__mathcastle?.qaCastleBox?.()?.h ?? null };
+      });
+      check("플레이 영역 세로 ≥ 200px", world.playH >= 200, `${world.playH}px`);
+      check("타워 놓을 줄 ≥ 3줄", world.rows >= 3, `${world.rows}줄 · 타일 ${world.tiles}개`);
+    }
 
     // 조작 UI가 화면 밖으로 나가지 않았는지 (시작 버튼·컨트롤 바)
     const ui = await page.evaluate(() => {
