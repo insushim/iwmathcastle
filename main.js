@@ -1070,6 +1070,40 @@ function seededRand(seed) {
   return () => (s = (s * 16807) % 2147483647) / 2147483647;
 }
 
+// 흙 텍스처 패턴 캐시. createPattern은 원본 크기 그대로 반복하므로(512px)
+// 폭 50px짜리 길에 쓰면 무늬가 너무 커서 얼룩처럼 보인다. 먼저 오프스크린
+// 캔버스에 줄여 그린 뒤 그걸로 패턴을 만든다 — 반복 주기를 직접 정할 수 있고,
+// pattern.setTransform(구형 사파리 미지원)에 기대지 않아도 된다.
+let roadPatternCache = { key: "", pattern: null };
+function getRoadPattern(ctx, w) {
+  const img = getSprite("road_dirt");
+  if (!img) return null;
+  // 반복 주기. 너무 줄이면(길 폭의 2~3배) 512px 원본이 4배 넘게 압축돼
+  // 자갈이 서브픽셀로 뭉개지고 밋밋해진다(실측). 원본에 가깝게 큼직하게 잡을수록
+  // 결이 살고 반복 주기도 길어져 되풀이가 덜 보인다.
+  const tile = Math.max(150, Math.round(280 * worldScale()));
+  const key = `${tile}`;
+  if (roadPatternCache.key === key && roadPatternCache.pattern) {
+    return roadPatternCache.pattern;
+  }
+  try {
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = tile;
+    const c = cv.getContext("2d");
+    c.drawImage(img, 0, 0, tile, tile);
+    // 생성 텍스처가 게임 팔레트보다 밝고 노랗다 — 어두운 밤 배경에서 길만
+    // 떠 보인다. 패턴을 만들 때 한 번만 눌러 둔다(그릴 때마다 덧칠하지 않게).
+    c.globalCompositeOperation = "multiply";
+    c.fillStyle = "rgba(150,124,96,1)";
+    c.fillRect(0, 0, tile, tile);
+    const pattern = ctx.createPattern(cv, "repeat");
+    roadPatternCache = { key, pattern };
+    return pattern;
+  } catch {
+    return null; // 어떤 이유로든 실패하면 단색 폴백
+  }
+}
+
 function drawRoad(corners, w) {
   if (!pathCanvas || !pathCanvas.isConnected) {
     pathCanvas = document.createElement("canvas");
@@ -1110,16 +1144,26 @@ function drawRoad(corners, w) {
   // 2) 어두운 흙 가장자리(파인 느낌) → 3) 본 노면 → 4) 밝은 중앙 트랙
   traceStroke(w + Math.round(8 * ws), "#33291e");
   traceStroke(w + Math.round(2 * ws), "#4a3b2a");
-  traceStroke(w, "#6b5640");
+  // 노면은 실제 흙 텍스처 에셋으로 칠한다. 길 '모양'은 화면 크기마다 달라져서
+  // 런타임 계산이라(폰 가로 3줄/2줄) 길 전체를 한 장 그림으로 못 만든다 →
+  // 표면 질감만 타일 텍스처로 뽑아 패턴으로 채우고 모양·테두리는 절차적으로.
+  // 에셋이 없거나 못 받으면 단색으로 폴백한다(오프라인·로드 실패 안전망).
+  const roadPattern = getRoadPattern(ctx, w);
+  traceStroke(w, roadPattern || "#6b5640");
   // 5) 안쪽 그림자(가장자리 어둡게 — 길이 파인 입체감)
+  //    예전엔 안쪽을 불투명 색으로 다시 칠해 되살렸는데, 그러면 흙 텍스처가
+  //    덮여 버린다. 안쪽은 텍스처로 되칠해서 파인 느낌만 남긴다.
   ctx.save();
   ctx.globalAlpha = 0.35;
   traceStroke(w, "#2c2318");
   ctx.globalAlpha = 1;
-  traceStroke(w - 10, "#6f5a41");
+  traceStroke(w - Math.round(10 * ws), roadPattern || "#6f5a41");
   ctx.restore();
-  // 6) 밟아 다져진 밝은 중앙 트랙
-  traceStroke(w * 0.5, "#8a6f4e");
+  // 6) 밟아 다져진 밝은 중앙 트랙 — 텍스처가 비치도록 반투명으로
+  ctx.save();
+  ctx.globalAlpha = roadPattern ? 0.09 : 1;
+  traceStroke(w * 0.5, "#a8865e");
+  ctx.restore();
 
   // ── 노면 질감 ────────────────────────────────────────────────────────
   // 예전엔 10px마다 비슷한 크기의 자갈을 하나씩 깔았다(길 전체 350개+).
@@ -1169,8 +1213,11 @@ function drawRoad(corners, w) {
 
   // 7-b) 흙 결 — 진행 방향으로 난 짧은 선. 점이 아니라 '선'이라
   //      아무리 많아도 물방울 패턴으로 안 읽히고, 다져진 흙처럼 보인다.
+  //      텍스처 에셋이 붙으면 잔결은 텍스처가 대신하므로 확 줄인다
+  //      (겹쳐 그리면 지저분해진다). 방향감을 주는 최소한만 남긴다.
+  const grainKeep = roadPattern ? 0.16 : 0.62; // 그릴 확률(작을수록 성김)
   for (let i = 0; i < pathPoints.length - 2; i += 3) {
-    if (rnd() > 0.62) continue;
+    if (rnd() > grainKeep) continue;
     const { p, px, py, tx, ty } = frameAt(i);
     const off = (rnd() - 0.5) * (w - 5);
     const x0 = p.x + px * off;

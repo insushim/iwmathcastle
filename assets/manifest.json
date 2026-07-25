@@ -823,6 +823,10 @@
   {
    "key": "wizard_walk_3",
    "file": "wizard-walk-3.webp"
+  },
+  {
+   "key": "road_dirt",
+   "file": "road-dirt.webp"
   }
  ]
 }
