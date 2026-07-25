@@ -1,11 +1,35 @@
-// sfx.js - Professional procedural sound effects (Web Audio API)
-// All sounds are multi-layered with oscillators, noise, filters, and reverb-like delay
+// sfx.js - 효과음 (CC0 실물 샘플 우선 · Web Audio 절차 합성 폴백)
+//
+// v6.1: 소리를 전부 오실레이터로 합성하던 것을 CC0 실물 샘플(Kenney, 상업 사용 가능)로 교체했다.
+//       다층 합성으로도 "기계음"을 못 벗어난다는 실측 피드백 반영. 아래 절차 합성 코드는
+//       샘플 로드 실패 시 폴백으로 남겨 둔다(오프라인·파일 누락에서도 무음이 되지 않게).
+//       조달 스크립트 = tools/fetch-audio.sh · 라이선스 = assets/audio/CREDITS.md
+
+// 실물 샘플이 있는 키 (tools/fetch-audio.sh의 매핑과 1:1 — 여기만 고치면 로드 대상이 바뀐다)
+const SAMPLE_KEYS = [
+  "hit", "castle_hit", "explosion", "laser", "skyDestroyer", "shredder",
+  "frost", "lightning", "plague", "disrupt", "stealth", "wizard_cast",
+  "wizard-auto", "wizard_levelup", "powerup", "blip", "button_click",
+  "menu_hover", "math_correct", "math_wrong", "tower_place", "tower_upgrade",
+  "tower_sell", "goldMine", "repair", "combo_hit", "wave_start",
+  "wave_clear", "game_start",
+];
+
+// 키별 음량 보정 — 전부 -16 LUFS로 정규화했지만 게임 안에서의 비중은 다르다.
+// 자주 울리는 소리(타격·클릭)는 낮추고, 순간 이벤트(징글)는 존재감을 준다.
+const SAMPLE_GAIN = {
+  hit: 0.45, blip: 0.5, "wizard-auto": 0.5, laser: 0.55, combo_hit: 0.5,
+  menu_hover: 0.35, button_click: 0.6, goldMine: 0.6,
+  wave_start: 0.8, wave_clear: 0.9, game_start: 0.8, castle_hit: 0.9,
+};
 
 export const sfx = {
   isReady: false,
   audioContext: null,
   masterGain: null,
   volume: 0.5,
+  samples: new Map(),
+  _preloadStarted: false,
   lastPlayTimes: {},
   cooldowns: {
     "wizard-auto": 0.08,
@@ -36,15 +60,61 @@ export const sfx = {
       if (this.audioContext.state === "suspended") {
         return this.audioContext.resume().then(() => {
           this.isReady = true;
+          this.preloadSamples();
         });
       }
       this.isReady = true;
+      this.preloadSamples();
       return Promise.resolve();
     } catch (error) {
       console.warn("Audio not supported:", error);
       this.isReady = false;
       return Promise.resolve();
     }
+  },
+
+  /**
+   * v6.1: CC0 실물 효과음(Kenney, assets/audio/sfx/*.mp3)을 미리 디코드해 둔다.
+   * ⚠️ 여기서 실패해도 게임은 그대로 돌아간다 — play()가 아래 절차 합성으로 폴백한다.
+   *    (오프라인·파일 누락에서도 무음이 되지 않게 하는 안전망. 합성음은 지우지 말 것.)
+   * 파일 조달·라이선스: tools/fetch-audio.sh, assets/audio/CREDITS.md
+   */
+  preloadSamples() {
+    if (this._preloadStarted) return;
+    this._preloadStarted = true;
+
+    const load = async (key) => {
+      try {
+        const res = await fetch(`assets/audio/sfx/${key}.mp3`);
+        if (!res.ok) return;
+        const buf = await this.audioContext.decodeAudioData(
+          await res.arrayBuffer(),
+        );
+        this.samples.set(key, buf);
+      } catch {
+        /* 개별 실패는 합성 폴백이 흡수한다 */
+      }
+    };
+    // 총 244KB — 병렬로 받아도 첫 화면을 막지 않는다
+    Promise.all(SAMPLE_KEYS.map(load)).then(() => {
+      if (this.samples.size)
+        console.info(`[sfx] CC0 샘플 ${this.samples.size}/${SAMPLE_KEYS.length}개 로드`);
+    });
+  },
+
+  /** 디코드된 샘플을 masterGain 경유로 재생 — 볼륨 설정이 그대로 적용된다. */
+  _playSample(buf, gain) {
+    const src = this.audioContext.createBufferSource();
+    src.buffer = buf;
+    if (gain != null && gain !== 1) {
+      const g = this.audioContext.createGain();
+      g.gain.value = gain;
+      src.connect(g);
+      g.connect(this.masterGain);
+    } else {
+      src.connect(this.masterGain);
+    }
+    src.start();
   },
 
   setVolume(v) {
@@ -489,6 +559,13 @@ export const sfx = {
       )
         return;
       this.lastPlayTimes[sound] = now;
+
+      // CC0 실물 샘플이 준비돼 있으면 그걸 쓴다. 없으면 아래 절차 합성으로 떨어진다.
+      const sample = this.samples.get(sound);
+      if (sample) {
+        this._playSample(sample, SAMPLE_GAIN[sound]);
+        return;
+      }
 
       switch (sound) {
         case "laser":

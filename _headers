@@ -9,3 +9,6 @@
 # ⚠️ *.webp 로 한정 — /assets/* 로 하면 manifest.json에도 매칭돼 위 60초 규칙과 헤더가 중복된다(실측).
 /assets/*.webp
   Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+# 효과음(CC0 샘플)도 파일명 고정·내용 불변 — 스프라이트와 같은 7일 캐시
+/assets/audio/sfx/*.mp3
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400

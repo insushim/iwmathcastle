@@ -479,6 +479,72 @@ export class MusicSystem {
     this.reverbNode = null;
     this.reverbGain = null;
     this.dryGain = null;
+
+    // v6.1: CC0 실물 BGM (assets/audio/bgm/*.mp3) — 아래 절차 합성은 로드 실패 시 폴백으로 남는다.
+    // 곡 하나가 2MB라 게임 시작 때 전부 받지 않고, 그 트랙이 처음 필요할 때 받는다(lazy).
+    this.trackBuffers = new Map();
+    this._trackLoading = new Set();
+    this._trackFailed = new Set();
+    this._trackNode = null;
+  }
+
+  /** 파일 BGM을 루프 재생한다. 절차 스케줄러와 달리 노드 하나로 끝난다. */
+  _playTrackBuffer(buf) {
+    this._stopTrackNode();
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.connect(this.masterGain);
+    src.start();
+    this._trackNode = src;
+    // 절차 재생과 동일하게 페이드 인 — 트랙 전환이 뚝 끊기지 않게
+    if (this.masterGain) {
+      this.masterGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.01);
+      this.masterGain.gain.setTargetAtTime(
+        this.volume,
+        this.ctx.currentTime + 0.05,
+        0.4,
+      );
+    }
+  }
+
+  _stopTrackNode() {
+    if (!this._trackNode) return;
+    try {
+      this._trackNode.stop();
+    } catch {
+      /* 이미 멈춘 노드 */
+    }
+    this._trackNode = null;
+  }
+
+  /**
+   * 트랙 mp3를 받아 디코드한다. 성공했는데 그 사이 사용자가 다른 트랙으로 넘어갔으면
+   * 재생하지 않고 캐시만 해둔다(뒤늦게 엉뚱한 곡이 끼어드는 것 방지).
+   */
+  _loadTrack(name) {
+    if (this._trackLoading.has(name) || this._trackFailed.has(name)) return;
+    this._trackLoading.add(name);
+    fetch(`assets/audio/bgm/${name}.mp3`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.arrayBuffer();
+      })
+      .then((ab) => this.ctx.decodeAudioData(ab))
+      .then((buf) => {
+        this.trackBuffers.set(name, buf);
+        this._trackLoading.delete(name);
+        if (this.currentTrack === name && this.isPlaying) this._playTrackBuffer(buf);
+      })
+      .catch(() => {
+        // 파일이 없거나 디코드 실패 → 이 트랙은 앞으로 절차 합성으로 간다
+        this._trackLoading.delete(name);
+        this._trackFailed.add(name);
+        if (this.currentTrack === name && this.isPlaying) {
+          this.setIntensity(this.intensity);
+          this._startScheduler();
+        }
+      });
   }
 
   init() {
@@ -619,12 +685,26 @@ export class MusicSystem {
 
     // Looping tracks
     if (this.isPlaying) this._stopScheduler();
+    this._stopTrackNode();
 
     this.currentTrack = trackName;
     this.isPlaying = true;
     this.stepIndex = 0;
     this.sectionIndex = 0;
     this.stepsInSection = 0;
+
+    // CC0 실물 곡이 준비돼 있으면 그걸 튼다.
+    const buf = this.trackBuffers.get(trackName);
+    if (buf) {
+      this._playTrackBuffer(buf);
+      return;
+    }
+    // 아직 안 받았으면 지금 받는다. 받는 동안(보통 1~2초)은 조용히 둔다 —
+    // 합성음을 잠깐 틀었다가 바꾸면 오히려 어색하다. 실패하면 _loadTrack이 절차 재생으로 돌린다.
+    if (!this._trackFailed.has(trackName)) {
+      this._loadTrack(trackName);
+      return;
+    }
 
     // Fade in
     if (this.masterGain) {
@@ -644,7 +724,10 @@ export class MusicSystem {
   stop() {
     if (!this.ctx || !this.isPlaying) return;
     this.masterGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.6);
-    setTimeout(() => this._stopScheduler(), 800);
+    setTimeout(() => {
+      this._stopScheduler();
+      this._stopTrackNode(); // 파일 트랙도 같이 멈춘다(안 그러면 페이드만 되고 계속 돈다)
+    }, 800);
   }
 
   // --- Scheduler ---

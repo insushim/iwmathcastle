@@ -1,0 +1,92 @@
+{
+  "entries": [
+    {
+      "file": "sfx/",
+      "source": "Kenney",
+      "license": "CC0",
+      "author": "Kenney",
+      "url": "https://kenney.nl/assets/impact-sounds",
+      "fetched": "2026-07-25"
+    },
+    {
+      "file": "sfx/",
+      "source": "Kenney",
+      "license": "CC0",
+      "author": "Kenney",
+      "url": "https://kenney.nl/assets/ui-audio",
+      "fetched": "2026-07-25"
+    },
+    {
+      "file": "sfx/",
+      "source": "Kenney",
+      "license": "CC0",
+      "author": "Kenney",
+      "url": "https://kenney.nl/assets/interface-sounds",
+      "fetched": "2026-07-25"
+    },
+    {
+      "file": "sfx/",
+      "source": "Kenney",
+      "license": "CC0",
+      "author": "Kenney",
+      "url": "https://kenney.nl/assets/rpg-audio",
+      "fetched": "2026-07-25"
+    },
+    {
+      "file": "sfx/",
+      "source": "Kenney",
+      "license": "CC0",
+      "author": "Kenney",
+      "url": "https://kenney.nl/assets/casino-audio",
+      "fetched": "2026-07-25"
+    },
+    {
+      "file": "sfx/",
+      "source": "Kenney",
+      "license": "CC0",
+      "author": "Kenney",
+      "url": "https://kenney.nl/assets/music-jingles",
+      "fetched": "2026-07-25"
+    },
+    {
+      "file": "sfx/",
+      "source": "Kenney",
+      "license": "CC0",
+      "author": "Kenney",
+      "url": "https://kenney.nl/assets/digital-audio",
+      "fetched": "2026-07-25"
+    },
+    {
+      "file": "sfx/",
+      "source": "Kenney",
+      "license": "CC0",
+      "author": "Kenney",
+      "url": "https://kenney.nl/assets/sci-fi-sounds",
+      "fetched": "2026-07-25"
+    },
+    {
+      "file": "bgm/menu.mp3",
+      "source": "OpenGameArt",
+      "license": "CC0",
+      "author": "OpenGameArt 기여자",
+      "fetched": "2026-07-25",
+      "url": "https://opengameart.org/content/once-upon-a-time-loop"
+    },
+    {
+      "file": "bgm/gameplay.mp3",
+      "source": "OpenGameArt",
+      "license": "CC0",
+      "author": "OpenGameArt 기여자",
+      "fetched": "2026-07-25",
+      "url": "https://opengameart.org/content/the-ancient-legend"
+    },
+    {
+      "file": "bgm/boss.mp3",
+      "source": "OpenGameArt",
+      "license": "CC0",
+      "author": "OpenGameArt 기여자",
+      "fetched": "2026-07-25",
+      "url": "https://opengameart.org/content/swordfight"
+    }
+  ]
+}
