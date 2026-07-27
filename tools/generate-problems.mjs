@@ -458,7 +458,7 @@ const T = {
   w51Lcm: () => {
     const a = ri(3, 12); let b = ri(3, 12); if (a === b) return null;
     const l = lcm(a, b); if (l > 90) return null;
-    return { q: `${a}일마다 오는 버스와 ${b}일마다 오는 버스가 오늘 함께 왔어요. 다음에 함께 오는 날은 며칠 뒤?`, a: String(l) };
+    return { q: `${a}일마다 오는 버스와 ${b}일마다 오는 버스가 오늘 함께 왔어요. 다음은 며칠 뒤?`, a: String(l) };
   },
   w51Frac: () => {
     const d1 = ri(2, 8); let d2 = ri(2, 8); if (d1 === d2) return null;
@@ -494,7 +494,9 @@ const T = {
   },
   w61Volume: () => {
     const a = ri(3, 12), b = ri(3, 12), c = ri(2, 9);
-    return { q: `가로 ${a}cm, 세로 ${b}cm, 높이 ${c}cm인 상자를 가득 채우려면 한 모서리가 1cm인 쌓기나무가 몇 개 필요할까요?`, a: String(a * b * c) };
+    // 문장은 짧게. 66자짜리 원안은 작은 폰에서 보기를 화면 밖으로 밀어냈고,
+    // 길이 자체가 저학년에게 읽기 부담이다(v7 실측).
+    return { q: `가로 ${a}cm, 세로 ${b}cm, 높이 ${c}cm인 상자에 1cm 쌓기나무를 몇 개 넣을 수 있나요?`, a: String(a * b * c) };
   },
 };
 

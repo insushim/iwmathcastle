@@ -163,11 +163,26 @@ function difficultyLabel(d) {
 }
 // v6: 30초 고정 폐지 — 유형별 제한시간(t: 1=한줄연산 2=복합 3=도형·측정 4=문장제) + 저학년(3~4학년) +5초
 const PROBLEM_TIME_BY_TYPE = { 1: 20000, 2: 35000, 3: 45000, 4: 50000 };
+// v7: 유형 상수만 쓰면 같은 t 안에서도 문장 길이가 2배 넘게 차이 나는 걸 못 잡는다.
+//   실측(2026-07-27): 6-1 문장제는 평균 43자인데 최장 66자, 둘 다 50초로 동일했다.
+//   66자를 정독 2회 하면 5~6학년 기준 약 33초 → 푸는 데 17초밖에 안 남는다.
+//   읽는 속도 가정에 게임을 걸지 않도록, 기준 길이를 넘는 만큼 읽기 시간을 더 준다.
+//   시간 초과는 "몰라서"가 아니라 "못 읽어서" 틀리게 만들 수 있고, 그건 학습 신호가 아니다.
+const READ_BASE_CHARS = 30;      // 이 길이까지는 유형 기본 시간에 이미 포함된 것으로 본다
+const READ_MS_PER_CHAR_LOW = 400;  // 3~4학년
+const READ_MS_PER_CHAR_HIGH = 250; // 5~6학년
+const READ_BONUS_CAP = 15000;    // 아무리 길어도 +15초까지
 let currentProblemTimeLimit = 30000;
 function problemTimeLimit(problem) {
   const base = PROBLEM_TIME_BY_TYPE[problem && problem.t] || 30000;
   const grade = parseInt(selectedDifficulty, 10);
-  return base + (grade <= 4 ? 5000 : 0);
+  const low = grade <= 4;
+  const len = problem && problem.q ? String(problem.q).length : 0;
+  const extra = Math.min(
+    READ_BONUS_CAP,
+    Math.max(0, len - READ_BASE_CHARS) * (low ? READ_MS_PER_CHAR_LOW : READ_MS_PER_CHAR_HIGH),
+  );
+  return base + (low ? 5000 : 0) + Math.round(extra / 500) * 500;
 }
 let correctAnswer = 0,
   selectedTowerForUpgrade = null,

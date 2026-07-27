@@ -184,7 +184,12 @@ function keywordMistakes(q, ans) {
   if (/평행사변형|직사각형.*넓이/.test(s)) { push(a / 2); push(a * 2); }
   if (/둘레/.test(s) && nums.length >= 2) { push(nums[0] * nums[1]); push(nums[0] + nums[1]); } // 넓이와 혼동
   if (/직사각형.*넓이/.test(s) && nums.length >= 2) push(2 * (nums[0] + nums[1]));              // 둘레와 혼동
-  if (/부피/.test(s) && nums.length >= 3) push(2 * (nums[0] * nums[1] + nums[1] * nums[2] + nums[2] * nums[0])); // 겉넓이와 혼동
+  if (/부피|쌓기나무/.test(s) && nums.length >= 3) {
+    push(2 * (nums[0] * nums[1] + nums[1] * nums[2] + nums[2] * nums[0])); // 겉넓이와 혼동
+    push(nums[0] * nums[1]);                     // 높이를 빼먹고 밑면만
+    push(nums[1] * nums[2]);
+    push(nums[0] + nums[1] + nums[2]);           // 곱셈 대신 덧셈
+  }
   if (/겉넓이/.test(s) && nums.length >= 3) push(nums[0] * nums[1] * nums[2]);                  // 부피와 혼동
   if (/원주(?!율)/.test(s) && nums.length >= 1) { push(a / 2); push(a * 2); push(nums[0] * nums[0] * 3.14); }
   if (/원의 넓이/.test(s) && nums.length >= 1) { push(nums[0] * 2 * 3.14); push(a * 2); push(a / 2); }
@@ -213,6 +218,14 @@ function keywordMistakes(q, ans) {
     push(nums[nums.length - 1] + d1 * 2);
   }
   if (/대각선/.test(s) && nums.length >= 1) { push(a + 1); push(a - 1); push(a * 2); }
+  // "10000원짜리 N장, 1000원짜리 M장, 100원짜리 K개" — 자릿값을 한 칸 밀어 쓰는 실수
+  if (/원짜리/.test(s) && /장/.test(s) && nums.length >= 4) {
+    const [u1, c1, u2, c2, u3, c3] = nums;
+    push(c1 * u2 + c2 * u1);                     // 지폐 종류를 맞바꿈
+    if (u3 && c3 != null) push(c1 * u1 + c2 * u2 + c3 * u3 * 10);   // 마지막 단위 한 칸 위
+    push(c1 * u1 + c2 * u2);                     // 마지막 항을 빠뜨림
+    push((c1 + c2 + (c3 || 0)) * u2);            // 장수만 더해 한 단위로
+  }
   if (/몇 개/.test(s) && /꼭짓점|모서리|면/.test(s)) { push(a + 2); push(a - 2); push(a * 2); }
   return out;
 }

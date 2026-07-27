@@ -9,7 +9,8 @@
 //   ⑤ 오답노트 라운드로빈 — 오래된 오답이 굶지 않는가
 //   ⑥ 구버전 노트(v1) 마이그레이션
 //   ⑦ 시간 초과가 오답으로 기록되는가
-//   ⑧ 유형별 제한시간
+//   ⑧ 최장 문항이 작은 화면에서 보기를 밀어내지 않는가
+//   ⑨ 유형별 제한시간 (길이 비례 보정 포함)
 //
 // 사용: node tools/qa-learning.mjs [포트=8937] [학기=5-1]
 
@@ -206,7 +207,39 @@ try {
   ok(/learnLoop\.recordWrong/.test(toBody), "handleTimeOut이 recordWrong 호출 (구버전은 기록 없이 넘어감)");
   ok(/getSolutionHint/.test(toBody), "시간 초과에도 풀이 힌트 표시");
 
-  // ── ⑧ 유형별 제한시간 ──
+  // ── ⑧ 최장 문항이 작은 화면에서 보기를 밀어내지 않는가 ──
+  // 실측(2026-07-27): 740×300에서 66자 문항이 보기 4개를 전부 뷰포트 밖으로 밀어냈다.
+  // modal-content가 overflow-y:auto라 "스크롤하면 보이긴" 했지만, 제한시간이 도는 중에
+  // 초등학생이 모달을 스크롤할 거라 기대하면 안 된다 → 무조건 시간 초과.
+  console.log(`\n[⑧ 최장 문항 가독성 — 작은 가로화면]`);
+  for (const [w, h, label] of [[740, 300, "phone-small"], [905, 360, "galaxy-real"]]) {
+    await page.setViewport({ width: w, height: h });
+    await new Promise((r) => setTimeout(r, 500));
+    const r = await page.evaluate(async (sem) => {
+      const list = (await import(`./problems/grade${sem}.js`)).default;
+      const longest = list.reduce((a, c) => (c.q.length > a.q.length ? c : a));
+      const ui = await import("./ui.js");
+      ui.showMathProblemUI(longest, [longest.a, ...longest.d], () => {});
+      await new Promise((r) => setTimeout(r, 300));
+      const box = document.getElementById("mathOptions");
+      const br = box.getBoundingClientRect();
+      const qr = document.getElementById("mathQuestion").getBoundingClientRect();
+      document.getElementById("mathModal").classList.remove("show");
+      return {
+        len: longest.q.length,
+        optsVisible: br.bottom <= window.innerHeight + 1 && br.top >= -1,
+        optCount: box.querySelectorAll(".math-option").length,
+        overflowPx: Math.round(Math.max(0, br.bottom - window.innerHeight)),
+        qVisible: qr.top >= -1 && qr.height > 10,
+      };
+    }, SEM);
+    ok(r.optsVisible && r.optCount === 4,
+      `${label} ${w}×${h} — 최장 ${r.len}자 문항에서 보기 4개 모두 화면 안 (넘침 ${r.overflowPx}px)`);
+    ok(r.qVisible, `${label} — 질문도 화면 안에 표시`);
+  }
+  await page.setViewport({ width: 1366, height: 768 });
+
+  // ── ⑨ 유형별 제한시간 ──
   console.log(`\n[⑧ 유형(t) 분포]`);
   const times = await page.evaluate(async (sem) => {
     const list = (await import(`./problems/grade${sem}.js`)).default;
@@ -216,6 +249,10 @@ try {
   }, SEM);
   console.log(`  ${JSON.stringify(times)}`);
   ok(Object.keys(times).length >= 3, "시간등급 3종류 이상 (유형별 차등 제한시간)");
+  // v7: 같은 유형 안에서도 문장이 길면 읽는 시간을 더 준다
+  const src2 = await page.evaluate(async () => (await fetch("./main.js")).text());
+  ok(/READ_MS_PER_CHAR_LOW/.test(src2) && /problemTimeLimit/.test(src2),
+    "제한시간이 문항 길이에 비례해 늘어남 (긴 문장제가 '못 읽어서' 틀리지 않게)");
 
   console.log(`\n${"=".repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
   await cleanup(fail > 0 ? 1 : 0);
