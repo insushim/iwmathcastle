@@ -9,11 +9,16 @@
 import { writeFileSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { buildDistractors } from "../distractors.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 // ---------- 시드 RNG (재현 가능) ----------
-let seed = 20260724;
+// v7: 학기마다 시드를 리셋한다. 예전에는 시드가 학기를 가로질러 이어져서
+//     한 학기의 템플릿을 하나만 건드려도 이후 모든 학기의 문제가 통째로 바뀌었다.
+//     (문장제를 1학기에 추가하려면 8개 학기가 전부 새 문제로 갈아엎히는 구조)
+const BASE_SEED = 20260724;
+let seed = BASE_SEED;
 function rnd() {
   seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
   let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
@@ -47,6 +52,9 @@ function hasBatchim(word) {
 const wa = (w) => (hasBatchim(w) ? "과" : "와");
 const eul = (w) => (hasBatchim(w) ? "을" : "를");
 const iga = (w) => (hasBatchim(w) ? "이" : "가");
+// v7: 은/는 하드코딩으로 "모서리은" 18문항이 나가던 버그 수정 (감사 실측)
+const eunNeun = (w) => (hasBatchim(w) ? "은" : "는");
+const euro = (w) => (hasBatchim(w) && !w.endsWith("ㄹ") ? "으로" : "로");
 // 숫자(또는 숫자로 끝나는 표기: "8/18", "3:5") 뒤 조사 — 마지막 숫자의 한국어 읽기 받침
 const DIGIT_BATCHIM = { 0: true, 1: true, 2: false, 3: true, 4: false, 5: false, 6: true, 7: true, 8: true, 9: false };
 function lastDigitBatchim(x) {
@@ -59,88 +67,17 @@ const numEul = (x) => (lastDigitBatchim(x) ? "을" : "를");
 const ITEMS = ["사과", "연필", "구슬", "딸기", "지우개", "공책", "색종이", "붕어빵", "블록", "동전", "스티커", "장난감", "쿠키", "도토리", "밤"];
 const NAMES = ["민준", "서연", "지호", "하은", "도윤", "수아", "예준", "지우"];
 
-// ---------- 오답(distractor) 생성 — 답 형식별 "그럴싸한 실수" 기반 ----------
-function makeDistractors(q, a) {
-  const out = [];
-  const add = (v) => {
-    if (v == null) return;
-    const s = String(v);
-    if (s === String(a) || out.includes(s)) return;
-    if (s.includes("/")) {
-      const [n, d] = s.split("/").map(Number);
-      if (!(n > 0 && d > 0)) return;
-    } else {
-      const n = Number(s);
-      if (!isFinite(n) || n <= 0) return;
-    }
-    out.push(s);
-  };
-
-  if (String(a).includes("/")) {
-    const [n, d] = String(a).split("/").map(Number);
-    if (isFinite(n) && isFinite(d) && d > 0) {
-      add(`${n + 1}/${d}`);
-      add(`${n - 1}/${d}`);
-      add(`${n}/${d + 1}`);
-      add(`${n}/${d - 1}`);
-      if (n !== d) add(`${d}/${n}`);
-      const m = String(q).match(/(\d+)\/(\d+)\s*([+\-×÷])\s*(\d+)\/(\d+)/);
-      if (m) {
-        const n1 = +m[1], d1 = +m[2], op = m[3], n2 = +m[4], d2 = +m[5];
-        if (op === "+" || op === "-") add(`${n1 + n2}/${d1 + d2}`);
-        if (op === "×") { add(`${n1 + n2}/${d1 + d2}`); add(`${n1 * n2}/${d1 + d2}`); }
-      }
-      add(`${n + 2}/${d}`);
-      add(`${n}/${d + 2}`);
-    }
-  } else if (String(a).includes(".")) {
-    const num = Number(a);
-    const dec = (String(a).split(".")[1] || "").length;
-    const fx = (v) => v.toFixed(dec);
-    if (isFinite(num)) {
-      const step = 1 / Math.pow(10, dec);
-      add(fx(num + step));
-      add(fx(num - step));
-      add(fx(num + step * 10));
-      add(fx(num - step * 10));
-      add(fx(num * 10));
-      add(fx(num / 10));
-      add(String(Math.round(num)));
-    }
-  } else {
-    const num = Number(a);
-    if (isFinite(num) && Number.isInteger(num)) {
-      const mMul = String(q).match(/(\d+)\s*×\s*(\d+)/);
-      const mAdd = String(q).match(/(\d+)\s*\+\s*(\d+)/);
-      const mSub = String(q).match(/(\d+)\s*[-−]\s*(\d+)/);
-      if (mMul) {
-        const x = +mMul[1], y = +mMul[2];
-        add(x + y);
-        add(x * (y - 1));
-        add(x * (y + 1));
-      } else if (mAdd) {
-        const x = +mAdd[1], y = +mAdd[2];
-        add(Math.abs(x - y));
-        add(num + 10); add(num - 10);
-      } else if (mSub) {
-        const x = +mSub[1], y = +mSub[2];
-        add(x + y);
-        add(num + 10); add(num - 10);
-      }
-      const mag = num >= 100 ? 10 : num >= 30 ? 5 : 1;
-      add(num + 1); add(num - 1);
-      add(num + mag); add(num - mag);
-      add(num + 2); add(num - 2);
-    }
-  }
-  return out.slice(0, 6);
-}
-
 // ---------- 생성 프레임워크 ----------
 // templates: [fn, quota, timeClass] — fn이 p.d를 직접 주면 그 오답을 존중(개념 판별형)
 function buildSemester(templates, target) {
   const seen = new Set();
   const out = [];
+  // 정답 크기 순위를 0~3에 고르게 배분 — "가운데 찍기"를 무력화하는 핵심 장치.
+  // 고정 회전(i%4) 대신 "지금까지 가장 적게 쓴 순위"를 목표로 준다.
+  // 답이 작아 아래쪽 오답을 못 만드는 문항(예: 답이 2)이 섞여도 총량이 자기교정된다.
+  const rankTally = [0, 0, 0, 0];
+  const nextTarget = () => rankTally.indexOf(Math.min(...rankTally));
+
   for (const [fn, quota, tClass] of templates) {
     let made = 0, attempts = 0;
     while (made < quota && attempts < quota * 60) {
@@ -152,8 +89,16 @@ function buildSemester(templates, target) {
       const aNum = Number(p.a);
       // 답 0·음수 금지 (분수·비율·커스텀 오답형 제외) — v6: ":" 답(비율)이 NaN으로 전량 탈락하던 버그 수정
       if (!p.a.includes("/") && !p.a.includes(":") && !p.d && (!isFinite(aNum) || aNum <= 0)) continue;
+
+      if (!p.d) {
+        // p.ctx = 문장제의 연산 맥락 (문제 문자열엔 연산자가 없어 파싱이 안 된다)
+        const { d, rank } = buildDistractors(p.q, p.a, nextTarget(), p.ctx);
+        if (d.length < 3) continue;               // 오답 3개를 못 만들면 문항 자체를 버린다
+        p.d = d;
+        if (rank >= 0) rankTally[rank]++;
+      }
+      delete p.ctx;                               // 출력 파일에는 남기지 않는다
       seen.add(key);
-      if (!p.d) p.d = makeDistractors(p.q, p.a);
       p.t = tClass;
       out.push(p);
       made++;
@@ -161,6 +106,9 @@ function buildSemester(templates, target) {
     if (made < quota * 0.5 && quota > 60)
       console.warn(`  ⚠️ 템플릿 목표 미달: ${made}/${quota} (변형 공간 부족)`);
   }
+  const rTot = rankTally.reduce((a, b) => a + b, 0) || 1;
+  const midPct = ((rankTally[1] + rankTally[2]) / rTot) * 100;
+  if (midPct > 60) console.warn(`  ⚠️ 정답이 가운데 2개에 몰림: ${midPct.toFixed(1)}%`);
   for (let i = out.length - 1; i > 0; i--) {
     const j = Math.floor(rnd() * (i + 1));
     [out[i], out[j]] = [out[j], out[i]];
@@ -208,12 +156,25 @@ const T = {
   unitFracCmp: () => { const a = ri(2, 9); let b = ri(2, 9); if (a === b) return null; return { q: `1/${a}${numWa(a)} 1/${b} 중 더 큰 분수는?`, a: `1/${Math.min(a, b)}` }; },
   // 3-1 소수 첫걸음: 소수 한 자리 크기 비교
   decCmp1: () => {
+    // v7: 구버전은 오답이 정답을 좌우로 감싸 정답이 100% 가운데였다(감사 실측).
+    //     "더 큰/더 작은"을 번갈아 묻고 오답을 한쪽으로 몰아 순위를 4가지로 흩는다.
     const a = ri(1, 99); let b = ri(1, 99); if (a === b || Math.abs(a - b) > 40) return null;
     const A = decStr(a, 1), B = decStr(b, 1);
     if (!A.includes(".") || !B.includes(".")) return null;
-    const ans = a > b ? A : B, other = a > b ? B : A;
-    const hi = Math.max(a, b);
-    return { q: `${A}${numWa(A)} ${B} 중 더 큰 수는?`, a: ans, d: [other, decStr(hi + 1, 1), decStr(Math.max(1, Math.min(a, b) - 1), 1)].filter((v, i, arr) => v !== ans && arr.indexOf(v) === i) };
+    const askBig = rnd() < 0.5;
+    const hi = Math.max(a, b), lo = Math.min(a, b);
+    const ansI = askBig ? hi : lo;
+    const ans = decStr(ansI, 1), other = decStr(askBig ? lo : hi, 1);
+    const up = [decStr(ansI + 3, 1), decStr(ansI + 12, 1)];
+    const dn = [decStr(ansI - 3, 1), decStr(ansI - 12, 1)].filter((v) => Number(v) > 0);
+    if (dn.length < 2) return null;
+    const spread = rnd() < 0.5;
+    const extra = askBig
+      ? (spread ? [dn[0], dn[1]] : [dn[0], up[0]])   // other가 아래 → 정답 순위 3 또는 2
+      : (spread ? [up[0], up[1]] : [up[0], dn[0]]);  // other가 위   → 정답 순위 0 또는 1
+    const d = [...new Set([other, ...extra])].filter((v) => v !== ans);
+    if (d.length < 3) return null;
+    return { q: `${A}${numWa(A)} ${B} 중 더 ${askBig ? "큰" : "작은"} 수는?`, a: ans, d: d.slice(0, 3) };
   },
   // 3-2 들이·무게
   literConv: () => { const L = ri(1, 9), m = ri(0, 19) * 50; return { q: `${L}L ${m ? m + "mL" : ""} = 몇 mL?`.replace("  ", " "), a: String(L * 1000 + m) }; },
@@ -364,7 +325,7 @@ const T = {
     const solid = rnd() < 0.5 ? "직육면체" : "정육면체";
     const part = pick([["면", 6], ["모서리", 12], ["꼭짓점", 8]]);
     const others = [6, 12, 8].filter((v) => v !== part[1]);
-    return { q: `${solid}의 ${part[0]}은 모두 몇 개?`, a: String(part[1]), d: others.map(String) };
+    return { q: `${solid}의 ${part[0]}${eunNeun(part[0])} 모두 몇 개?`, a: String(part[1]), d: others.map(String) };
   },
   changeWord: () => { const it = pick(ITEMS), a = ri(3, 9), b = ri(100, 900), c = ri(50, 500); if (b * a <= c) return null; return { q: `${it} ${b}원짜리 ${a}개를 사고 ${b * a + c}원을 내면 거스름돈은?`, a: String(c) }; },
   // 6-1
@@ -393,10 +354,16 @@ const T = {
   ratio: () => {
     const g = ri(2, 8), a0 = ri(1, 9); let b0 = ri(1, 9);
     if (a0 === b0 || gcd(a0, b0) !== 1) return null;
-    // 오답: 뒤집기 / 한쪽 ±1 / 덜 약분 (비율 답은 makeDistractors가 못 만들므로 직접 제공)
-    const ds = [`${b0}:${a0}`, `${a0 + 1}:${b0}`, `${a0}:${b0 + 1}`];
-    if (g % 2 === 0) ds.push(`${a0 * 2}:${b0 * 2}`);
-    return { q: `${a0 * g}:${b0 * g}${numEul(b0 * g)} 가장 간단한 비로 나타내면? (A:B)`, a: `${a0}:${b0}`, d: ds.filter((v, i, arr) => v !== `${a0}:${b0}` && arr.indexOf(v) === i) };
+    // 오답: 뒤집기 / 한쪽 ±1 / 덜 약분 (비율 답은 크기 순서가 없어 순위 통제 대상이 아니다)
+    // ⚠️ 정확히 3개만 — 4개 이상 담으면 main.js가 무작위로 3개만 뽑는다(검증기 게이트)
+    const pool = [`${b0}:${a0}`, `${a0 + 1}:${b0}`, `${a0}:${b0 + 1}`, `${a0 * 2}:${b0 * 2}`];
+    if (a0 > 1) pool.push(`${a0 - 1}:${b0}`);
+    const uniq = pool.filter((v, i, arr) => v !== `${a0}:${b0}` && arr.indexOf(v) === i);
+    if (uniq.length < 3) return null;
+    const off = g % uniq.length;   // 문항마다 조합을 돌려 변형 확보
+    const ds = Array.from({ length: 3 }, (_, i) => uniq[(off + i) % uniq.length]);
+    if (new Set(ds).size < 3) return null;
+    return { q: `${a0 * g}:${b0 * g}${numEul(b0 * g)} 가장 간단한 비로 나타내면? (A:B)`, a: `${a0}:${b0}`, d: ds };
   },
   proportion: () => { const a = ri(2, 12), b = ri(2, 12), k = ri(2, 9); if (a === b) return null; return { q: `${a}:${b} = ${a * k}:□, □는?`, a: String(b * k) }; },
   propShare: () => { const a = ri(1, 7); let b = ri(1, 7); if (a === b || gcd(a, b) !== 1) return null; const u = ri(2, 30); const total = (a + b) * u; return { q: `${total}개${eul("개")} ${a}:${b}로 나누면 큰 쪽은 몇 개?`, a: String(Math.max(a, b) * u) }; },
@@ -412,7 +379,7 @@ const T = {
     const val = isPrism
       ? { 꼭짓점: 2 * n, 모서리: 3 * n, 면: n + 2 }[part]
       : { 꼭짓점: n + 1, 모서리: 2 * n, 면: n + 1 }[part];
-    return { q: `${solid}의 ${part}은 모두 몇 개?`, a: String(val) };
+    return { q: `${solid}의 ${part}${eunNeun(part)} 모두 몇 개?`, a: String(val) };
   },
   circumference: () => {
     if (rnd() < 0.5) { const r = ri(2, 15); return { q: `반지름 ${r}cm인 원의 원주는? (원주율 3.14)`, a: decStr(628 * r, 2) }; }
@@ -435,12 +402,100 @@ const T = {
       : { q: `밑면의 지름이 ${r * 2}cm인 ${solid}의 밑면 반지름은? (cm)`, a: String(r) };
   },
   // 문장제 모음
-  wordSum: () => { const it = pick(ITEMS), a = ri(115, 480), b = ri(115, 480); return { q: `${it} ${a}개와 ${b}개를 합치면 모두 몇 개?`, a: String(a + b) }; },
-  wordDiff: () => { const it = pick(ITEMS), a = ri(300, 900), b = ri(100, a - 50); return { q: `${it} ${a}개에서 ${b}개를 팔면 남은 개수는?`, a: String(a - b) }; },
-  wordGroup: () => { const it = pick(ITEMS), a = ri(12, 60), b = ri(2, 9); return { q: `한 상자에 ${it} ${a}개씩 ${b}상자면 모두 몇 개?`, a: String(a * b) }; },
-  wordTimes: () => { const nm = pick(NAMES), it = pick(ITEMS), a = ri(15, 99), b = ri(11, 30); return { q: `${nm}${iga(nm)} ${it}${eul(it)} 하루에 ${a}개씩 ${b}일 모으면 모두 몇 개?`, a: String(a * b) }; },
-  wordShare: () => { const it = pick(ITEMS), b = ri(11, 25), q0 = ri(3, 20); const a = b * q0; return { q: `${it} ${a}개${eul("개")} ${b}명에게 똑같이 나누면 한 명당 몇 개?`, a: String(q0) }; },
+  wordSum: () => { const it = pick(ITEMS), a = ri(115, 480), b = ri(115, 480); return { q: `${it} ${a}개와 ${b}개를 합치면 모두 몇 개?`, a: String(a + b), ctx: { x: a, y: b, op: "+" } }; },
+  wordDiff: () => { const it = pick(ITEMS), a = ri(300, 900), b = ri(100, a - 50); return { q: `${it} ${a}개에서 ${b}개를 팔면 남은 개수는?`, a: String(a - b), ctx: { x: a, y: b, op: "-" } }; },
+  wordGroup: () => { const it = pick(ITEMS), a = ri(12, 60), b = ri(2, 9); return { q: `한 상자에 ${it} ${a}개씩 ${b}상자면 모두 몇 개?`, a: String(a * b), ctx: { x: a, y: b, op: "×" } }; },
+  wordTimes: () => { const nm = pick(NAMES), it = pick(ITEMS), a = ri(15, 99), b = ri(11, 30); return { q: `${nm}${iga(nm)} ${it}${eul(it)} 하루에 ${a}개씩 ${b}일 모으면 모두 몇 개?`, a: String(a * b), ctx: { x: a, y: b, op: "×" } }; },
+  wordShare: () => { const it = pick(ITEMS), b = ri(11, 25), q0 = ri(3, 20); const a = b * q0; return { q: `${it} ${a}개${eul("개")} ${b}명에게 똑같이 나누면 한 명당 몇 개?`, a: String(q0), ctx: { x: a, y: b, op: "÷" } }; },
   wordPercent: () => { const nm = pick(NAMES); const total = ri(4, 40) * 25; const p = pick([20, 25, 40, 50, 60, 75, 80]); const v = (total * p) / 100; if (v !== Math.floor(v)) return null; return { q: `${nm}${iga(nm)} ${total}쪽인 책의 ${p}%를 읽으면 몇 쪽?`, a: String(v) }; },
+
+  // ============================================================
+  // v7: 1학기 문장제 (3-1·4-1·5-1·6-1은 문장제가 0문항이었다 — 감사 실측)
+  //   실제 수학 능력의 전이는 문장제에서 일어난다. 2학기 문장제와 문장 골격이
+  //   겹치지 않도록 소재·서술을 달리한다(학기 간 중복 방지).
+  //   ⚠️ 각 학기의 금지 키워드(problem-validator FORBIDDEN)를 피해야 한다.
+  // ============================================================
+  // --- 3-1: 세 자리 ±, (두 자리)×(한 자리), 길이·시간 ---
+  w31Add: () => {
+    const nm = pick(NAMES), it = pick(ITEMS), a = ri(120, 580), b = ri(110, 400);
+    return { q: `${nm}${iga(nm)} ${it}${eul(it)} ${a}개 가지고 있다가 ${b}개를 더 모았어요. 모두 몇 개?`, a: String(a + b), ctx: { x: a, y: b, op: "+" } };
+  },
+  w31Sub: () => {
+    const it = pick(ITEMS), a = ri(350, 980), b = ri(120, a - 100);
+    return { q: `바구니에 ${it}${iga(it)} ${a}개 있었어요. ${b}개를 꺼내면 몇 개 남을까요?`, a: String(a - b), ctx: { x: a, y: b, op: "-" } };
+  },
+  w31Mul: () => {
+    const it = pick(ITEMS), a = ri(12, 89), b = ri(2, 9);
+    return { q: `한 봉지에 ${it}${iga(it)} ${a}개씩 들어 있어요. ${b}봉지면 모두 몇 개?`, a: String(a * b), ctx: { x: a, y: b, op: "×" } };
+  },
+  w31Time: () => {
+    const nm = pick(NAMES), h = ri(1, 4), m = ri(1, 11) * 5;
+    return { q: `${nm}${iga(nm)} ${h}시간 ${m}분 동안 책을 읽었어요. 모두 몇 분?`, a: String(h * 60 + m) , ctx: { x: h, y: m, op: "+" } };
+  },
+  // --- 4-1: (세 자리)×(두 자리), ÷(두 자리), 큰 수, 각도 ---
+  w41Mul: () => {
+    const it = pick(ITEMS), a = ri(105, 480), b = ri(12, 45);
+    return { q: `한 상자에 ${it}${iga(it)} ${a}개씩 담겨 있어요. ${b}상자면 모두 몇 개?`, a: String(a * b), ctx: { x: a, y: b, op: "×" } };
+  },
+  w41Div: () => {
+    const it = pick(ITEMS), b = ri(12, 36), q0 = ri(5, 27); const a = b * q0; if (a > 999) return null;
+    return { q: `${it} ${a}개${eul("개")} ${b}명이 똑같이 나누어 가지면 한 사람이 몇 개씩?`, a: String(q0), ctx: { x: a, y: b, op: "÷" } };
+  },
+  w41Money: () => {
+    const a = ri(2, 9), b = ri(1, 9), c = ri(1, 9);
+    return { q: `10000원짜리 ${a}장, 1000원짜리 ${b}장, 100원짜리 ${c}개면 모두 얼마?`, a: String(a * 10000 + b * 1000 + c * 100) };
+  },
+  w41Angle: () => {
+    const a = ri(30, 90), b = ri(30, 140 - a); const c = 180 - a - b; if (c < 20) return null;
+    return { q: `삼각형 모양 깃발의 두 각이 ${a}°, ${b}°예요. 나머지 한 각은 몇 도?`, a: String(c) };
+  },
+  // --- 5-1: 혼합계산, 약수·배수, 이분모 분수 ± (넓이·평균·비율 단어 금지) ---
+  w51Mixed: () => {
+    const nm = pick(NAMES), it = pick(ITEMS), price = ri(2, 9) * 100, n = ri(2, 8);
+    const paid = price * n + ri(1, 9) * 100;
+    return { q: `${nm}${iga(nm)} ${paid}원을 내고 ${price}원짜리 ${it}${eul(it)} ${n}개 샀어요. 거스름돈은 얼마?`, a: String(paid - price * n), ctx: { x: paid, y: price * n, op: "-" } };
+  },
+  w51Lcm: () => {
+    const a = ri(3, 12); let b = ri(3, 12); if (a === b) return null;
+    const l = lcm(a, b); if (l > 90) return null;
+    return { q: `${a}일마다 오는 버스와 ${b}일마다 오는 버스가 오늘 함께 왔어요. 다음에 함께 오는 날은 며칠 뒤?`, a: String(l) };
+  },
+  w51Frac: () => {
+    const d1 = ri(2, 8); let d2 = ri(2, 8); if (d1 === d2) return null;
+    const n1 = ri(1, d1 - 1), n2 = ri(1, d2 - 1);
+    if (gcd(n1, d1) !== 1 || gcd(n2, d2) !== 1) return null;
+    const L = lcm(d1, d2); const s = n1 * (L / d1) - n2 * (L / d2);
+    if (s <= 0) return null;
+    const [rn, rd] = reduceFrac(s, L);
+    if (rd === 1) return null;
+    return { q: `물통에 물이 ${n1}/${d1} L 있었어요. ${n2}/${d2} L를 쓰면 몇 L 남을까요?`, a: `${rn}/${rd}`, ctx: { x: `${n1}/${d1}`, y: `${n2}/${d2}`, op: "-" } };
+  },
+  w51Group: () => {
+    const it = pick(ITEMS), g = ri(2, 9), n = ri(3, 12);
+    return { q: `${it} ${g * n}개${eul("개")} 한 묶음에 ${g}개씩 담으면 몇 묶음?`, a: String(n), ctx: { x: g * n, y: g, op: "÷" } };
+  },
+  // --- 6-1: 분수 나눗셈, 소수÷자연수, 백분율 (할인·비례식·평균 단어 금지) ---
+  w61FracDiv: () => {
+    // n/d ÷ 1/(d×k) = n×k  — 분모가 배수 관계라 정수 컵 수가 보장된다
+    const d = ri(2, 6), n = ri(1, d - 1), k = ri(2, 7);
+    if (gcd(n, d) !== 1) return null;
+    const cups = n * k;
+    if (cups < 2 || cups > 40) return null;
+    return { q: `주스 ${n}/${d} L를 한 컵에 1/${d * k} L씩 나누어 담으면 몇 컵?`, a: String(cups), ctx: { x: `${n}/${d}`, y: `1/${d * k}`, op: "÷" } };
+  },
+  w61DecDiv: () => {
+    const b = ri(2, 9), q0 = ri(11, 79); const a = b * q0; if (a % 10 === 0) return null;
+    return { q: `리본 ${decStr(a, 1)}m를 ${b}명에게 똑같이 나누면 한 사람이 몇 m?`, a: decStr(q0, 1), ctx: { x: decStr(a, 1), y: b, op: "÷" } };
+  },
+  w61Percent: () => {
+    const nm = pick(NAMES), total = ri(2, 20) * 25, p = pick([20, 24, 40, 60, 76, 80]);
+    const v = (total * p) / 100; if (v !== Math.floor(v) || v < 2) return null;
+    return { q: `${nm}${iga(nm)} 다니는 학교 ${total}명 중 ${p}%가 안경을 써요. 몇 명일까요?`, a: String(v) };
+  },
+  w61Volume: () => {
+    const a = ri(3, 12), b = ri(3, 12), c = ri(2, 9);
+    return { q: `가로 ${a}cm, 세로 ${b}cm, 높이 ${c}cm인 상자를 가득 채우려면 한 모서리가 1cm인 쌓기나무가 몇 개 필요할까요?`, a: String(a * b * c) };
+  },
 };
 
 // ============================================================
@@ -449,8 +504,8 @@ const T = {
 // ============================================================
 const SEMESTERS = {
   "3-1": [
-    [T.add3, 600, 1],
-    [T.sub3, 600, 1],
+    [T.add3, 480, 1],
+    [T.sub3, 480, 1],
     [T.blankAdd, 230, 2],
     [T.blankSub, 230, 2],
     [T.mul2x1, 400, 1],
@@ -459,6 +514,10 @@ const SEMESTERS = {
     [T.timeConv, 150, 3],
     [T.unitFracCmp, 65, 2],
     [T.decCmp1, 90, 2],
+    [T.w31Add, 130, 4],
+    [T.w31Sub, 130, 4],
+    [T.w31Mul, 110, 4],
+    [T.w31Time, 60, 4],
   ],
   "3-2": [
     [T.mul3x1, 460, 1],
@@ -475,9 +534,9 @@ const SEMESTERS = {
     [T.wordGroup, 140, 4],
   ],
   "4-1": [
-    [T.mul3x2, 550, 1],
+    [T.mul3x2, 430, 1],
     [T.mul2x2, 280, 1],
-    [T.divBy2exact, 330, 1],
+    [T.divBy2exact, 250, 1],
     [T.divBy2quotRem, 310, 2],
     [T.bigPlace, 280, 2],
     [T.bigJump, 150, 2],
@@ -485,6 +544,10 @@ const SEMESTERS = {
     [T.triAngle, 200, 3],
     [T.quadAngle, 130, 3],
     [T.arithSeq, 200, 2],
+    [T.w41Mul, 130, 4],
+    [T.w41Div, 130, 4],
+    [T.w41Money, 90, 4],
+    [T.w41Angle, 80, 4],
   ],
   "4-2": [
     [T.sameDenAdd, 400, 2],
@@ -499,17 +562,21 @@ const SEMESTERS = {
     [T.wordShare, 200, 4],
   ],
   "5-1": [
-    [T.mixedExpr, 500, 2],
+    [T.mixedExpr, 380, 2],
     [T.gcdQ, 250, 2],
     [T.lcmQ, 250, 2],
     [T.reduceQ, 250, 2],
-    [T.diffDenAdd, 280, 2],
-    [T.diffDenSub, 250, 2],
+    [T.diffDenAdd, 220, 2],
+    [T.diffDenSub, 200, 2],
     [T.rectArea, 180, 3],
     [T.triArea, 150, 3],
     [T.paraArea, 120, 3],
     [T.trapArea, 120, 3],
     [T.correspond, 150, 2],
+    [T.w51Mixed, 140, 4],
+    [T.w51Lcm, 60, 4],
+    [T.w51Frac, 120, 4],
+    [T.w51Group, 110, 4],
   ],
   "5-2": [
     [T.fracMul, 500, 2],
@@ -523,16 +590,20 @@ const SEMESTERS = {
     [T.wordTimes, 150, 4],
   ],
   "6-1": [
-    [T.fracDiv, 400, 2],
+    [T.fracDiv, 300, 2],
     [T.wholeDivFrac, 250, 2],
     [T.fracDivWhole, 200, 2],
     [T.decDivWhole, 300, 2],
     [T.ratio, 300, 2],
-    [T.percentOf, 350, 2],
-    [T.cuboidVol, 250, 3],
+    [T.percentOf, 270, 2],
+    [T.cuboidVol, 180, 3],
     [T.cuboidSurf, 200, 3],
     [T.prismPyramid, 48, 3],
     [T.mixedHard, 200, 2],
+    [T.w61FracDiv, 60, 4],
+    [T.w61DecDiv, 140, 4],
+    [T.w61Percent, 100, 4],
+    [T.w61Volume, 120, 4],
   ],
   "6-2": [
     [T.decDivDec, 560, 2],
@@ -553,6 +624,8 @@ const SEMESTERS = {
 mkdirSync(join(ROOT, "problems"), { recursive: true });
 const stats = {};
 for (const [sem, templates] of Object.entries(SEMESTERS)) {
+  // v7: 학기마다 시드 리셋 — 한 학기 수정이 다른 학기를 오염시키지 않게 한다
+  seed = BASE_SEED + sem.charCodeAt(0) * 1000 + sem.charCodeAt(2);
   const target = 2400;
   const list = buildSemester(templates, target);
   stats[sem] = list.length;

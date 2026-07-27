@@ -681,16 +681,18 @@ async function initializeGame(difficulty, savedState = null) {
   try {
     await loadGradeProblems(difficulty);
     categorizeAnswers();
-    learnLoop.resetQueue();
-    // v6: 지난 판 오답노트에서 최대 3문항을 웨이브 1~3 복습 퀴즈로 (보너스 골드)
-    if (!savedState) {
-      const seeded = learnLoop.seedReviewFromNote(difficulty);
-      if (seeded > 0)
-        setTimeout(
-          () => showMessage(`📒 지난 판 오답 ${seeded}문제가 복습 퀴즈로 나와요! (맞히면 보너스 골드)`),
-          1200,
+    // v7: 오답노트에서 "예정일이 지난 것부터" 복습 퀴즈 시드 (최대 8문항).
+    //     구버전은 note.slice(0,3) 고정이라 오래된 오답이 영구 미출제였다(감사 실측).
+    const dueToday = learnLoop.dueTodayCount(difficulty);
+    const seeded = learnLoop.startSession(difficulty);
+    if (!savedState && seeded > 0)
+      setTimeout(() => {
+        showMessage(
+          dueToday > 0
+            ? `📒 오늘 복습할 문제 ${dueToday}개 중 ${seeded}개가 나와요! (맞히면 보너스 골드)`
+            : `📒 지난 오답 ${seeded}문제를 다시 확인해 볼까요? (맞히면 보너스 골드)`,
         );
-    }
+      }, 1200);
 
   // v5: 학년별 AI 배경 (없으면 기존 CSS 배경 유지)
   {
@@ -4015,14 +4017,14 @@ function checkAnswer(answer, clickedBtn) {
       let totalGold = simCore.answerReward(
         currentWave, comboResult.multiplier, comboResult.bonusGold,
       );
-      // v6: 오답노트 복습 퀴즈 정답 — 보너스 골드 + 노트에서 제거
+      // v6: 오답노트 복습 퀴즈 정답 — 보너스 골드 (노트 승급은 recordCorrect가 처리)
       if (isNoteReviewProblem && currentProblem) {
         totalGold += 100;
-        learnLoop.clearFromNote(selectedDifficulty, currentProblem.q);
         showMessage("📒 오답노트 복습 성공! 보너스 +100골드");
       }
       // v5: 학습=화력 — 정답 시 마법 쿨다운 30% 감소
-      learnLoop.recordCorrect(isReviewProblem);
+      // v7: 문제를 넘겨야 라이트너 상자 승급(세션 3→7→15 확장, 날짜 1→3→7→16일)이 된다
+      learnLoop.recordCorrect(currentProblem, currentWave, isReviewProblem);
       if (isReviewProblem)
         checkAchievements("review_correct", {
           reviewCleared: learnLoop.stats.reviewCleared,
@@ -4160,8 +4162,17 @@ function handleTimeOut() {
     }
   });
 
-  resultDiv.textContent = `⏰ 시간 초과! 정답은 ${correctAnswer} 입니다.`;
+  // v7: 시간 초과도 오답으로 기록한다. 구버전은 recordWrong을 호출하지 않아
+  //     시간 초과 문제가 재출제 큐·오답노트·통계 어디에도 남지 않았다(감사 실측).
+  //     docs/curriculum-map.md는 "시간 초과 = 오답 처리 + 풀이 힌트"라고 명시하고 있었다.
+  const toHint = learnLoop.getSolutionHint(
+    currentProblem ? currentProblem.q : "",
+    correctAnswer,
+  );
+  resultDiv.textContent = `⏰ 시간 초과! 💡 ${toHint}`;
   resultDiv.style.color = "#ff8c00";
+  if (currentProblem)
+    learnLoop.recordWrong(currentProblem, currentWave, isNoteReviewProblem);
 
   // Penalty: same as wrong answer but slightly less harsh
   gold = Math.max(0, gold - 20);
@@ -4184,7 +4195,7 @@ function handleTimeOut() {
     resultDiv.textContent = "";
     gamePaused = false;
     startWave();
-  }, 2500);
+  }, 4200);   // v7: 풀이 힌트를 읽을 시간 (오답 경로와 동일)
 }
 
 // --- 게임 상태 관리 ---
@@ -4270,7 +4281,7 @@ function checkGameOver() {
         weakLine.style.cssText = "margin-top:4px;font-size:13px;color:#9fc6ff;";
         learnLine.after(weakLine);
       }
-      const weakness = learnLoop.weaknessText();
+      const weakness = learnLoop.weaknessText(selectedDifficulty);
       weakLine.textContent = weakness;
       weakLine.style.display = weakness ? "block" : "none";
 

@@ -134,10 +134,41 @@ function decEq(scaled, sc, ans) {
   return ansScaled * 10 ** (sc - Math.min(sc, ansDec)) === scaled * 10 ** Math.max(0, ansDec - sc);
 }
 
+// ---------- v7 게이트: 찍기 취약성 ----------
+// 정답이 4지선다에서 "가운데 2개"에 몰리면 계산 없이 최대·최소만 버려도 맞는다.
+// 구버전 실측 91.2%(→ 찍기 승률 45.6%). 균등하면 50%(→ 25%).
+const MID_GATE = 60;          // 학기별 상한 (%)
+const rankCount = [0, 0, 0, 0];
+const orderVal = (s) => {
+  const t = String(s);
+  if (/^\d+\/\d+$/.test(t)) { const [n, d] = t.split("/").map(Number); return d ? n / d : null; }
+  if (/^\d+(\.\d+)?$/.test(t)) return Number(t);
+  return null;
+};
+
+// ---------- v7 게이트: 명사 뒤 조사 ----------
+// 기존 조사 검사는 "숫자 뒤"만 봐서 `모서리은` 18문항을 놓쳤다(감사 실측).
+const NOUN_JOSA = ["면", "모서리", "꼭짓점", "대각선", "개수", "넓이", "둘레", "부피", "겉넓이", "원주", "몫", "나머지", "평균", "이름", "지름", "반지름"];
+function nounJosaError(q) {
+  for (const n of NOUN_JOSA) {
+    const bat = (() => { const c = n[n.length - 1].charCodeAt(0); return c >= 0xac00 && c <= 0xd7a3 ? (c - 0xac00) % 28 > 0 : null; })();
+    if (bat === null) continue;
+    for (const [wb, nb] of [["은", "는"], ["이", "가"], ["을", "를"]]) {
+      const wrong = bat ? nb : wb;
+      const idx = q.indexOf(n + wrong);
+      if (idx === -1) continue;
+      const after = q[idx + n.length + 1] || " ";
+      if (!/[가-힣]/.test(after)) return `${n}${wrong} → ${n}${bat ? wb : nb}`;
+    }
+  }
+  return null;
+}
+
 // ---------- 검증 ----------
 let totalErr = 0;
 let grandTotal = 0;
 const positionCount = [0, 0, 0, 0];
+const wordProblemCount = {};
 // 시드 RNG — 정답 위치 분포 시뮬레이션(런타임 shuffleArray 등가)
 let seed = 777;
 function rnd() {
@@ -150,8 +181,10 @@ function rnd() {
 for (const sem of SEMESTERS) {
   const list = (await import(join(ROOT, "problems", `grade${sem}.js`))).default;
   grandTotal += list.length;
-  const errs = { 답오류: [], 학기이탈: [], 자릿수규칙: [], 비정수나눗셈: [], 조사: [], 중복: [], 답범위: [], 선택지부족: [], 시간등급: [] };
+  const errs = { 답오류: [], 학기이탈: [], 자릿수규칙: [], 비정수나눗셈: [], 조사: [], 명사조사: [], 중복: [], 답범위: [], 선택지부족: [], 시간등급: [], 오답과다: [] };
   const seen = new Set();
+  const semRank = [0, 0, 0, 0];
+  wordProblemCount[sem] = 0;
 
   for (const p of list) {
     const { q, a, d, t } = p;
@@ -171,9 +204,26 @@ for (const sem of SEMESTERS) {
       if (re.test(q)) { errs.학기이탈.push(`${q} [${re}]`); break; }
     }
 
+    if (t === 4) wordProblemCount[sem]++;
+
     // 선택지 품질: 정답과 다른 유효 오답 최소 2개(런타임 폴백 1개까지 허용)
     const uniq = new Set((d || []).map(String).filter((x) => x !== String(a)));
     if (uniq.size < 2 && !/[가-힣]/.test(a)) errs.선택지부족.push(`${q} (오답 ${uniq.size}개)`);
+    // v7: 오답을 4개 이상 담으면 런타임이 무작위 3개만 뽑아 순위 통제가 무너진다
+    if (uniq.size > 3) errs.오답과다.push(`${q} (오답 ${uniq.size}개 — main.js가 3개만 씀)`);
+
+    // v7: 명사 뒤 조사 (숫자 뒤 조사 검사가 못 잡는 구간)
+    const nj = nounJosaError(q);
+    if (nj) errs.명사조사.push(`${q} — ${nj}`);
+
+    // v7: 정답의 크기 순위 집계 (찍기 취약성 게이트)
+    {
+      const av = orderVal(a);
+      const ds = (d || []).map(orderVal);
+      if (av !== null && ds.length === 3 && ds.every((v) => v !== null)) {
+        semRank[ds.filter((v) => v < av).length]++;
+      }
+    }
 
     // 조사 오류
     const josaM = [...q.matchAll(/(\d)([가-힣])?(와|과|을|를|이(?=\s)|가(?=\s))(?=[\s,])/g)];
@@ -230,9 +280,14 @@ for (const sem of SEMESTERS) {
     }
   }
 
-  const total = Object.values(errs).reduce((s, l) => s + l.length, 0);
+  let total = Object.values(errs).reduce((s, l) => s + l.length, 0);
+  const rTot = semRank.reduce((x, y) => x + y, 0) || 1;
+  const midPct = ((semRank[1] + semRank[2]) / rTot) * 100;
+  semRank.forEach((v, i) => { rankCount[i] += v; });
+  const midOk = midPct <= MID_GATE;
+  if (!midOk) total++;
   totalErr += total;
-  console.log(`\n=== ${sem} (${list.length}문제) — 오류 ${total}건 ===`);
+  console.log(`\n=== ${sem} (${list.length}문제) — 오류 ${total}건 · 정답이 가운데 2개: ${midPct.toFixed(1)}% ${midOk ? "✅" : `❌ (${MID_GATE}% 초과 — 찍기로 뚫림)`} ===`);
   for (const [k, v] of Object.entries(errs)) {
     if (v.length) {
       console.log(`  ${k}: ${v.length}건`);
@@ -251,6 +306,26 @@ positionCount.forEach((c, i) => {
   console.log(`  ${i + 1}번 위치: ${pct.toFixed(1)}% ${ok ? "✅" : "❌ (25%±2%p 이탈)"}`);
 });
 if (posFail) totalErr++;
+
+// v7 게이트: 정답 크기 순위 분포 (균등하면 각 25%)
+const rkTot = rankCount.reduce((a, b) => a + b, 0) || 1;
+const midAll = ((rankCount[1] + rankCount[2]) / rkTot) * 100;
+console.log(`\n[정답 크기 순위 분포 — 찍기 취약성, n=${rkTot}]`);
+rankCount.forEach((c, i) => console.log(`  ${i + 1}위(작은쪽부터): ${((c / rkTot) * 100).toFixed(1)}%`));
+console.log(`  → 가운데 2개에 정답: ${midAll.toFixed(1)}% (균등 50%) · "가운데 찍기" 기대 승률 ${(midAll / 2).toFixed(1)}%`);
+if (midAll > 55) { console.log(`  ❌ 55% 초과 — 계산 없이 찍어도 ${(midAll / 2).toFixed(1)}% 맞음`); totalErr++; }
+else console.log("  ✅");
+
+// v7 게이트: 모든 학기에 문장제가 있어야 한다 (구버전은 1학기 4개가 0문항)
+console.log(`\n[문장제(t=4) 커버리지]`);
+let wpFail = false;
+for (const sem of SEMESTERS) {
+  const n = wordProblemCount[sem] || 0;
+  const ok = n >= 100;
+  if (!ok) wpFail = true;
+  console.log(`  ${sem}: ${String(n).padStart(4)}문항 ${ok ? "✅" : "❌ (최소 100문항)"}`);
+}
+if (wpFail) totalErr++;
 
 console.log(`\n${"=".repeat(50)}\n[학기 데이터 게이트] 총 ${grandTotal}문항 · 오류 ${totalErr}건`);
 process.exit(totalErr > 0 ? 1 : 0);
