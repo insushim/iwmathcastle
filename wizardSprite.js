@@ -87,6 +87,14 @@ const LEG_OFFSETS_GALLOP = [
 ];
 
 // Casting animation staff raise offsets (6 frames)
+// v7: 걷기 상태 전환 완충값 (사용자 신고 "마법사가 깜빡거리네" 대응)
+// COAST — 이동 입력이 끊긴 뒤 걷기 포즈를 유지할 시간. 키를 끊어 누르는
+//   실제 조작(누름 120ms / 뗌 120ms 반복)에서 포즈가 뒤집히지 않을 만큼은 길고,
+//   진짜로 멈췄을 때 대기 포즈로 넘어가는 게 굼떠 보이지 않을 만큼은 짧아야 한다.
+// BLEND — 부유 높이·기울기가 두 상태 사이를 건너가는 데 걸리는 시간.
+const WALK_COAST_MS = 180;
+const WALK_BLEND_MS = 160;
+
 const CAST_FRAMES = [
   { staffRaise: 0, robeFlutter: 0, glowMult: 1 },
   { staffRaise: -4, robeFlutter: 1, glowMult: 1.5 },
@@ -113,6 +121,15 @@ export class WizardSprite {
     this._idleTimer = 0;
     this._idleBob = 0;
     this._galloping = false;
+    // v7: 걷기↔대기 하드 전환으로 마법사가 깜빡이던 문제
+    // (사용자 신고 2026-07-27: "마법사가 깜빡거리네").
+    //  _moveInput  = 이번 프레임에 이동 입력이 있었나
+    //  _walkCoastMs = 입력이 끊겨도 걷기 상태를 유지할 잔여 시간
+    //  _walkBlend  = 0(대기)~1(걷기) 사이를 오가는 연속값. 부유 높이·기울기를
+    //                이 값으로 섞어 포즈가 바뀔 때 좌표가 튀지 않게 한다.
+    this._moveInput = false;
+    this._walkCoastMs = 0;
+    this._walkBlend = 0;
 
     // Animation timing
     this._walkFrameMs = 120;
@@ -219,11 +236,17 @@ export class WizardSprite {
    */
   setDirection(dx, dy) {
     if (dx === 0 && dy === 0) {
-      this._walking = false;
+      // 즉시 idle로 되돌리지 않는다. 실제 조작은 키를 짧게 끊어 누르기 때문에
+      // 매 프레임 walk↔idle이 뒤집히고, 두 포즈의 부유 높이·기울기가 달라
+      // 마법사가 위아래로 튀며 깜빡이는 것처럼 보였다(실측: 71프레임 중 26회 교체).
+      // 걷기 상태는 update()의 코스트 타이머가 끈다.
+      this._moveInput = false;
       this._galloping = false;
       return;
     }
+    this._moveInput = true;
     this._walking = true;
+    this._walkCoastMs = WALK_COAST_MS;
 
     // Map dx,dy to 8 directions
     let newDir = this._direction;
@@ -279,6 +302,21 @@ export class WizardSprite {
    * @param {number} deltaTime - milliseconds since last frame
    */
   update(deltaTime) {
+    // v7: 걷기 코스트 — 입력이 끊긴 뒤에도 잠깐은 걷는 포즈를 유지한다.
+    if (!this._moveInput) {
+      this._walkCoastMs -= deltaTime;
+      if (this._walkCoastMs <= 0) {
+        this._walkCoastMs = 0;
+        this._walking = false;
+      }
+    }
+    // 포즈가 바뀌어도 높이·기울기는 이 값을 따라 연속적으로 움직인다.
+    const target = this._walking ? 1 : 0;
+    const step = deltaTime / WALK_BLEND_MS;
+    const diff = target - this._walkBlend;
+    this._walkBlend += Math.max(-step, Math.min(step, diff));
+    this._walkBlend = Math.max(0, Math.min(1, this._walkBlend));
+
     // Glow pulse
     this._glowTimer = (this._glowTimer + deltaTime) % this._glowCycleMs;
 
@@ -651,9 +689,15 @@ export class WizardSprite {
     if (poseSprite) {
       // v5.1: 살아있는 마법사 — 부유 바운스 + 좌우 스웨이 + 시전 팝 + 발밑 마법진 펄스
       const t = performance.now() / 1000;
-      // 걷는 중엔 스프라이트가 다리 모션을 담당 → 부유 바운스·스웨이 최소화
-      const floatY = walking ? Math.abs(Math.sin(t * 9)) * -2 : Math.sin(t * 2.2) * 4;
-      const sway = walking ? 0 : Math.sin(t * 1.1) * 0.04;
+      // 걷는 중엔 스프라이트가 다리 모션을 담당 → 부유 바운스·스웨이 최소화.
+      // v7: 두 값을 walkBlend로 섞는다. 예전엔 walking 불리언으로 즉시 갈아탔는데,
+      // 대기(+4px 부유·기울기 0.04rad)와 걷기(-2px·0rad)의 차이가 커서 전환 순간
+      // 마법사가 최대 6px 튀며 깜빡이는 것처럼 보였다.
+      const wb = this._walkBlend;
+      const floatWalk = Math.abs(Math.sin(t * 9)) * -2;
+      const floatIdle = Math.sin(t * 2.2) * 4;
+      const floatY = floatIdle * (1 - wb) + floatWalk * wb;
+      const sway = Math.sin(t * 1.1) * 0.04 * (1 - wb);
       const castPop = this._casting ? 1.12 : 1;
 
       // 발밑 마법진 (은은한 펄스 — transform·arc만 사용, 웨일북 예산 내)
