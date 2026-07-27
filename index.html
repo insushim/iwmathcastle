@@ -17,16 +17,13 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="수학성">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Orbitron:wght@400;700;900&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+    <!-- v7: 웹폰트 자체 호스팅. 구버전은 fonts.googleapis.com에서 받아 왔는데,
+         그러면 게임을 여는 모든 아이의 IP가 제3자(Google)로 전송된다. Do Hyeon·Orbitron은
+         합쳐 286KB라 자체 호스팅이 싸고, Noto Sans KR은 10.3MB라 시스템 한글 폰트로 대체했다
+         (Apple SD Gothic Neo / Malgun Gothic / 안드로이드 Noto — 실기기에선 거의 동일하게 보인다). -->
+    <link rel="stylesheet" href="assets/fonts/fonts.css">
     <link rel="stylesheet" href="style.css">
-    <script>
-      // v6: 구 배포 주소(GitHub Pages)는 랭킹 API가 없음 — 정식 주소로 자동 이동
-      if (location.hostname.endsWith("github.io")) {
-        location.replace("https://mathcastle.pages.dev" + location.search);
-      }
-    </script>
+    <script src="boot.js"></script>
 </head>
 <body>
     <div id="game-content">
@@ -95,6 +92,11 @@
                         <span class="btn-icon">⚙️</span> 설정
                     </button>
                 </div>
+                <!-- v7: 개인정보 미수집 고지 (불특정 다수 초등학생 공개 대비) -->
+                <p class="menu-privacy">
+                    이 게임은 이름·나이·학교 등 개인정보를 수집하지 않아요.
+                    <a href="privacy.html" target="_blank" rel="noopener">자세히</a>
+                </p>
             </div>
         </div>
 
@@ -233,7 +235,14 @@
                         <span class="stat-value" id="finalCombo">0</span>
                     </div>
                 </div>
-                <input type="text" id="playerNameInput" class="name-input" placeholder="이름을 입력하세요 (10자 이내)" maxlength="10" aria-label="플레이어 이름">
+                <!-- v7: 자유 입력 폐지. "이름을 입력하세요"는 초등학생에게 실명을 쓰게 만들고,
+                     그 실명이 공개 랭킹에 게시된다. 이제 닉네임을 뽑아 쓰기만 한다. -->
+                <div class="nick-row">
+                    <span class="nick-label">내 닉네임</span>
+                    <output class="nick-value" id="playerNickname" aria-live="polite">—</output>
+                    <button type="button" class="nick-reroll" id="rerollNickBtn">🎲 다시 뽑기</button>
+                </div>
+                <p class="nick-note">랭킹에는 이 닉네임만 올라가요. 진짜 이름은 쓰지 않아요 🙂</p>
                 <div class="modal-actions">
                     <button class="modal-btn primary" id="submitScoreBtn">점수 등록</button>
                     <button class="modal-btn" id="retryStageBtn">🔁 스테이지부터 다시</button>

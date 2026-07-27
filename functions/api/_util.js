@@ -43,19 +43,16 @@ export function maxScoreForWave(wave) {
   return Math.floor(9500 * wave + 375 * wave * wave + 10000);
 }
 
-// ---------- 이름 필터 (치트 방어 ④ — 초등 배포 필수) ----------
-const BANNED_SUBSTRINGS = [
-  // 욕설·비속어
-  "시발", "씨발", "씨빨", "쉬발", "병신", "새끼", "개새", "좆", "지랄", "븅신",
-  "ㅅㅂ", "ㅄ", "ㅂㅅ", "꺼져", "닥쳐", "섹스", "야동", "자지", "보지", "따먹",
-  "fuck", "shit", "bitch", "sex",
-  // 교사·운영자 사칭
-  "선생님", "선생", "쌤", "교장", "교감", "담임", "관리자", "운영자", "admin", "어드민",
-];
+// ---------- 이름 검증 (v7: 블랙리스트 → 화이트리스트) ----------
+// 2026-07-27, 불특정 다수 초등학생 공개 대비로 자유 입력을 폐지했다.
+// 구버전은 금지어 22개를 부분문자열로 걸렀는데, 초성 변형(ㅆㅂ)·자모 분리·영어 우회,
+// 그리고 무엇보다 "타인 실명 + 비하"(○○○바보) 조합을 원리적으로 못 막는다.
+// 이제 클라이언트는 nickname.js 목록으로 만든 조합만 보내고, 서버는 그 목록으로
+// 만들 수 있는 문자열만 받는다 — API를 직접 호출해도 같은 관문을 지난다.
+export { isGeneratedNick } from "../../nickname.js";
 
-// 교차검증 수정(2026-07-24, codex): 전각문자(ａｄｍｉｎ)·제로폭(선<ZWSP>생님)으로 필터가
-// 즉시 우회됐다. NFKC 정규화 + 제로폭/제어문자 제거를 "저장값"에도 적용해야
-// 주간·월간 GROUP BY name 도배까지 함께 막힌다.
+// 화이트리스트가 제로폭·전각 우회를 이미 막지만(목록에 없는 문자는 곧 불일치),
+// 정규화는 유지한다 — 주·월간 GROUP BY name 집계가 표기 차이로 갈라지지 않게.
 const ZERO_WIDTH = /[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff\u00ad]/g;
 
 export function normalizeName(name) {
@@ -66,12 +63,17 @@ export function normalizeName(name) {
     .trim();
 }
 
-export function isNameAllowed(name) {
-  const norm = normalizeName(name)
-    .toLowerCase()
-    .replace(/[\s\-_.·~!@#$%^&*()+=]/g, "");
-  if (!norm) return false;
-  return !BANNED_SUBSTRINGS.some((b) => norm.includes(b));
+// ---------- IP 해시 (개인정보 최소화) ----------
+// 레이트리밋에 필요한 건 "같은 출처인가"뿐이고 IP 원문은 필요 없다. 원문 대신
+// 일자별 솔트를 섞은 SHA-256 앞 8바이트를 저장한다 — 행은 1시간 뒤 삭제되고,
+// 날짜가 바뀌면 같은 IP도 다른 값이 되어 장기 추적이 불가능하다.
+// (submit_log는 어떤 응답에도 실리지 않는다. 저장 자체를 줄이는 조치다.)
+export async function hashIp(ip, dayKey = kstDayKey()) {
+  const data = new TextEncoder().encode(`mathcastle:rl:${dayKey}:${ip}`);
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(buf).slice(0, 8))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 // ---------- 유효 학기 값 ----------

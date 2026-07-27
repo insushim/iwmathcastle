@@ -9,9 +9,10 @@ import {
   weekKeyOf,
   monthKeyOf,
   maxScoreForWave,
-  isNameAllowed,
+  isGeneratedNick,
   normalizeName,
   normalizeDifficulty,
+  hashIp,
 } from "./_util.js";
 
 // 세션 토큰 수명 캡: 사전 발급해 쌓아두는 우회의 효용 제한 (정상 플레이는 12시간 미만)
@@ -36,20 +37,24 @@ export async function onRequestPost(context) {
     }
     const { name, score, wave, difficulty, token, sessionWaves } = body || {};
 
-    // --- 기본 타입·범위 검증 (레이트리밋 키에 이름을 쓰므로 형식 검사 먼저) ---
-    if (
-      !name ||
-      typeof name !== "string" ||
-      name.trim().length === 0 ||
-      name.length > 10
-    ) {
+    // --- ④ 닉네임 화이트리스트 (DB 접근 전에 — CPU만 쓰는 검사를 먼저 통과시킨다) ---
+    // v7: 자유 입력 폐지. nickname.js 목록으로 만들 수 있는 조합만 받는다.
+    // 실명·욕설·사칭·마크업이 여기서 전부 걸린다(블랙리스트와 달리 우회 경로가 없다).
+    if (!name || typeof name !== "string" || name.length > 10) {
       return Response.json({ error: "유효하지 않은 이름입니다." }, { status: 400 });
     }
     const cleanName = normalizeName(name).slice(0, 10);
+    if (!isGeneratedNick(cleanName)) {
+      return Response.json(
+        { error: "닉네임이 올바르지 않습니다. 게임을 새로고침한 뒤 다시 등록해주세요." },
+        { status: 400 },
+      );
+    }
 
-    // --- ③ IP 레이트 리밋: 검증 성공/실패 무관하게 모든 시도를 집계 ---
-    // 로그 키 = "IP|이름" 1행. 이름별 카운트는 동등 비교, IP 전체는 접두 범위 스캔(인덱스 사용).
-    const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+    // --- ③ 레이트 리밋: 검증 성공/실패 무관하게 모든 시도를 집계 ---
+    // 로그 키 = "IP해시|닉네임" 1행. 닉네임별은 동등 비교, 출처 전체는 접두 범위 스캔(인덱스 사용).
+    // v7: IP 원문 대신 일자별 솔트 해시를 저장한다 (개인정보 최소화).
+    const ip = await hashIp(request.headers.get("CF-Connecting-IP") || "unknown");
     const nameKey = `${ip}|${cleanName}`;
     await db
       .prepare("INSERT INTO submit_log (ip, ts) VALUES (?, ?)")
@@ -90,14 +95,6 @@ export async function onRequestPost(context) {
       score < 0
     ) {
       return Response.json({ error: "유효하지 않은 데이터입니다." }, { status: 400 });
-    }
-
-    // --- ④ 이름 필터 (욕설·교사 사칭 — 전각·제로폭 우회 포함) ---
-    if (!isNameAllowed(cleanName)) {
-      return Response.json(
-        { error: "사용할 수 없는 이름입니다. 다른 이름을 입력해주세요." },
-        { status: 400 },
-      );
     }
 
     // --- 학기 값 화이트리스트: 알 수 없는 값은 저장하지 않고 거절 ---

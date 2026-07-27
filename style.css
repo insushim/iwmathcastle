@@ -24,7 +24,11 @@
     --glow-magenta: 0 0 20px rgba(255, 0, 229, 0.3);
     --glow-green: 0 0 20px rgba(0, 255, 136, 0.3);
     --font-display: 'Orbitron', monospace;
-    --font-body: 'Noto Sans KR', 'Do Hyeon', sans-serif;
+    /* v7: Noto Sans KR 웹폰트(10.3MB)를 걷어내고 시스템 한글 폰트로 대체.
+       설치돼 있으면 로컬 Noto를 쓰고(안드로이드 기본), 아니면 OS 기본 한글 폰트를 쓴다.
+       외부 폰트 CDN 요청이 사라져 아이 IP가 제3자로 나가지 않는다. */
+    --font-body: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR',
+        'Malgun Gothic', 'Do Hyeon', sans-serif;
     --font-game: 'Do Hyeon', sans-serif;
     --radius-sm: 6px;
     --radius-md: 12px;
@@ -2379,32 +2383,63 @@ body.is-touch .mobile-only { display: inline; }
     100% { transform: scale(1); }
 }
 
-.name-input {
-    width: 100%;
-    padding: 14px 18px;
+/* v7: 실명 입력창(.name-input)을 걷어내고 "뽑은 닉네임 표시 + 다시 뽑기"로 교체.
+   개인정보를 받지 않으므로 입력 필드 자체가 없다. */
+.nick-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 14px;
     border: 1.5px solid rgba(100, 200, 255, 0.12);
     border-radius: var(--radius-md);
     background: linear-gradient(145deg, rgba(0, 0, 0, 0.4), rgba(10, 15, 30, 0.5));
-    color: var(--text-primary);
-    font-size: 16px;
-    text-align: center;
-    margin-bottom: 20px;
-    outline: none;
-    font-family: var(--font-body);
-    transition: all 0.3s ease;
-    letter-spacing: 1px;
     position: relative;
     z-index: 1;
 }
 
-.name-input:focus {
-    border-color: var(--accent-cyan);
-    box-shadow: 0 0 24px rgba(0, 229, 255, 0.15), inset 0 0 20px rgba(0, 229, 255, 0.03);
+.nick-label {
+    font-size: 13px;
+    color: var(--text-dim);
+    font-family: var(--font-body);
 }
 
-.name-input::placeholder {
+.nick-value {
+    font-family: var(--font-game);
+    font-size: 20px;
+    color: var(--accent-cyan);
+    letter-spacing: 1px;
+    text-shadow: 0 0 12px rgba(0, 229, 255, 0.35);
+}
+
+.nick-reroll {
+    padding: 7px 12px;
+    font-size: 13px;
+    font-family: var(--font-body);
+    color: var(--text-primary);
+    background: rgba(0, 229, 255, 0.1);
+    border: 1px solid rgba(100, 200, 255, 0.25);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+    /* 아이 손가락 기준 최소 터치 목표 */
+    min-height: 34px;
+}
+
+.nick-reroll:hover,
+.nick-reroll:focus-visible {
+    background: rgba(0, 229, 255, 0.2);
+    border-color: var(--accent-cyan);
+}
+
+.nick-note {
+    margin: 8px 0 18px;
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: center;
     color: var(--text-dim);
-    letter-spacing: 0;
+    font-family: var(--font-body);
 }
 
 .modal-actions {
@@ -2413,6 +2448,13 @@ body.is-touch .mobile-only { display: inline; }
     justify-content: center;
     position: relative;
     z-index: 1;
+    /* v7: 버튼 글자가 "점수 등 / 록"처럼 낱말 중간에서 잘리던 문제(구버전부터 있던 것).
+       글자는 한 줄로 두고, 자리가 모자라면 버튼 단위로 다음 줄에 내려보낸다. */
+    flex-wrap: wrap;
+}
+
+.modal-actions .modal-btn {
+    white-space: nowrap;
 }
 
 /* === Ranking Modal (Enhanced with medals) === */
@@ -3490,6 +3532,49 @@ body.is-touch .mobile-only { display: inline; }
         flex-direction: column;
         overflow: hidden;
     }
+
+    /* v7: 게임 오버 모달도 같은 문제였다 — 실측(2026-07-27) 740×300에서 '점수 등록'
+       버튼이 화면 아래 251px 지점에 있어 스크롤하지 않으면 누를 수 없었다.
+       (구버전부터 있던 결함이지, 닉네임 UI 때문이 아니다 — 구/신 실측 251 vs 252px.)
+       수학 모달과 같은 방식: 모달을 세로 플렉스로 두고 통계만 줄이고, 닉네임·버튼은 고정. */
+    .modal-content.gameover-modal {
+        padding: 10px 16px;
+        max-height: calc(100vh - 8px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .gameover-modal .gameover-icon {
+        font-size: 30px;
+        margin-bottom: 2px;
+        flex: 0 0 auto;
+    }
+    .gameover-modal .gameover-title {
+        font-size: 18px;
+        margin-bottom: 6px;
+        flex: 0 0 auto;
+    }
+    .gameover-modal .gameover-stats {
+        padding: 6px 10px;
+        margin-bottom: 8px;
+        flex: 0 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+    }
+    .gameover-modal .gameover-stats .stat-row { padding: 3px 0; }
+    .gameover-modal .nick-row {
+        padding: 7px 10px;
+        gap: 8px;
+        flex: 0 0 auto;
+    }
+    .gameover-modal .nick-value { font-size: 17px; }
+    .gameover-modal .nick-note {
+        margin: 5px 0 8px;
+        font-size: 11px;
+        flex: 0 0 auto;
+    }
+    .gameover-modal .modal-actions { flex: 0 0 auto; }
+    .gameover-modal .modal-btn { padding: 8px 12px; font-size: 13px; }
     .math-modal .modal-header { margin-bottom: 6px; }
     .math-modal .modal-header h2 { font-size: 15px; }
     .math-modal .math-timer { margin-bottom: 6px; }
@@ -3564,4 +3649,20 @@ body.is-touch kbd {
 @media (pointer: coarse) {
     .ctrl-btn { min-height: 44px; min-width: 44px; }
     .tower-option { min-height: 76px; }
+}
+
+/* v7: 메인 메뉴 하단 개인정보 미수집 고지 */
+.menu-privacy {
+    margin: 14px auto 0;
+    max-width: 520px;
+    font-size: 12px;
+    line-height: 1.6;
+    text-align: center;
+    color: var(--text-dim);
+    font-family: var(--font-body);
+}
+
+.menu-privacy a {
+    color: var(--accent-cyan);
+    text-decoration: underline;
 }

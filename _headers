@@ -1,3 +1,21 @@
+# ===== 보안 헤더 (v7 — 불특정 다수 초등학생 공개 대비, 2026-07-27) =====
+# CSP: 외부 리소스를 전부 끊는다. 웹폰트를 자체 호스팅하고 인라인 <script>를 boot.js로
+#   빼둔 덕분에 'unsafe-inline'/'unsafe-eval' 없이 성립한다(index.html에 inline style·on* 핸들러 0개 — 실측).
+#   랭킹 이름은 이미 esc()로 이스케이프하지만, CSP는 그게 뚫렸을 때의 2차 방어선이다.
+# frame-ancestors: 킹수학은 링크로 연결하므로 임베드는 자기 자신만 허용 → 클릭재킹 차단.
+#   (킹수학이 iframe 임베드로 바꾸면 여기에 해당 도메인을 추가해야 한다.)
+# Permissions-Policy: 게임에 필요 없는 카메라·마이크·위치를 브라우저 수준에서 봉인.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; media-src 'self'; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+  Cross-Origin-Opener-Policy: same-origin
+
+# 자체 호스팅 웹폰트: 파일명에 버전 해시가 박혀 있어 내용이 바뀌지 않는다 — 30일 캐시
+/assets/fonts/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400
+
 # Cloudflare Pages 캐싱 규칙 (v6 — 동접 최적화)
 # ⚠️ manifest.json은 신규 에셋(걷기 프레임 등) 추가 시 바뀌는 인덱스 → 단기 캐시.
 #    이게 7일 캐시되면 기존 방문자가 구 manifest를 봐서 새 스프라이트를 아예 요청하지 않는다

@@ -6,12 +6,16 @@
 //      분당 10회였던 초안은 3교시 동시 시작 시 대부분의 학생이 토큰을 못 받는다 → 60회.
 const SESSION_RATE_PER_MIN = 60;
 
+import { hashIp } from "./_util.js";
+
 export async function onRequestPost(context) {
   const { env, request } = context;
   const db = env.DB;
   try {
     const now = Date.now();
-    const ip = "sess:" + (request.headers.get("CF-Connecting-IP") || "unknown");
+    // v7: IP 원문 대신 일자별 솔트 해시 (개인정보 최소화 — 레이트리밋에 원문은 불필요)
+    const ip =
+      "sess:" + (await hashIp(request.headers.get("CF-Connecting-IP") || "unknown"));
 
     // INSERT 먼저 → COUNT (동시요청 TOCTOU 축소, submit-score와 동일 패턴·같은 테이블 재사용)
     await db

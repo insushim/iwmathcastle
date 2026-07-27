@@ -31,6 +31,37 @@ import {
   startGameSession,
 } from "./firebase.js";
 import * as ui from "./ui.js";
+import { generateNickname, isGeneratedNick } from "./nickname.js";
+
+// ---------- v7: 랭킹 닉네임 (개인정보 미수집) ----------
+// 실명 입력을 없앤 이유는 nickname.js 상단 주석 참고. 뽑은 닉네임은 이 기기에만
+// 저장되어 다음 판에도 같은 이름으로 랭킹에 오른다(서버에 계정은 없다).
+const NICK_KEY = "mathcastle:nick";
+
+function currentNickname() {
+  let n = null;
+  try {
+    n = localStorage.getItem(NICK_KEY);
+  } catch {
+    /* 사생활 보호 모드 등 — 저장 못 해도 게임은 돈다 */
+  }
+  // 목록에 없는 값(구버전 실명·목록 개편 잔재)은 조용히 새로 뽑는다
+  return isGeneratedNick(n) ? n : rerollNickname();
+}
+
+function rerollNickname() {
+  const n = generateNickname();
+  try {
+    localStorage.setItem(NICK_KEY, n);
+  } catch {}
+  return n;
+}
+
+function paintNickname(n) {
+  const el = document.getElementById("playerNickname");
+  if (el) el.textContent = n;
+}
+
 // --- [V2] 새 모듈 임포트 ---
 import { ParticleSystem } from "./particles.js";
 import { MusicSystem } from "./music.js";
@@ -4343,6 +4374,7 @@ function checkGameOver() {
     // [V2] 게임 오버 음악
     musicSystem.play("defeat");
 
+    paintNickname(currentNickname()); // v7: 랭킹에 올라갈 닉네임을 미리 보여준다
     showModal(gameElements.gameOverModal);
   }
 }
@@ -4400,16 +4432,8 @@ async function saveAndSubmit() {
     return;
   }
 
-  const playerName = prompt(
-    "랭킹에 등록할 이름을 입력하세요 (10자 이내):",
-    "익명",
-  );
-  if (playerName === null) {
-    showMessage("랭킹 등록이 취소되었습니다.");
-    return;
-  }
-
-  const finalPlayerName = playerName.trim() || "익명";
+  // v7: prompt() 자유 입력 폐지 — 이 기기의 닉네임을 그대로 쓴다(개인정보 미수집).
+  const finalPlayerName = currentNickname();
 
   try {
     learnLoop.saveWrongNote(selectedDifficulty); // v6: 종료 전 오답노트 저장
@@ -4532,11 +4556,18 @@ function setupEventListeners() {
   document
     .getElementById("restartFromRankingBtn")
     .addEventListener("click", restartGame);
+  // v7: 닉네임 다시 뽑기
+  const rerollBtn = document.getElementById("rerollNickBtn");
+  if (rerollBtn)
+    rerollBtn.addEventListener("click", () => {
+      paintNickname(rerollNickname());
+      sfx.play("blip");
+    });
+
   document
     .getElementById("submitScoreBtn")
     .addEventListener("click", async () => {
-      const nameInput = document.getElementById("playerNameInput");
-      const playerName = (nameInput ? nameInput.value.trim() : "") || "익명";
+      const playerName = currentNickname(); // v7: 뽑은 닉네임만 전송
       const btn = document.getElementById("submitScoreBtn");
       btn.disabled = true;
       btn.textContent = "등록 중...";
