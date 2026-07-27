@@ -847,6 +847,9 @@ async function initializeGame(difficulty, savedState = null) {
     regenerateLayout();
 
     savedState.towers.forEach(recreateTower);
+    // 세이브의 좌표는 저장 당시 레이아웃 기준이다. 창 크기가 달라졌거나 그 사이
+    // 길 배치가 바뀐 빌드면 그대로 심을 경우 길 한복판에 앉는다 — 여기서 구제한다.
+    relocateTowersToValidTiles();
 
     showMessage("게임을 성공적으로 불러왔습니다!");
   } else {
@@ -972,20 +975,45 @@ function regenerateLayout() {
     gameElements.dynamicLayerCanvas.height = window.innerHeight;
   }
 
-  // 길이 움직이면(창 크기 변경·레이아웃 개편·예전 세이브 불러오기) 예전 자리에
-  // 있던 타워가 길 한복판에 남는다(사용자 신고: "타워가 길로 내려왔잖아").
-  // 놓을 수 있는 칸이 없어진 타워는 가장 가까운 빈 칸으로 옮긴다 —
-  // 지어 둔 타워를 잃지 않으면서 길 위에 걸터앉은 모양도 없앤다.
+  relocateTowersToValidTiles();
+}
+
+// 길이 움직이면(창 크기 변경·레이아웃 개편·예전 세이브 불러오기) 예전 자리에
+// 있던 타워가 길 한복판에 남는다(사용자 신고: "타워가 길로 내려왔잖아").
+// 놓을 수 있는 칸이 없어진 타워는 가장 가까운 빈 칸으로 옮긴다 —
+// 지어 둔 타워를 잃지 않으면서 길 위에 걸터앉은 모양도 없앤다.
+//
+// ⚠️ regenerateLayout() 안에만 두면 안 된다. 이어하기는
+//      regenerateLayout()                        ← 이 시점에 towers는 아직 비어 있다
+//      savedState.towers.forEach(recreateTower)  ← 옛 절대좌표를 그대로 심는다
+//    순서라 이 구제가 복원된 타워에 닿지 않았다. 실측(2026-07-27): 길 좌표를 담은
+//    세이브를 불러오면 4기 전부 길과 거리 0px로 남았다. 그래서 복원 직후에도 부른다.
+function relocateTowersToValidTiles() {
   const takenTiles = new Set();
+  // ── 1차: 제자리가 아직 유효한 타워부터 자리를 확정한다 ──
+  // 한 번에 처리하면 먼저 옮겨지는 타워가 "뒤에 올 멀쩡한 타워의 칸"을 차지해
+  // 두 타워가 한 칸에 겹친다. 확정 → 재배치 두 단계로 나눠 그걸 막는다.
+  const homeless = [];
   towers.forEach((tower) => {
     const tileX = parseInt(tower.el.style.left);
     const tileY = parseInt(tower.el.style.top);
-    let matchingTile = placementTiles.find((t) => {
+    const matchingTile = placementTiles.find((t) => {
       const tX = parseInt(t.style.left);
       const tY = parseInt(t.style.top);
       return Math.abs(tX - tileX) < 10 && Math.abs(tY - tileY) < 10;
     });
-    if (!matchingTile) {
+    if (matchingTile && !takenTiles.has(matchingTile)) {
+      takenTiles.add(matchingTile);
+      matchingTile.style.display = "none";
+    } else {
+      homeless.push(tower);
+    }
+  });
+
+  // ── 2차: 갈 곳 없는 타워(길 위·화면 밖)를 가장 가까운 빈 칸으로 ──
+  homeless.forEach((tower) => {
+    let matchingTile = null;
+    {
       let best = null,
         bestD = Infinity;
       for (const t of tileIndex) {
