@@ -11,6 +11,7 @@ import { mathProblems, loadGradeProblems } from "./problems.js";
 import * as simCore from "./simCore.js";
 import { quality, detectLowEnd, feedFrameTime } from "./perfQuality.js";
 import * as learnLoop from "./learnLoop.js";
+import * as problemSelector from "./problemSelector.js";
 import * as stageProgress from "./stageProgress.js";
 import { preloadSprites, getSprite } from "./spriteAssets.js";
 import {
@@ -183,6 +184,9 @@ let currentWaveModifier = null; // v6: 웨이브 변이 (웨이브 30+)
 // v8: 집중력 — 이번 판의 학습 성과가 그대로 타워 화력이 된다.
 // 정답 +1, 오답 -2, 0~40. 규칙은 simCore가 단일 진실원.
 let focusPoints = 0;
+// v8: 적응형 출제 — 판 시작 때 누적 통계로 계산하고, 문제를 풀 때마다 갱신한다.
+let currentWeakWeights = {};
+const recentUnits = [];
 let shownProblemIds = new Set(); // Track shown problems to avoid duplicates
 let problemTimerId = null;
 let problemTimerStart = 0;
@@ -760,6 +764,9 @@ async function initializeGame(difficulty, savedState = null) {
     //     구버전은 note.slice(0,3) 고정이라 오래된 오답이 영구 미출제였다(감사 실측).
     const dueToday = learnLoop.dueTodayCount(difficulty);
     const seeded = learnLoop.startSession(difficulty);
+    // v8: 누적 오답률 → 유형별 출제 가중치 (약점 우선 출제)
+    currentWeakWeights = problemSelector.weaknessWeights(learnLoop.getCumulative(difficulty));
+    recentUnits.length = 0;
     if (!savedState && seeded > 0)
       setTimeout(() => {
         showMessage(
@@ -3976,9 +3983,21 @@ function showMathProblem() {
     isNoteReviewProblem = review.fromNote;
   }
 
-  // Filter out already-shown problems
+  // v8: 적응형 출제 — 약점 유형 우선 + 웨이브별 난이도 램프 + 단원 편중 방지.
+  //     구버전은 학기 전체 풀을 셔플해 pop 하는 게 전부였다(약점 무시·난이도 무작위).
   while (!problem && currentProblemSet.length > 0) {
-    const candidate = currentProblemSet.pop();
+    const picked = problemSelector.pickProblem(currentProblemSet, {
+      wave: currentWave,
+      classify: learnLoop.classifyProblem,
+      weakByType: currentWeakWeights,
+      recentUnits,
+    });
+    if (!picked) break;
+    // 뽑힌 자리를 O(1)로 제거 (splice는 2,600칸 배열에서 매번 이동 비용이 든다)
+    const last = currentProblemSet.pop();
+    if (picked.index < currentProblemSet.length) currentProblemSet[picked.index] = last;
+
+    const candidate = picked.problem;
     const problemId = candidate.q + "||" + candidate.a;
     if (!shownProblemIds.has(problemId)) {
       shownProblemIds.add(problemId);
@@ -3995,10 +4014,21 @@ function showMathProblem() {
     );
     if (unshown.length > 0) {
       currentProblemSet = [...unshown];
-      shuffleArray(currentProblemSet);
-      problem = currentProblemSet.pop();
+      const picked = problemSelector.pickProblem(currentProblemSet, {
+        wave: currentWave,
+        classify: learnLoop.classifyProblem,
+        weakByType: currentWeakWeights,
+        recentUnits,
+      });
+      problem = picked ? picked.problem : currentProblemSet.pop();
       if (problem) shownProblemIds.add(problem.q + "||" + problem.a);
     }
+  }
+
+  // 단원 편중 방지용 최근 이력 (최근 6개만 본다)
+  if (problem && problem.u) {
+    recentUnits.push(problem.u);
+    if (recentUnits.length > 6) recentUnits.shift();
   }
 
   // All problems truly exhausted - generate random arithmetic
@@ -4140,6 +4170,9 @@ function checkAnswer(answer, clickedBtn) {
       // v5: 학습=화력 — 정답 시 마법 쿨다운 30% 감소
       // v7: 문제를 넘겨야 라이트너 상자 승급(세션 3→7→15 확장, 날짜 1→3→7→16일)이 된다
       learnLoop.recordCorrect(currentProblem, currentWave, isReviewProblem);
+      currentWeakWeights = problemSelector.weaknessWeights(
+        learnLoop.getCumulative(selectedDifficulty),
+      );
       // v8: 집중력 상승 → 모든 타워 피해 증가
       {
         const beforeTier = simCore.focusTier(focusPoints);
@@ -4203,6 +4236,10 @@ function checkAnswer(answer, clickedBtn) {
     resultDiv.style.color = "#ff3366";
     if (currentProblem)
       learnLoop.recordWrong(currentProblem, currentWave, isNoteReviewProblem);
+    // v8: 방금 틀린 유형이 다음 문제부터 더 자주 나오게 가중치를 즉시 갱신한다
+    currentWeakWeights = problemSelector.weaknessWeights(
+      learnLoop.getCumulative(selectedDifficulty),
+    );
     focusPoints = simCore.focusAfter(focusPoints, false); // v8: 집중력 하락(0 아래로는 안 간다)
     gold = Math.max(0, gold - simCore.WRONG_PENALTY.gold);
     castleHealth = Math.max(0, castleHealth - simCore.WRONG_PENALTY.castleHp);
