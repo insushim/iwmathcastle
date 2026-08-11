@@ -218,5 +218,47 @@ console.log("\n[⑥ 힌트 계산식의 정확성]");
   ok(checked > 1000, `검산 표본 ${checked}개 (적으면 헛검사)`);
 }
 
+// ── ⑦ 힌트가 문제와 무관한 소리를 하지 않는가 ──
+console.log("\n[⑦ 엉뚱한 힌트]");
+{
+  // 2026-08-12 Gemini 교차검증 → 코드로 확인: `q.includes("분")`이 **"분수"**에 걸려서
+  // "1/2와 1/6 중 더 큰 분수는?"에 "1시간 = 60분, 1분 = 60초!"라고 답하고 있었다(186문항).
+  // 아이 입장에서는 도와주는 척하며 상관없는 소리를 하는 것이라 없느니만 못하다.
+  let nonsense = 0;
+  const cases = [];
+  for (const sem of SEMS) {
+    for (const p of pools[sem]) {
+      const hint = getSolutionHint(p.q, p.a);
+      const timeHint = /1시간 = 60분|1분 = 60초/.test(hint);
+      const lenHint = /1m = 100cm/.test(hint);
+      const volHint = /1L = 1000mL/.test(hint);
+      const wtHint = /1kg = 1000g/.test(hint);
+      // 문제에 그 단위가 없는데 그 단위 힌트가 나오면 엉뚱한 것이다
+      const bad =
+        (timeHint && !/시간|분|초/.test(p.q.replace(/분수|분모|분자/g, ""))) ||
+        (lenHint && !/cm|m\b|미터/.test(p.q)) ||
+        (volHint && !/mL|L\b|들이/.test(p.q)) ||
+        (wtHint && !/kg|g\b|무게/.test(p.q));
+      if (bad) { nonsense++; if (cases.length < 3) cases.push(`${p.q} → ${hint}`); }
+    }
+  }
+  ok(nonsense === 0, `문제와 무관한 단위 힌트 ${nonsense}건${nonsense ? " → " + cases[0] : ""}`);
+
+  // 분수·비율 정답에는 계산식 힌트를 만들지 않는다("1/2"를 12로 읽어 엉뚱한 식이 통과한다)
+  let fracCalc = 0;
+  const fracCases = [];
+  for (const sem of SEMS) {
+    for (const p of pools[sem]) {
+      if (!/[/:]/.test(String(p.a))) continue;
+      const hint = getSolutionHint(p.q, p.a);
+      if (/=\s*[\d\s+\-×÷().]+\s*=\s*\d/.test(hint)) {
+        fracCalc++;
+        if (fracCases.length < 3) fracCases.push(`${p.q} [답 ${p.a}] → ${hint}`);
+      }
+    }
+  }
+  ok(fracCalc === 0, `분수·비율 정답에 붙은 계산식 힌트 ${fracCalc}건${fracCalc ? " → " + fracCases[0] : ""}`);
+}
+
 console.log(`\n${"=".repeat(60)}\n통과 ${pass} · 실패 ${fail}`);
 process.exit(fail > 0 ? 1 : 0);

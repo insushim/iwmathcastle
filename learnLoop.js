@@ -66,7 +66,13 @@ function calcExpr(expr) {
  * @param {Array<[string, (expr:string)=>string]>} candidates  [식, 문장 만들기]
  */
 function verified(a, candidates) {
-  const target = Number(String(a).replace(/[^\d.-]/g, ""));
+  const raw = String(a).trim();
+  // ⚠️ 분수("1/2")·비율("3:4") 정답에 이 함수를 쓰면 안 된다. 구현 초기에는
+  //    숫자 아닌 문자를 지워 비교했는데, 그러면 "1/2"가 12로 읽혀서 우연히 12가
+  //    나오는 엉뚱한 식("3 × 4")이 통과한다(Gemini 교차검증 지적 → 코드로 확인).
+  //    이런 답은 계산식 힌트 대신 개념 힌트로 보낸다.
+  if (!/^-?\d+(\.\d+)?$/.test(raw)) return null;
+  const target = Number(raw);
   if (!Number.isFinite(target)) return null;
   for (const [expr, render] of candidates) {
     const v = calcExpr(expr);
@@ -176,6 +182,12 @@ function steppedHint(q, a) {
     return `두 수(${n[0]}, ${n[1]})를 모두 나눌 수 있는 수 중 가장 큰 수 → ${a}`;
   if (q.includes("최소공배수") && n.length >= 2)
     return `${n[0]}의 배수와 ${n[1]}의 배수 중 처음으로 겹치는 수 → ${a}`;
+
+  // 단위분수 크기 비교 — 분모가 클수록 작은 조각
+  if (/1\/\d+.*중 더 큰/.test(q) || (/더 큰 분수/.test(q) && /1\//.test(q)))
+    return `분자가 1로 같으면 **분모가 작을수록 큰 분수**예요(조각이 크니까). 답: ${a}`;
+  if (/더 큰 분수|더 작은 분수/.test(q))
+    return `분모를 같게(통분) 만든 뒤 분자를 비교해요. 답: ${a}`;
 
   // ── 단위 변환 ──
   if (n.length >= 2) {
@@ -319,10 +331,15 @@ function genericHint(q, a) {
   if (q.includes("올림") || q.includes("버림") || q.includes("반올림")) return `어림할 자리 바로 아래 자리를 보세요. 답: ${a}`;
   if (q.includes("□")) return `□를 구하려면 반대 연산을 해보세요. 답: ${a}`;
   if (q.includes("각")) return `삼각형 세 각의 합은 180°, 사각형은 360°예요. 답: ${a}`;
-  if (q.includes("분")) return `1시간 = 60분, 1분 = 60초! 답: ${a}`;
-  if (q.includes("cm")) return `1m = 100cm! 답: ${a}`;
-  if (q.includes("mL")) return `1L = 1000mL! 답: ${a}`;
-  if (q.includes("g")) return `1kg = 1000g! 답: ${a}`;
+  // ⚠️ 아래 단위 힌트는 낱글자로 매칭하면 안 된다.
+  //    구버전 `q.includes("분")`은 **"분수"**에 걸려서, "1/2와 1/6 중 더 큰 분수는?"에
+  //    "1시간 = 60분, 1분 = 60초!"라고 답하고 있었다(실측 186문항).
+  //    아이에게 아무 상관 없는 소리를 하는 것이니 숫자+단위가 붙은 경우만 잡는다.
+  if (/\d+\s*분(?!수|모|자)/.test(q) || /\d+\s*시간/.test(q)) return `1시간 = 60분, 1분 = 60초! 답: ${a}`;
+  if (/\d+\s*cm|\d+\s*m(?![LlA-Za-z])/.test(q)) return `1m = 100cm! 답: ${a}`;
+  if (/\d+\s*mL|\d+\s*L/.test(q)) return `1L = 1000mL! 답: ${a}`;
+  if (/\d+\s*kg|\d+\s*g(?![A-Za-z])/.test(q)) return `1kg = 1000g! 답: ${a}`;
+  if (/분수|분모|분자/.test(q)) return `분모를 같게 만들어 비교하거나 계산해요. 답: ${a}`;
   return `정답은 ${a}! 다음에 비슷한 문제가 다시 나와요.`;
 }
 

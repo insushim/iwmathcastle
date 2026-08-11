@@ -161,6 +161,7 @@ export class AchievementSystem {
     // localStorage에서 해금된 업적 목록 불러오기
     this.unlocked = this._load();
     this.best = this._loadBest();   // v8: 진행형 업적의 누적 최고 기록
+    this._flushTimer = null;
     this._syncFromBest();           // 누적 기록이 목표를 이미 넘었다면 해금 상태로 맞춘다
   }
 
@@ -173,6 +174,23 @@ export class AchievementSystem {
     if (!metric || !Number.isFinite(value)) return;
     if ((this.best[metric] || 0) >= value) return;
     this.best[metric] = value;
+    // ⚠️ 여기서 바로 localStorage에 쓰면 안 된다. gold_change 이벤트는 **몬스터를 잡을
+    //    때마다** 들어오고(main.js handleMonsterDeath), 후반 웨이브는 몬스터가 60마리다.
+    //    골드는 계속 최고치를 갱신하므로 웨이브당 최대 60번의 동기 setItem +
+    //    JSON.stringify가 프레임 예산을 갉아먹는다(저사양 크롬북에서 특히).
+    //    메모리에는 즉시 반영하고, 디스크 쓰기만 모아서 한 번 한다.
+    this._flushSoon();
+  }
+
+  _flushSoon() {
+    if (this._flushTimer) return;
+    this._flushTimer = setTimeout(() => {
+      this._flushTimer = null;
+      this._saveBest();
+    }, 2000);
+  }
+
+  _saveBest() {
     try {
       localStorage.setItem("mathcastle:achbest", JSON.stringify(this.best));
     } catch { /* 저장 실패해도 게임은 계속 */ }
@@ -291,6 +309,7 @@ export class AchievementSystem {
     const unlockedAt = Date.now();
     this.unlocked[achievementId] = unlockedAt;
     this._save();
+    this._saveBest();   // 해금은 드문 사건이라 즉시 굳힌다
 
     const achievement = this.achievements[achievementId];
     return {

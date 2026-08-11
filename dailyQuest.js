@@ -71,7 +71,15 @@ function read() {
   if (!s) return { version: VERSION, day: "", done: [], playedDays: [] };
   try {
     const raw = JSON.parse(s.getItem(KEY));
-    if (raw && raw.version === VERSION) return raw;
+    // 필드가 빠진 채 저장돼 있어도(구버전·훼손) 배열로 채워서 돌려준다 —
+    // 여기서 undefined가 새면 .includes / .length 에서 게임이 멈춘다
+    if (raw && raw.version === VERSION)
+      return {
+        version: VERSION,
+        day: typeof raw.day === "string" ? raw.day : "",
+        done: Array.isArray(raw.done) ? raw.done : [],
+        playedDays: Array.isArray(raw.playedDays) ? raw.playedDays : [],
+      };
   } catch { /* 깨진 값은 새로 시작 */ }
   return { version: VERSION, day: "", done: [], playedDays: [] };
 }

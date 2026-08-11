@@ -842,6 +842,8 @@ window.addEventListener("DOMContentLoaded", () => {
     //     쏠지가 운에 달려 있어 "관측된 종류 N개"가 판마다 달라진다(실측: 4~5종).
     //     렌더러를 직접 호출해 24개 분기를 결정적으로 전부 태운다.
     qaRenderAllProjectiles: (types) => {
+      // 렌더러는 게임에 들어갈 때 동적으로 받는다 — 메뉴에서 부르면 아직 없다
+      if (!projectileRenderer) return { tested: 0, failures: ["렌더러 미로드 (게임 시작 전)"] };
       const ctx = dynamicCtx || gameElements.dynamicLayerCanvas.getContext("2d");
       const failures = [];
       const origWarn = console.warn;
@@ -1035,7 +1037,9 @@ async function initializeGame(difficulty, savedState = null) {
     // --- Restore extended save data ---
     if (savedState.activeSpell) activeSpell = savedState.activeSpell;
     if (savedState.maxCombo) comboSystem.maxCombo = savedState.maxCombo;
-    if (savedState.focusPoints) focusPoints = savedState.focusPoints; // v8
+    // ⚠️ `if (savedState.focusPoints)`로 쓰면 저장값이 0일 때 복원을 건너뛰고
+    //    오늘의 도전 보너스가 남는다. 이어하기는 저장 당시 상태 그대로여야 한다.
+    if (savedState.focusPoints != null) focusPoints = savedState.focusPoints; // v8
     if (savedState.totalKillCount) totalKillCount = savedState.totalKillCount;
     if (savedState.totalBossKills) totalBossKills = savedState.totalBossKills;
     if (savedState.totalTowersBuilt)
