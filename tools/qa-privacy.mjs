@@ -100,11 +100,65 @@ try {
   console.log("\n[④ CSP 적용 상태에서의 동작]");
   ok(cspViolations.length === 0, `CSP 위반 ${cspViolations.length}건${cspViolations.length ? " → " + cspViolations[0].slice(0, 90) : ""}`);
   ok(pageErrors.length === 0, `자바스크립트 오류 ${pageErrors.length}건${pageErrors.length ? " → " + pageErrors[0].slice(0, 90) : ""}`);
+  // ⚠️ document.fonts.check("16px 'Do Hyeon'")로 재면 안 된다. 이 폰트는 unicode-range로
+  //    93개 서브셋에 쪼개져 있어서, check()가 기본 검사 문자열(라틴)에 해당하는 서브셋이
+  //    아직 안 왔으면 false를 돌려준다 — 폰트는 멀쩡히 적용되는데도.
+  //    실제로 중요한 건 "글자가 그 폰트로 그려지는가"이므로 폭을 재서 폴백과 비교한다.
   const fontOk = await page.evaluate(async () => {
     await document.fonts.ready;
-    return document.fonts.check("16px 'Do Hyeon'");
+    const mk = (ff) => {
+      const s = document.createElement("span");
+      s.textContent = "수학 성 수호자 12345";
+      s.style.cssText = `position:absolute;visibility:hidden;font-size:40px;font-family:${ff}`;
+      document.body.appendChild(s);
+      const w = s.getBoundingClientRect().width;
+      s.remove();
+      return w;
+    };
+    const webfont = mk("'Do Hyeon', monospace");
+    const fallback = mk("monospace");
+    return {
+      applied: Math.abs(webfont - fallback) > 5,
+      webfont: Math.round(webfont), fallback: Math.round(fallback),
+      declared: document.fonts.size,
+    };
   });
-  ok(fontOk, "자체 호스팅 웹폰트(Do Hyeon) 로드됨");
+  ok(fontOk.applied,
+    `자체 호스팅 웹폰트(Do Hyeon)가 실제로 적용됨 — 폭 ${fontOk.webfont}px vs 폴백 ${fontOk.fallback}px (선언된 면 ${fontOk.declared}개)`);
+
+  // ── ④-2 CSP 아래에서 실제 화면들이 깨지지 않는가 (v8) ──
+  // 메뉴만 열어 보고 "위반 0건"이라 하면 안 된다. innerHTML로 만든 style="…" 속성은
+  // CSP가 통째로 무시하는데, 그게 업적 진행 막대·오답노트 색에서 실제로 벌어지고
+  // 있었다(실측 13건). 화면을 실제로 열어 보고 센다.
+  console.log("\n[④-2 주요 화면 전수 — CSP 위반]");
+  {
+    const { readFileSync } = await import("node:fs");
+    const jsInline = ["../main.js", "../ui.js"]
+      .map((f) => readFileSync(new URL(f, import.meta.url), "utf8"))
+      .flatMap((src) => src.split("\n").filter((l) => /style="/.test(l) && !/^\s*(\/\/|\*)/.test(l)));
+    ok(jsInline.length === 0,
+      `JS가 만드는 인라인 style 속성 ${jsInline.length}곳 (CSP가 무시한다 → 클래스나 CSSOM으로)`);
+
+    await page.evaluate(() => {
+      try { localStorage.setItem("mathcastle:achbest", JSON.stringify({ wave: 7, towers: 12 })); } catch {}
+    });
+    const before = cspViolations.length;
+    await page.evaluate(() => document.getElementById("showAchievementsBtn")?.click());
+    await new Promise((r) => setTimeout(r, 250));
+    const bar = await page.evaluate(() => {
+      const f = document.querySelector(".ach-fill");
+      if (!f) return null;
+      return { w: parseFloat(getComputedStyle(f).width), pw: parseFloat(getComputedStyle(f.parentElement).width) };
+    });
+    ok(bar && bar.w < bar.pw * 0.95,
+      `업적 진행 막대가 실제 비율로 그려진다 (${bar ? `${bar.w.toFixed(0)}px / ${bar.pw.toFixed(0)}px` : "없음"})`);
+    await page.evaluate(() => document.getElementById("closeAchievementBtn")?.click());
+    await page.evaluate(() => document.getElementById("showReportBtn")?.click());
+    await new Promise((r) => setTimeout(r, 250));
+    await page.evaluate(() => document.getElementById("closeReportBtn")?.click());
+    ok(cspViolations.length === before,
+      `업적·학습 기록 화면에서 새 CSP 위반 ${cspViolations.length - before}건`);
+  }
 
   // ── ① 개인정보 입력 경로 ──
   console.log("\n[① 개인정보 입력 경로]");

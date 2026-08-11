@@ -3922,3 +3922,19 @@ body.is-touch kbd {
     color: #9fb3cc;
     white-space: nowrap;
 }
+
+/* ---------- v8: CSP 때문에 인라인 style을 못 쓰는 자리들 ----------
+   `style-src 'self'`(unsafe-inline 없음)는 innerHTML로 만든 `style="…"` 속성을
+   통째로 무시한다. 그동안 오답노트 색·타워 툴팁 색이 조용히 안 먹고 있었고,
+   업적 진행 막대는 폭이 무시돼 늘 가득 찬 것처럼 보였다(실측 13건 위반).
+   CSSOM(el.style.width = …)은 CSP에 걸리지 않으므로 그쪽으로 옮겼고,
+   색·간격처럼 고정된 값은 여기 클래스로 뺐다. */
+.wn-title { color: #ffd166; font-weight: 700; margin-bottom: 6px; }
+.wn-item { margin-bottom: 6px; }
+.wn-hint { color: #8ee08e; }
+.wn-more { color: #99a3b5; }
+.wn-perfect { color: #8ee08e; }
+
+.tw-awaken { color: #ffd166; }
+.tw-level { color: var(--accent-cyan); }
+.tw-next { color: var(--accent-green); }

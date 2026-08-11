@@ -732,8 +732,15 @@ function renderAchievementList() {
             <div class="achievement-icon">${a.unlocked ? "🏆" : "🔒"}</div>
             <div class="achievement-name">${a.name}</div>
             <div class="achievement-desc">${a.description}</div>
-            ${prog ? `<div class="achievement-progress"><span class="ach-bar"><span class="ach-fill" style="width:${Math.round(prog.ratio * 100)}%"></span></span><span class="ach-num">${prog.now} / ${prog.target}</span></div>` : ""}
+            ${prog ? `<div class="achievement-progress"><span class="ach-bar"><span class="ach-fill"></span></span><span class="ach-num">${prog.now} / ${prog.target}</span></div>` : ""}
         `;
+    // ⚠️ 폭은 innerHTML 안에 style="width:..."로 넣으면 안 된다. CSP(style-src 'self')가
+    //    인라인 style **속성**을 막아 값이 통째로 무시되고, 막대가 늘 가득 찬 것처럼 보인다
+    //    (실측으로 잡았다). CSSOM으로 설정하면 CSP에 걸리지 않는다.
+    if (prog) {
+      const fill = item.querySelector(".ach-fill");
+      if (fill) fill.style.width = `${Math.round(prog.ratio * 100)}%`;
+    }
     list.appendChild(item);
   });
 }
@@ -4611,18 +4618,18 @@ function checkGameOver() {
       if (wrongs.length) {
         noteBox.style.display = "block";
         noteBox.innerHTML =
-          `<div style="color:#ffd166;font-weight:700;margin-bottom:6px;">📒 오답노트 (${wrongs.length}문제) — 다음 판 시작 때 복습 퀴즈로 나와요</div>` +
+          `<div class="wn-title">📒 오답노트 (${wrongs.length}문제) — 다음 판 시작 때 복습 퀴즈로 나와요</div>` +
           wrongs
             .slice(0, 8)
             .map(
               (w) =>
-                `<div style="margin-bottom:6px;"><b>${ui.formatMath(w.q)}</b><br><span style="color:#8ee08e;">💡 ${learnLoop.getSolutionHint(w.q, w.a)}</span></div>`,
+                `<div class="wn-item"><b>${ui.formatMath(w.q)}</b><br><span class="wn-hint">💡 ${learnLoop.getSolutionHint(w.q, w.a)}</span></div>`,
             )
             .join("") +
-          (wrongs.length > 8 ? `<div style="color:#889;">…외 ${wrongs.length - 8}문제</div>` : "");
+          (wrongs.length > 8 ? `<div class="wn-more">…외 ${wrongs.length - 8}문제</div>` : "");
       } else {
         noteBox.style.display = "block";
-        noteBox.innerHTML = `<div style="color:#8ee08e;">🎉 이번 판은 틀린 문제가 없어요! 완벽!</div>`;
+        noteBox.innerHTML = `<div class="wn-perfect">🎉 이번 판은 틀린 문제가 없어요! 완벽!</div>`;
       }
     }
     // v8: 판이 끝나는 순간에도 도전 진행을 갱신한다(웨이브 클리어 없이 끝날 수 있다)

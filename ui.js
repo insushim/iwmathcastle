@@ -422,16 +422,17 @@ export function showTowerUpgradeSelector(
   const nextRange = Math.floor(tower.range * 1.05);
 
   const awaken = tower.awaken || 0;
-  const awakenBadge = awaken > 0 ? ` <span style="color:#ffd166;">★${awaken}</span>` : "";
-  let statsHtml = `<b>${tower.name}</b> <span style="color: var(--accent-cyan);">(Lv.${tower.level}${awakenBadge})</span><br>`;
+  // CSP(style-src 'self')가 인라인 style 속성을 막는다 — 클래스로 쓴다
+  const awakenBadge = awaken > 0 ? ` <span class="tw-awaken">★${awaken}</span>` : "";
+  let statsHtml = `<b>${tower.name}</b> <span class="tw-level">(Lv.${tower.level}${awakenBadge})</span><br>`;
 
   if (tower.level < 10) {
     if (tower.damage) {
-      statsHtml += `데미지: ${tower.damage} <span class="stat-arrow">→</span> <span style="color:var(--accent-green)">${nextDamage}</span><br>`;
+      statsHtml += `데미지: ${tower.damage} <span class="stat-arrow">→</span> <span class="tw-next">${nextDamage}</span><br>`;
     } else if (tower.dps) {
-      statsHtml += `DPS: ${tower.dps} <span class="stat-arrow">→</span> <span style="color:var(--accent-green)">${nextDps}</span><br>`;
+      statsHtml += `DPS: ${tower.dps} <span class="stat-arrow">→</span> <span class="tw-next">${nextDps}</span><br>`;
     }
-    statsHtml += `사거리: ${tower.range} <span class="stat-arrow">→</span> <span style="color:var(--accent-green)">${nextRange}</span><br>`;
+    statsHtml += `사거리: ${tower.range} <span class="stat-arrow">→</span> <span class="tw-next">${nextRange}</span><br>`;
   } else {
     statsHtml += `데미지: ${tower.damage || tower.dps + " DPS"}<br>`;
     statsHtml += `사거리: ${tower.range}<br>`;
