@@ -379,6 +379,9 @@ export const MAX_BOX = BOX_DAYS.length;
 
 const NOTE_KEY = "mathcastle:wrongnote";
 const STATS_KEY = "mathcastle:learnstats";
+// v8: 단원별 성취도. 유형(classifyProblem)과 별개다 — 유형은 문장 모양에서 뽑은
+//     휴리스틱이고, 단원(u)은 교육과정 그대로다. 학부모·교사에게 보여줄 수 있는 건 후자다.
+const UNIT_STATS_KEY = "mathcastle:unitstats";
 const NOTE_VERSION = 2;
 const NOTE_CAP = 60;
 const SEED_MAX = 8;     // 한 판에 넣을 복습 퀴즈 최대치 (구버전은 3 고정)
@@ -490,6 +493,7 @@ export function recordWrong(problem, currentWave, fromNote = false) {
   stats.wrongByType[type] = (stats.wrongByType[type] || 0) + 1;
   stats.wrong++;
   bumpCumulative(type, false);
+  bumpUnit(problem.u, false);
 
   // 라이트너: 틀리면 처음으로 되돌린다 (구버전은 반대로 간격을 늘렸다)
   const existing = wrongQueue.find((w) => w.problem.q === problem.q);
@@ -512,6 +516,7 @@ export function recordCorrect(problem, currentWave = 0, isReview = false) {
   if (isReview) stats.reviewCleared++;
   if (!problem || !problem.q) return;
   bumpCumulative(classifyProblem(problem.q), true);
+  bumpUnit(problem.u, true);
 
   const idx = wrongQueue.findIndex((w) => w.problem.q === problem.q);
   if (idx !== -1) {
@@ -686,6 +691,43 @@ function bumpCumulative(type, ok) {
 
 export function getCumulative(difficulty) {
   return readCumulative()[String(difficulty)] || {};
+}
+
+// ---------- v8: 단원별 성취도 ----------
+function readUnitStats() {
+  const s = storage();
+  if (!s) return {};
+  try {
+    const raw = JSON.parse(s.getItem(UNIT_STATS_KEY));
+    return raw && raw.version === 1 && raw.data ? raw.data : {};
+  } catch { return {}; }
+}
+
+function bumpUnit(unit, ok) {
+  const s = storage();
+  if (!s || currentDifficulty == null || !unit) return;
+  try {
+    const all = readUnitStats();
+    const k = String(currentDifficulty);
+    const byUnit = (all[k] = all[k] || {});
+    const rec = (byUnit[unit] = byUnit[unit] || { ok: 0, no: 0 });
+    if (ok) rec.ok++; else rec.no++;
+    s.setItem(UNIT_STATS_KEY, JSON.stringify({ version: 1, data: all }));
+  } catch { /* 저장 실패해도 게임은 계속 */ }
+}
+
+/** 단원별 누적 성취도 { 단원코드: {ok, no} } */
+export function getUnitStats(difficulty) {
+  return readUnitStats()[String(difficulty)] || {};
+}
+
+/** 전 학기 통틀어 푼 문제 수 (학습 기록 화면용) */
+export function totalSolved() {
+  const all = readUnitStats();
+  let ok = 0, no = 0;
+  for (const byUnit of Object.values(all))
+    for (const r of Object.values(byUnit)) { ok += r.ok || 0; no += r.no || 0; }
+  return { ok, no, total: ok + no };
 }
 
 /** 취약 유형 한 줄 — 이번 판이 아니라 누적 기록에서 뽑는다(표본이 커야 의미가 있다) */

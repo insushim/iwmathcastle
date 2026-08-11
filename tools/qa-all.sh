@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."
 
 SCRIPTS=(
   qa-smoke qa-stages qa-spells qa-learning qa-adaptive
-  qa-projectiles qa-resilience qa-progression
+  qa-projectiles qa-resilience qa-progression qa-retention
   qa-tower-onroad qa-save-onroad qa-tower-render qa-build-panel qa-build-nav
   qa-ux-controls qa-mobile qa-ime qa-wizard-flicker qa-audio qa-perf
 )

@@ -239,6 +239,29 @@ export const TOWER_STATS = {
   },
 };
 
+// v8: 랜덤 상자 확률표를 여기로 올린다.
+// 원래 main.js 안에 숨어 있었는데, 확률을 감춘 뽑기는 초등학생 대상 서비스에서
+// 지적받기 딱 좋은 요소다. 게임 안 골드로만 사는 것이라 과금은 없지만,
+// 최소한 "무엇이 얼마나 나오는지"는 사기 전에 보여준다(ui.js 툴팁이 읽는다).
+export const RANDOM_TOWER_TIERS = {
+  1: ["plus", "minus"],
+  2: ["multiply", "divide", "ice", "poison"],
+  3: ["stun", "meteor", "cannon", "skyDestroyer", "net", "laser", "multi-shot", "goldMine", "shredder", "repairStation"],
+  4: ["golden", "silver", "copper"],
+  5: ["ultimate"],
+  6: ["transcendent"],
+};
+
+export const RANDOM_TOWER_PROBABILITY = {
+  random_cheap: [0.54, 0.29, 0.12, 0.03, 0.015, 0.005],
+  random_medium: [0.235, 0.43, 0.23, 0.07, 0.025, 0.01],
+  random_expensive: [0.03, 0.23, 0.46, 0.18, 0.07, 0.03],
+};
+
+export const RANDOM_TIER_LABEL = {
+  1: "기본", 2: "중급", 3: "상급", 4: "특수", 5: "궁극", 6: "전설",
+};
+
 export const MONSTER_STATS = {
   // --- 기본 몬스터 ---
   normal: {

@@ -33,4 +33,6 @@ export const gameElements = {
   // UX: 상황별 조작 힌트 + 게임 방법 안내
   actionHint: document.getElementById("action-hint"),
   howToPlayModal: document.getElementById("howToPlayModal"),
+  // v8: 학습 기록 (게임오버와 무관하게 언제든 볼 수 있는 화면)
+  reportModal: document.getElementById("reportModal"),
 };

@@ -17,6 +17,7 @@ export class AchievementSystem {
       },
       wave_5: {
         id: "wave_5",
+        progress: { metric: "wave", target: 5 },
         name: "초보 수호자",
         description: "웨이브 5를 클리어하세요",
         condition: (eventType, data) =>
@@ -24,6 +25,7 @@ export class AchievementSystem {
       },
       wave_10: {
         id: "wave_10",
+        progress: { metric: "wave", target: 10 },
         name: "숙련 수호자",
         description: "웨이브 10을 클리어하세요",
         condition: (eventType, data) =>
@@ -31,6 +33,7 @@ export class AchievementSystem {
       },
       wave_20: {
         id: "wave_20",
+        progress: { metric: "wave", target: 20 },
         name: "베테랑 수호자",
         description: "웨이브 20을 클리어하세요",
         condition: (eventType, data) =>
@@ -38,6 +41,7 @@ export class AchievementSystem {
       },
       wave_50: {
         id: "wave_50",
+        progress: { metric: "wave", target: 50 },
         name: "전설의 수호자",
         description: "웨이브 50을 클리어하세요",
         condition: (eventType, data) =>
@@ -45,6 +49,7 @@ export class AchievementSystem {
       },
       tower_builder: {
         id: "tower_builder",
+        progress: { metric: "towers", target: 10 },
         name: "건축가",
         description: "타워를 10개 건설하세요",
         condition: (eventType, data) =>
@@ -52,6 +57,7 @@ export class AchievementSystem {
       },
       tower_master: {
         id: "tower_master",
+        progress: { metric: "towers", target: 30 },
         name: "건축 대가",
         description: "타워를 30개 건설하세요",
         condition: (eventType, data) =>
@@ -59,6 +65,7 @@ export class AchievementSystem {
       },
       gold_rush: {
         id: "gold_rush",
+        progress: { metric: "gold", target: 5000 },
         name: "금광 발견",
         description: "골드를 5000 이상 보유하세요",
         condition: (eventType, data) =>
@@ -66,6 +73,7 @@ export class AchievementSystem {
       },
       perfect_math: {
         id: "perfect_math",
+        progress: { metric: "streak", target: 10 },
         name: "수학 천재",
         description: "수학 문제를 10회 연속 정답하세요",
         condition: (eventType, data) =>
@@ -73,6 +81,7 @@ export class AchievementSystem {
       },
       math_master: {
         id: "math_master",
+        progress: { metric: "streak", target: 30 },
         name: "수학 박사",
         description: "수학 문제를 30회 연속 정답하세요",
         condition: (eventType, data) =>
@@ -81,6 +90,7 @@ export class AchievementSystem {
       // ---- v5 학습 업적 ----
       review_clear: {
         id: "review_clear",
+        progress: { metric: "review", target: 1 },
         name: "오답 정복자",
         description: "틀렸던 문제를 다시 만나 맞히세요",
         condition: (eventType, data) =>
@@ -88,6 +98,7 @@ export class AchievementSystem {
       },
       review_master: {
         id: "review_master",
+        progress: { metric: "review", target: 5 },
         name: "복습의 달인",
         description: "복습 문제를 5회 맞히세요",
         condition: (eventType, data) =>
@@ -95,6 +106,7 @@ export class AchievementSystem {
       },
       spell_collector: {
         id: "spell_collector",
+        progress: { metric: "wizardLevel", target: 10 },
         name: "대마법사",
         description: "마법사 레벨 10을 달성하세요",
         condition: (eventType, data) =>
@@ -116,6 +128,7 @@ export class AchievementSystem {
       },
       boss_slayer: {
         id: "boss_slayer",
+        progress: { metric: "bossKills", target: 5 },
         name: "보스 사냥꾼",
         description: "보스 몬스터를 5마리 처치하세요",
         condition: (eventType, data) =>
@@ -137,6 +150,7 @@ export class AchievementSystem {
       },
       full_combo: {
         id: "full_combo",
+        progress: { metric: "combo", target: 5 },
         name: "풀 콤보",
         description: "5배 콤보에 도달하세요",
         condition: (eventType, data) =>
@@ -146,6 +160,49 @@ export class AchievementSystem {
 
     // localStorage에서 해금된 업적 목록 불러오기
     this.unlocked = this._load();
+    this.best = this._loadBest();   // v8: 진행형 업적의 누적 최고 기록
+    this._syncFromBest();           // 누적 기록이 목표를 이미 넘었다면 해금 상태로 맞춘다
+  }
+
+  /**
+   * v8: 진행형 업적의 "지금까지 최고 기록"을 판을 넘어 누적한다.
+   * 구버전은 매 판 0으로 리셋돼, 웨이브 8~10에서 자주 죽는 아이(가장 흔한 층)는
+   * "타워 30개 건설" 같은 업적에 조금씩 가까워지는 감각을 전혀 못 느꼈다.
+   */
+  recordBest(metric, value) {
+    if (!metric || !Number.isFinite(value)) return;
+    if ((this.best[metric] || 0) >= value) return;
+    this.best[metric] = value;
+    try {
+      localStorage.setItem("mathcastle:achbest", JSON.stringify(this.best));
+    } catch { /* 저장 실패해도 게임은 계속 */ }
+  }
+
+  _loadBest() {
+    try {
+      const raw = JSON.parse(localStorage.getItem("mathcastle:achbest"));
+      return raw && typeof raw === "object" ? raw : {};
+    } catch { return {}; }
+  }
+
+  /**
+   * 누적 최고 기록이 목표를 이미 넘긴 진행형 업적을 해금한다.
+   * 이게 없으면 "5 / 5인데 자물쇠"라는 이상한 화면이 나온다(실측).
+   * 진행 수치와 해금 상태는 같은 사실을 말해야 한다.
+   */
+  _syncFromBest() {
+    for (const [id, a] of Object.entries(this.achievements)) {
+      if (!a.progress || this.unlocked[id]) continue;
+      if ((this.best[a.progress.metric] || 0) >= a.progress.target) this.unlock(id);
+    }
+  }
+
+  /** 업적별 진행률 (0~1). 진행형이 아니면 null */
+  progressOf(id) {
+    const a = this.achievements[id];
+    if (!a || !a.progress) return null;
+    const now = Math.min(a.progress.target, this.best[a.progress.metric] || 0);
+    return { now, target: a.progress.target, ratio: now / a.progress.target };
   }
 
   /**
@@ -184,6 +241,18 @@ export class AchievementSystem {
    */
   check(eventType, data) {
     const newlyUnlocked = [];
+
+    // v8: 진행형 업적의 최고 기록 갱신 (해금 여부와 무관하게 늘 기록한다)
+    if (data) {
+      if (data.wave != null) this.recordBest("wave", data.wave);
+      if (data.totalTowers != null) this.recordBest("towers", data.totalTowers);
+      if (data.gold != null) this.recordBest("gold", data.gold);
+      if (data.streak != null) this.recordBest("streak", data.streak);
+      if (data.reviewCleared != null) this.recordBest("review", data.reviewCleared);
+      if (data.level != null) this.recordBest("wizardLevel", data.level);
+      if (data.totalBossKills != null) this.recordBest("bossKills", data.totalBossKills);
+      if (data.multiplier != null) this.recordBest("combo", data.multiplier);
+    }
 
     for (const [id, achievement] of Object.entries(this.achievements)) {
       // 이미 해금된 업적은 건너뛴다

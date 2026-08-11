@@ -2,7 +2,7 @@
 
 // 파일 분리에 따른 import 구문 수정
 import { gameElements, isTouchLike } from "./constants.js";
-import { TOWER_STATS } from "./gameData.js";
+import { TOWER_STATS, RANDOM_TOWER_PROBABILITY, RANDOM_TIER_LABEL } from "./gameData.js";
 import * as simCore from "./simCore.js";
 import { hideModal, showModal, showMessage } from "./utils.js";
 import { stageOfWave, waveInStage } from "./stageProgress.js";
@@ -517,6 +517,25 @@ export function showTowerInfoTooltip(towerData, x, y) {
     }
   }
   if (!data) return;
+
+  // v8: 랜덤 상자는 사기 전에 확률을 보여준다. 확률을 감춘 뽑기는
+  //     초등학생 대상 서비스에서 정당화하기 어렵다(게임 내 골드만 쓰더라도).
+  if (data.isRandom) {
+    const key = Object.keys(TOWER_STATS).find((k) => TOWER_STATS[k] === data)
+      || (data.symbol === "❓" ? "random_cheap" : data.symbol === "❔" ? "random_medium" : "random_expensive");
+    const probs = RANDOM_TOWER_PROBABILITY[key] || [];
+    tooltip.innerHTML =
+      `<b>${data.name}</b><div class="tooltip-divider"></div>` +
+      `<span class="tooltip-stat">비용:</span> ${data.cost}G<br>` +
+      `<span class="tooltip-stat">나올 확률</span><br>` +
+      probs
+        .map((p, i) => `${RANDOM_TIER_LABEL[i + 1]} ${(p * 100).toFixed(1)}%`)
+        .join(" · ");
+    tooltip.style.display = "block";
+    tooltip.style.left = `${x + 15}px`;
+    tooltip.style.top = `${y + 15}px`;
+    return;
+  }
 
   const range = isMobile ? (data.range * 1.05).toFixed(0) : data.range;
 

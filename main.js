@@ -6,12 +6,16 @@ import {
   MONSTER_STATS,
   WIZARD_SPELLS,
   WIZARD_AUTO_ATTACK_STATS,
+  RANDOM_TOWER_TIERS,
+  RANDOM_TOWER_PROBABILITY,
 } from "./gameData.js";
 import { mathProblems, loadGradeProblems } from "./problems.js";
 import * as simCore from "./simCore.js";
 import { quality, detectLowEnd, feedFrameTime } from "./perfQuality.js";
 import * as learnLoop from "./learnLoop.js";
 import * as problemSelector from "./problemSelector.js";
+import * as dailyQuest from "./dailyQuest.js";
+import { unitName, unitsOf } from "./problems/units.js";
 import * as stageProgress from "./stageProgress.js";
 import { preloadSprites, getSprite } from "./spriteAssets.js";
 import {
@@ -550,6 +554,136 @@ function setupSettingsModal() {
 }
 
 // --- [V2] 업적 모달 ---
+// ---------- v8: 오늘의 도전 ----------
+/** 판 상태를 도전 진행 형태로 (판이 없으면 0) */
+function questState() {
+  return {
+    wave: currentWave,
+    correct: learnLoop.stats.correct,
+    reviewCleared: learnLoop.stats.reviewCleared,
+    maxCombo: comboSystem.maxCombo || 0,
+    focus: focusPoints,
+    towersBuilt: totalTowersBuilt,
+    bossKills: totalBossKills,
+  };
+}
+
+function renderDailyPanel() {
+  const panel = document.getElementById("dailyPanel");
+  const list = document.getElementById("dailyList");
+  const count = document.getElementById("dailyCount");
+  const note = document.getElementById("dailyNote");
+  if (!panel || !list) return;
+
+  const rows = dailyQuest.summary();
+  const doneN = rows.filter((r) => r.done).length;
+  panel.hidden = false;
+  count.textContent = `${doneN}/${rows.length}`;
+  list.textContent = "";
+  for (const r of rows) {
+    const li = document.createElement("li");
+    li.className = "daily-item" + (r.done ? " done" : "");
+    const ic = document.createElement("span");
+    ic.className = "daily-icon";
+    ic.textContent = r.done ? "✅" : r.icon;
+    const tx = document.createElement("span");
+    tx.className = "daily-text";
+    tx.textContent = r.text;
+    li.append(ic, tx);
+    list.appendChild(li);
+  }
+  const bonus = dailyQuest.startingFocusBonus();
+  const days = dailyQuest.playedDayCount();
+  note.textContent = bonus > 0
+    ? `다음 판 집중력 +${bonus}로 시작해요! (지금까지 ${days}일 플레이)`
+    : "도전 하나를 깰 때마다 다음 판 집중력이 올라가요.";
+}
+
+// ---------- v8: 학습 기록 ----------
+function setupReportModal() {
+  const showBtn = document.getElementById("showReportBtn");
+  const closeBtn = document.getElementById("closeReportBtn");
+  if (showBtn) showBtn.addEventListener("click", () => { renderReport(); showModal(gameElements.reportModal); });
+  if (closeBtn) closeBtn.addEventListener("click", () => hideModal(gameElements.reportModal));
+}
+
+/** 마지막으로 고른 학기를 기억해 둔다 — 학습 기록은 학기 단위다 */
+const LAST_SEM_KEY = "mathcastle:lastsem";
+function lastSemester() {
+  if (selectedDifficulty) return selectedDifficulty;
+  try { return localStorage.getItem(LAST_SEM_KEY) || "5-1"; } catch { return "5-1"; }
+}
+
+function renderReport() {
+  const sem = lastSemester();
+  const gradeEl = document.getElementById("reportGrade");
+  const sumEl = document.getElementById("reportSummary");
+  const unitsEl = document.getElementById("reportUnits");
+  const reviewEl = document.getElementById("reportReview");
+  if (!unitsEl) return;
+
+  gradeEl.textContent = `${difficultyLabel(sem)} 기준`;
+
+  const t = learnLoop.totalSolved();
+  const rate = t.total ? Math.round((t.ok / t.total) * 100) : 0;
+  sumEl.textContent = t.total
+    ? `지금까지 ${t.total}문제를 풀었고 ${t.ok}문제를 맞혔어요 (정답률 ${rate}%)`
+    : "아직 푼 문제가 없어요. 한 판 해볼까요?";
+
+  // 단원별 성취도 — 교육과정 단원 그대로. 학부모·교사가 볼 수 있는 유일한 축이다.
+  const stats = learnLoop.getUnitStats(sem);
+  unitsEl.textContent = "";
+  const codes = unitsOf(sem);
+  if (!codes.length) return;
+  for (const code of codes) {
+    const rec = stats[code] || { ok: 0, no: 0 };
+    const n = rec.ok + rec.no;
+    const pct = n ? Math.round((rec.ok / n) * 100) : 0;
+    const row = document.createElement("div");
+    row.className = "unit-row";
+    const name = document.createElement("span");
+    name.className = "unit-name";
+    name.textContent = unitName(sem, code);
+    const bar = document.createElement("span");
+    bar.className = "unit-bar";
+    const fill = document.createElement("span");
+    fill.className = "unit-fill";
+    fill.style.width = `${n ? pct : 0}%`;
+    // 색은 성취도에 따라 (80%+ 초록 / 50%+ 노랑 / 그 아래 빨강)
+    fill.dataset.level = n === 0 ? "none" : pct >= 80 ? "high" : pct >= 50 ? "mid" : "low";
+    bar.appendChild(fill);
+    const val = document.createElement("span");
+    val.className = "unit-val";
+    val.textContent = n ? `${pct}% (${n}문제)` : "아직 안 풀었어요";
+    row.append(name, bar, val);
+    unitsEl.appendChild(row);
+  }
+
+  // 오늘 복습 예정
+  const due = learnLoop.dueTodayCount(sem);
+  const note = learnLoop.getWrongNote(sem);
+  reviewEl.textContent = "";
+  const head = document.createElement("p");
+  head.className = "review-head";
+  head.textContent = due > 0
+    ? `오늘 복습할 문제가 ${due}개 있어요. 다음 판에서 나와요!`
+    : note.length
+      ? "오늘 복습할 문제는 없어요. 잘하고 있어요!"
+      : "오답노트가 비어 있어요.";
+  reviewEl.appendChild(head);
+  for (const e of note.slice(0, 6)) {
+    const d = document.createElement("div");
+    d.className = "review-item";
+    const q = document.createElement("b");
+    q.innerHTML = ui.formatMath(e.q);
+    const h = document.createElement("span");
+    h.className = "review-hint";
+    h.textContent = `💡 ${learnLoop.getSolutionHint(e.q, e.a)}`;
+    d.append(q, document.createElement("br"), h);
+    reviewEl.appendChild(d);
+  }
+}
+
 function setupAchievementModal() {
   const showBtn = document.getElementById("showAchievementsBtn");
   const closeBtn = document.getElementById("closeAchievementBtn");
@@ -573,10 +707,13 @@ function renderAchievementList() {
   all.forEach((a) => {
     const item = document.createElement("div");
     item.className = `achievement-item ${a.unlocked ? "unlocked" : "locked"}`;
+    // v8: 미해금 업적에 진행 수치를 보여 준다. 자물쇠만 보면 얼마나 가까운지 모른다.
+    const prog = a.unlocked ? null : achievementSystem.progressOf(a.id);
     item.innerHTML = `
             <div class="achievement-icon">${a.unlocked ? "🏆" : "🔒"}</div>
             <div class="achievement-name">${a.name}</div>
             <div class="achievement-desc">${a.description}</div>
+            ${prog ? `<div class="achievement-progress"><span class="ach-bar"><span class="ach-fill" style="width:${Math.round(prog.ratio * 100)}%"></span></span><span class="ach-num">${prog.now} / ${prog.target}</span></div>` : ""}
         `;
     list.appendChild(item);
   });
@@ -727,6 +864,8 @@ window.addEventListener("DOMContentLoaded", () => {
   setupSettingsModal();
   setupHowToPlay();
   setupAchievementModal();
+  setupReportModal();
+  renderDailyPanel();
 
   // [V2] 첫 사용자 인터랙션에서 음악 시작
   const startMusicOnce = () => {
@@ -841,7 +980,10 @@ async function initializeGame(difficulty, savedState = null) {
   totalKillCount = 0;
   totalBossKills = 0;
   totalTowersBuilt = 0;
-  focusPoints = 0; // v8: 집중력은 판 단위 (다음 판에 다시 쌓는다)
+  // v8: 집중력은 판 단위. 다만 오늘의 도전을 깼다면 그만큼 얹어서 시작한다
+  //     (보상이 뽑기가 아니라 "학습해서 얻은 화력"이라는 원칙과 같은 방향)
+  focusPoints = dailyQuest.startingFocusBonus();
+  try { localStorage.setItem(LAST_SEM_KEY, difficulty); } catch { /* 저장 실패해도 계속 */ }
   gameSpeed = 1;
   shownProblemIds = new Set();
   comboSystem.break();
@@ -2904,33 +3046,8 @@ function handleRandomTowerPlacement(type, tile) {
 }
 
 function getRandomTowerType(randomBoxType) {
-  const TOWER_TIERS = {
-    1: ["plus", "minus"],
-    2: ["multiply", "divide", "ice", "poison"],
-    3: [
-      "stun",
-      "meteor",
-      "cannon",
-      "skyDestroyer",
-      "net",
-      "laser",
-      "multi-shot",
-      "goldMine",
-      "shredder",
-      "repairStation",
-    ],
-    4: ["golden", "silver", "copper"],
-    5: ["ultimate"],
-    6: ["transcendent"],
-  };
-
-  const PROBABILITY = {
-    random_cheap: [0.54, 0.29, 0.12, 0.03, 0.015, 0.005],
-    random_medium: [0.235, 0.43, 0.23, 0.07, 0.025, 0.01],
-    random_expensive: [0.03, 0.23, 0.46, 0.18, 0.07, 0.03],
-  };
-
-  const weights = PROBABILITY[randomBoxType];
+  // 확률표는 gameData.js가 단일 진실원 (ui.js 툴팁이 같은 표를 읽어 아이에게 보여준다)
+  const weights = RANDOM_TOWER_PROBABILITY[randomBoxType];
   const rand = Math.random();
   let cumulativeProbability = 0;
   let selectedTier = 1;
@@ -2943,7 +3060,7 @@ function getRandomTowerType(randomBoxType) {
     }
   }
 
-  const tierPool = TOWER_TIERS[selectedTier];
+  const tierPool = RANDOM_TOWER_TIERS[selectedTier];
   return tierPool[Math.floor(Math.random() * tierPool.length)];
 }
 
@@ -4373,6 +4490,13 @@ function checkWaveCompletion() {
     gameElements.startWaveBtn.disabled = false;
     setStartWaveLabel("🚀 시작");
 
+    // v8: 오늘의 도전 진행 — 깨는 순간 바로 알려 준다
+    {
+      const newly = dailyQuest.updateProgress(questState());
+      for (const q of newly)
+        showUpgradeNotification(`🗓️ 오늘의 도전 달성! ${q.icon} ${q.label(q.target)}`);
+    }
+
     // [V2] 웨이브 클리어 업적 체크
     const clearTime = (performance.now() - waveStartTime) / 1000;
     checkAchievements("wave_clear", {
@@ -4476,6 +4600,28 @@ function checkGameOver() {
         noteBox.innerHTML = `<div style="color:#8ee08e;">🎉 이번 판은 틀린 문제가 없어요! 완벽!</div>`;
       }
     }
+    // v8: 판이 끝나는 순간에도 도전 진행을 갱신한다(웨이브 클리어 없이 끝날 수 있다)
+    dailyQuest.updateProgress(questState());
+
+    // v8: 다시 오게 만드는 한 줄. 오답노트 간격 반복은 잘 만들어 뒀는데
+    //     "내일 이게 다시 나온다"는 사실을 아이에게 아무도 알려주지 않았다.
+    {
+      const modal = gameElements.gameOverModal;
+      let comeback = modal.querySelector(".comeback-line");
+      if (!comeback) {
+        comeback = document.createElement("div");
+        comeback.className = "comeback-line";
+        (modal.querySelector(".wrongnote-box") || modal.firstElementChild).after(comeback);
+      }
+      const wrongN = learnLoop.getSessionWrongs().length;
+      const doneN = dailyQuest.completedToday().length;
+      comeback.textContent = wrongN
+        ? `📒 내일 이 문제들이 복습으로 다시 나와요. 그때 맞히면 보너스 골드!`
+        : doneN < 3
+          ? `🗓️ 오늘의 도전이 ${3 - doneN}개 남았어요. 다음 판에서 도전해 보세요!`
+          : `🎯 오늘의 도전을 모두 깼어요! 내일 새 도전이 나와요.`;
+    }
+
     const finalComboEl = document.getElementById("finalCombo");
     if (finalComboEl) finalComboEl.textContent = comboSystem.maxCombo || 0;
 
@@ -5004,6 +5150,7 @@ function openStageSelect(difficulty, progress) {
 }
 
 function restartGame() {
+  renderDailyPanel(); // v8: 오늘의 도전 진행이 바뀌었을 수 있다
   hideModal(gameElements.gameOverModal);
   hideModal(document.getElementById("stageSelectModal"));
   hideModal(gameElements.rankingModal);

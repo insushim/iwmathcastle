@@ -139,7 +139,15 @@ try {
     "오답·시간초과 두 경로 모두 집중력 하락 배선");
   ok(/focusPoints, \/\/ v8/.test(srcMain), "세이브에 집중력 기록");
   ok(/savedState\.focusPoints/.test(srcMain), "이어하기 때 집중력 복원");
-  ok(/focusPoints = 0; \/\/ v8/.test(srcMain), "새 판 시작 시 집중력 초기화");
+  // v8.1: 새 판은 0에서 시작하되, 오늘의 도전을 깼다면 그만큼 얹어서 시작한다.
+  //        (보상이 뽑기가 아니라 "학습해서 얻은 화력"이라는 원칙과 같은 방향)
+  ok(/focusPoints = dailyQuest\.startingFocusBonus\(\)/.test(srcMain),
+    "새 판 시작 시 집중력 = 오늘의 도전 보너스");
+  const daily = await import("../dailyQuest.js");
+  ok(daily.startingFocusBonus("1999-01-01") === 0,
+    "도전을 하나도 안 깼으면 보너스 0 (기존과 동일한 시작점)");
+  ok(daily.FOCUS_BONUS_PER_QUEST * 3 <= 8,
+    `도전 3개 전부 깨도 시작 보너스 ${daily.FOCUS_BONUS_PER_QUEST * 3} (과하지 않게)`);
 
   console.log(`\n${"=".repeat(60)}\n통과 ${pass} · 실패 ${fail}`);
   await browser.close();
