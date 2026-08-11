@@ -66,7 +66,13 @@ const COMBO_TIERS = [
 const comboTier = (c) => COMBO_TIERS.find((t) => c >= t.minCombo);
 
 function runCell(grade, accuracy, seed) {
-  const rng = makeRng(seed);
+  // ⚠️ 공통난수(common random numbers). 정답률별로 난수 스트림이 갈라지면
+  //    "정답률 80%가 90%보다 오래 버텼다" 같은 결과가 실력 차이가 아니라 웨이브 운
+  //    차이일 수 있다. 웨이브 조성·정예·변이는 **정답률과 무관한 스트림**에서 뽑아,
+  //    정답률만 다르고 나머지는 똑같은 판을 비교한다(짝지은 비교).
+  //    문제 풀이 결과만 별도 스트림을 쓴다.
+  const rng = makeRng(seed);           // 웨이브·몬스터 — 정답률과 무관
+  const answerRng = makeRng(seed ^ 0x5f3759df); // 정답/오답만
   let gold = sim.INITIAL_GOLD;
   let castleHp = sim.INITIAL_CASTLE_HP;
   let combo = 0;
@@ -83,7 +89,7 @@ function runCell(grade, accuracy, seed) {
 
   for (let wave = 1; wave <= MAX_WAVE; wave++) {
     // ① 문제
-    if (rng() < accuracy) {
+    if (answerRng() < accuracy) {
       combo++;
       focus = sim.focusAfter(focus, true);
       const tier = comboTier(combo);
@@ -209,7 +215,8 @@ function median(xs) {
 }
 
 function cell(grade, acc) {
-  const runs = SEEDS.map((k) => runCell(grade, acc, grade * 1000 + Math.round(acc * 100) * 13 + k * 7919));
+  // 시드에 정답률을 섞지 않는다 — 섞으면 정답률 칸끼리 다른 판을 비교하게 된다
+  const runs = SEEDS.map((k) => runCell(grade, acc, grade * 1000 + k * 7919));
   const surv = runs.map((r) => r.survived);
   const rep = runs[Math.floor(runs.length / 2)];
   return {
