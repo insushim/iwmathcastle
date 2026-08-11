@@ -18,6 +18,7 @@ let towerCursor = -1;
 
 // Track previous values for animated number transitions
 let prevGold = 100;
+let prevFocusPct = -1; // v8
 let prevScore = 0;
 
 export function initializeUI(callback) {
@@ -126,6 +127,25 @@ export function updateUI(state) {
     animateValue(scoreEl, prevScore, newScore, 400);
     triggerValueAnimation(scoreEl, newScore > prevScore);
     prevScore = newScore;
+  }
+
+  // v8: 집중력 — 0이면 아무것도 안 보여준다(처음부터 빈 칸이 붙어 있으면 잡음이 된다)
+  const focusInfo = document.getElementById("focusInfo");
+  if (focusInfo) {
+    const mult = simCore.focusDamageMultiplier(state.focusPoints || 0);
+    const pct = Math.round((mult - 1) * 100);
+    focusInfo.style.display = pct > 0 ? "" : "none";
+    if (pct !== prevFocusPct) {
+      const el = document.getElementById("focusValue");
+      el.textContent = `+${pct}%`;
+      focusInfo.dataset.tier = String(simCore.focusTier(state.focusPoints || 0));
+      if (pct > prevFocusPct) {
+        focusInfo.classList.remove("pulse");
+        void focusInfo.offsetWidth;
+        focusInfo.classList.add("pulse");
+      }
+      prevFocusPct = pct;
+    }
   }
 
   document.getElementById("wizardLevel").textContent = state.wizardLevel;

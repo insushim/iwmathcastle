@@ -965,6 +965,23 @@ body.is-touch .mobile-only { display: inline; }
     100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0); }
 }
 
+/* v8: 집중력 — 문제를 맞힌 만큼 타워가 세지는 것을 눈에 보이게 한다.
+   단계가 오를수록 색이 진해져서, 아이가 "지금 잘하고 있다"를 숫자 없이도 안다. */
+.focus-info .info-value { color: #7ee8a2; }
+.focus-info[data-tier="2"] .info-value { color: #59d98a; }
+.focus-info[data-tier="3"] .info-value { color: #ffd166; }
+.focus-info[data-tier="4"] .info-value { color: #ff9f43; }
+
+.focus-info.pulse {
+    animation: focusPulse 0.6s ease-out;
+}
+
+@keyframes focusPulse {
+    0% { box-shadow: 0 0 0 0 rgba(126, 232, 162, 0.5); }
+    50% { box-shadow: 0 0 12px 4px rgba(126, 232, 162, 0.25); }
+    100% { box-shadow: 0 0 0 0 rgba(126, 232, 162, 0); }
+}
+
 .wizard-info {
     display: flex;
     align-items: center;

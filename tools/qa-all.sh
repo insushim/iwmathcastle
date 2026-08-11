@@ -19,6 +19,11 @@ SCRIPTS=(
   qa-ux-controls qa-mobile qa-ime qa-wizard-flicker qa-audio qa-perf
 )
 
+# 앞선 실행이 비정상 종료하면 chrome-headless-shell 프로세스가 남는다.
+# 6개쯤 쌓이면 뒤이어 도는 게이트가 "detached Frame"/"Target closed"로 무더기 실패한다
+# (실측 — 제품 회귀로 오인하기 딱 좋다). 시작 전과 스크립트 사이에서 정리한다.
+pkill -f chrome-headless-shell 2>/dev/null; sleep 1
+
 PORT=8901
 FAILED=0
 RESULTS=()
@@ -30,6 +35,7 @@ for s in "${SCRIPTS[@]}"; do
   if [ "$s" = "qa-perf" ]; then OUT=$(node "$f" 2>&1); else OUT=$(node "$f" "$PORT" 2>&1); fi
   CODE=$?
   PORT=$((PORT + 1))
+  pkill -f chrome-headless-shell 2>/dev/null; sleep 1
   LINE=$(echo "$OUT" | grep -E "통과 [0-9]+|PASS|FAIL \(|결과:" | tail -1 | cut -c1-64)
   [ -z "$LINE" ] && LINE=$(echo "$OUT" | tail -1 | cut -c1-64)
   if [ "$CODE" -eq 0 ]; then

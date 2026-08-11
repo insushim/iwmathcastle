@@ -11,7 +11,11 @@ import * as sim from "../simCore.js";
 import { TOWER_STATS, MONSTER_STATS, WIZARD_SPELLS, WIZARD_AUTO_ATTACK_STATS } from "../gameData.js";
 
 const GATE_MODE = process.argv.includes("--gate");
-const MAX_WAVE = GATE_MODE ? 80 : Number(process.argv[2]) || 40;
+// v8: 집중력(정답률→화력)과 각성 6단계 도입으로 상위권 도달 웨이브가 올라갔다.
+// "학습이 결과를 바꾸는가"의 정본 게이트는 tools/accuracy-sweep.mjs 다.
+// 여기서는 "하드월 없음 + 무한 압도 없음" 두 가지만 본다.
+const MAX_WAVE = GATE_MODE ? 100 : Number(process.argv[2]) || 40;
+const GATE_UPPER = 95;
 
 // ---------- 시드 RNG ----------
 function makeRng(seed) {
@@ -70,6 +74,7 @@ function runCell(grade, accuracy, seed) {
   let gold = sim.INITIAL_GOLD;
   let castleHp = sim.INITIAL_CASTLE_HP;
   let combo = 0;
+  let focus = 0;              // v8: 집중력 (simCore 단일 진실원)
   const towers = [];
   let cumIncome = 0, cumSpent = 0;
   const curve = {};
@@ -87,11 +92,13 @@ function runCell(grade, accuracy, seed) {
     // --- ① 문제 풀이 (웨이브 시작 전) ---
     if (rng() < accuracy) {
       combo++;
+      focus = sim.focusAfter(focus, true);
       const tier = comboTier(combo);
       const reward = sim.answerReward(wave, tier.multiplier, tier.bonusGold);
       gold += reward; cumIncome += reward;
     } else {
       combo = 0;
+      focus = sim.focusAfter(focus, false);
       gold = Math.max(0, gold - sim.WRONG_PENALTY.gold);
       castleHp -= sim.WRONG_PENALTY.castleHp;
       // v6: 오답 타워 삭제는 simCore 설정을 따른다 (v5에서 폐지 — 프로브 불일치 수정)
@@ -167,8 +174,9 @@ function runCell(grade, accuracy, seed) {
       };
     });
     const waveHpTotal = queue.reduce((s, m) => s + m.hp, 0);
-    const tDps = towerDpsTotal();
-    const dpsNow = tDps + wizardAutoDps(tDps) + WIZARD_SPELL_DPS;
+    const focusMult = sim.focusDamageMultiplier(focus);   // v8
+    const tDps = towerDpsTotal() * focusMult;
+    const dpsNow = tDps + wizardAutoDps(towerDpsTotal()) + WIZARD_SPELL_DPS;
     if ([5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80].includes(wave)) {
       curve[wave] = { waveHp: Math.round(waveHpTotal), playerDps: Math.round(dpsNow), towers: towers.length };
     }
@@ -200,9 +208,9 @@ function runCell(grade, accuracy, seed) {
       const towerEff = towers.reduce(
         (s, tw) => s + sim.towerDps(tw) * Math.min(tw.splashTargets || 1, Math.max(1, aliveList.length)),
         0,
-      ) * towerFactor;
+      ) * towerFactor * focusMult;
       const wizardEff =
-        (wizardAutoDps(tDps) + WIZARD_SPELL_DPS) * Math.min(2, Math.max(1, aliveList.length)) * wizardFactor;
+        (wizardAutoDps(towerDpsTotal()) + WIZARD_SPELL_DPS) * Math.min(2, Math.max(1, aliveList.length)) * wizardFactor;
       let dmg = (towerEff + wizardEff) * cover * dt;
       aliveList.sort((a, b) => b.pos - a.pos);
       for (const m of aliveList) {
@@ -226,7 +234,8 @@ function runCell(grade, accuracy, seed) {
     castleHp: Math.max(0, castleHp),
     towers: towers.length,
     awakens: towers.reduce((s, t) => s + (t.awaken || 0), 0),
-    finalDps: Math.round(towerDpsTotal() + wizardAutoDps(towerDpsTotal()) + WIZARD_SPELL_DPS),
+    finalDps: Math.round(towerDpsTotal() * sim.focusDamageMultiplier(focus) + wizardAutoDps(towerDpsTotal()) + WIZARD_SPELL_DPS),
+    focus,
     economy: cumSpent ? (cumIncome / cumSpent).toFixed(2) : "-",
     curve,
   };
@@ -244,12 +253,12 @@ function medianRun(grade, acc) {
 if (GATE_MODE) {
   console.log(`밸런스 배포 게이트 — MAX_WAVE=${MAX_WAVE}\n`);
   let pass = true;
-  // ① 95% 정답률 봇이 웨이브 60을 넘지 못할 것 (전 학년)
+  // ① 95% 정답률 봇도 언젠가는 뚫린다 (무한 압도 방지)
   for (const grade of [3, 4, 5, 6]) {
     const r = medianRun(grade, 0.95);
-    const ok = r.survived < 60;
+    const ok = r.survived < GATE_UPPER;
     if (!ok) pass = false;
-    console.log(`  [게이트①] ${grade}학년 95%봇 생존 ${r.survived}웨이브 (${r.range}) → ${ok ? "✅ W60 미만 사망" : "❌ W60+ 생존 (무한 압도)"}`);
+    console.log(`  [게이트①] ${grade}학년 95%봇 생존 ${r.survived}웨이브 (${r.range}) 집중력 ${r.focus} → ${ok ? `✅ W${GATE_UPPER} 미만 사망` : "❌ 무한 압도"}`);
   }
   // ② 60% 정답률이 웨이브 15+ 생존 (전 학년)
   for (const grade of [3, 4, 5, 6]) {

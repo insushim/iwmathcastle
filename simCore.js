@@ -123,7 +123,47 @@ export function difficultyHpMultiplier(difficulty) {
 }
 
 export function waveGoldMultiplier(wave) {
-  return 1 + wave / 12;
+  // v8: 1+w/12 → 1+w/20. 처치 골드가 후반 수입의 79%를 차지하면서(웨이브 50 실측)
+  //     "문제를 잘 푸는 것"의 경제적 의미가 게임이 진행될수록 희석됐다.
+  //     타워는 이미 지어져 있고 알아서 잡으니, 아이가 수학을 포기해도 돈이 돈다.
+  return 1 + wave / 20;
+}
+
+// ---------- v8: 집중력(Focus) — 학습 성과를 화력으로 ----------
+//
+// 왜 만들었나. 2026-08-12 실측: 정답률 60%든 100%든 전 학년이 똑같이 59웨이브에서
+// 죽었다(격자 5시드). 원인은 타워 성장 상한(레벨10×각성×타워수)에 정답률과 무관하게
+// 비슷한 시점(웨이브 43 근처)에 도달하고, 그 뒤로는 몬스터 HP만 지수로 오르기 때문.
+// 즉 "잘 풀면 더 멀리 간다"가 상위권에게는 거짓이었다.
+//
+// 그래서 정답이 **화력 상한 자체**를 올리게 한다. 골드는 상한에 도달하는 속도만
+// 바꾸지만, 집중력은 도달 가능한 최댓값을 바꾼다.
+//
+// 설계 원칙 — 못하는 아이를 더 때리지 않는다.
+//   집중력은 0 아래로 내려가지 않고, 0이면 지금까지의 게임과 정확히 같다.
+//   오답 페널티(성 체력)는 그대로 둔다. 격차는 "벌"이 아니라 "상"으로 만든다.
+export const FOCUS_MAX = 40;
+export const FOCUS_GAIN_CORRECT = 1;
+export const FOCUS_LOSS_WRONG = 2;      // 정답보다 무겁게 — 찍기로는 안 쌓이게
+export const FOCUS_DAMAGE_PER_POINT = 0.022; // 만렙 40점 = 타워 피해 ×1.88
+
+export function focusAfter(focus, isCorrect) {
+  const next = (focus || 0) + (isCorrect ? FOCUS_GAIN_CORRECT : -FOCUS_LOSS_WRONG);
+  return Math.max(0, Math.min(FOCUS_MAX, next));
+}
+
+export function focusDamageMultiplier(focus) {
+  return 1 + Math.max(0, Math.min(FOCUS_MAX, focus || 0)) * FOCUS_DAMAGE_PER_POINT;
+}
+
+/** UI 표시용 단계 (0~4) — 0단계면 아무것도 안 보여준다 */
+export function focusTier(focus) {
+  const f = Math.max(0, focus || 0);
+  if (f >= 32) return 4;
+  if (f >= 22) return 3;
+  if (f >= 12) return 2;
+  if (f >= 5) return 1;
+  return 0;
 }
 
 export function eliteParams(wave, rand = Math.random) {
@@ -143,7 +183,10 @@ export const WAVE_CLEAR_HEAL = 3;     // v5 신규: 무피해 웨이브 클리�
 
 export function answerReward(wave, comboMultiplier = 1, bonusGold = 0) {
   // v5: 기본 150→180 (초반 경제 보강 — 프로브 실측)
-  return Math.floor((180 + wave * 10) * comboMultiplier) + bonusGold;
+  // v8: 웨이브 계수 10→22. 처치 골드 감쇠(waveGoldMultiplier)와 세트로,
+  //     후반에도 경제의 주 수입원이 "문제를 맞히는 것"이 되게 한다.
+  //     실측 근거: 웨이브 50 시점 수입 비중이 정답 21% / 처치 79%였다.
+  return Math.floor((180 + wave * 22) * comboMultiplier) + bonusGold;
 }
 
 // v5 재조정: 오답 시 타워 삭제 폐지 (정답률 60% 학생 하드월 원인 — 프로브 실측)
@@ -192,7 +235,11 @@ export function towerDps(stats) {
 }
 
 // ---------- v6: 타워 각성 (레벨 10 이후 골드 싱크) ----------
-export const TOWER_MAX_AWAKEN = 3;
+// v8: 3 → 6. 각성 3단계에서 화력 상한이 막혀 웨이브 43 근처부터 정답률과 무관하게
+//     모두가 같은 DPS로 수렴했다(실측: 95%봇 DPS가 wave43~60 내내 27496 고정).
+//     비용이 2배씩 오르므로(20배×2^n) 4~6단계는 정답 보상으로 경제를 굴린
+//     아이만 실제로 도달한다 — 상한을 여는 것 자체가 학습 보상이 된다.
+export const TOWER_MAX_AWAKEN = 6;
 
 export function towerAwakenCost(tower) {
   const baseCost =

@@ -180,6 +180,9 @@ let isReviewProblem = false; // v5: 복습(재출제) 문제 여부
 let isNoteReviewProblem = false; // v6: 오답노트 복습 퀴즈 여부 (보너스 골드)
 let gameSpeed = 1; // 1x or 2x speed multiplier
 let currentWaveModifier = null; // v6: 웨이브 변이 (웨이브 30+)
+// v8: 집중력 — 이번 판의 학습 성과가 그대로 타워 화력이 된다.
+// 정답 +1, 오답 -2, 0~40. 규칙은 simCore가 단일 진실원.
+let focusPoints = 0;
 let shownProblemIds = new Set(); // Track shown problems to avoid duplicates
 let problemTimerId = null;
 let problemTimerStart = 0;
@@ -614,6 +617,10 @@ window.addEventListener("DOMContentLoaded", () => {
     },
     qaShowProblem: (prob) => {
       const p = prob || { q: "4/9 - 1/7", a: "19/63", d: ["20/63", "18/63", "63/19"] };
+      // 실제 showMathProblem()과 같이 채점 플래그를 푼다.
+      // 이게 없으면 두 번째 문제부터 checkAnswer가 맨 앞에서 return해버려,
+      // "문제를 20개 풀었다"는 시나리오가 사실은 1개만 채점된 헛검사가 된다(실측).
+      problemAnswered = false;
       correctAnswer = p.a;
       currentProblem = p;
       const opts = [p.a, ...(p.d || [])];
@@ -827,6 +834,7 @@ async function initializeGame(difficulty, savedState = null) {
   totalKillCount = 0;
   totalBossKills = 0;
   totalTowersBuilt = 0;
+  focusPoints = 0; // v8: 집중력은 판 단위 (다음 판에 다시 쌓는다)
   gameSpeed = 1;
   shownProblemIds = new Set();
   comboSystem.break();
@@ -846,6 +854,7 @@ async function initializeGame(difficulty, savedState = null) {
     // --- Restore extended save data ---
     if (savedState.activeSpell) activeSpell = savedState.activeSpell;
     if (savedState.maxCombo) comboSystem.maxCombo = savedState.maxCombo;
+    if (savedState.focusPoints) focusPoints = savedState.focusPoints; // v8
     if (savedState.totalKillCount) totalKillCount = savedState.totalKillCount;
     if (savedState.totalBossKills) totalBossKills = savedState.totalBossKills;
     if (savedState.totalTowersBuilt)
@@ -3281,6 +3290,11 @@ function handleHit(projectile, timestamp) {
 
   let damage = source.damage;
 
+  // v8: 집중력 — 이번 판에서 문제를 맞힌 만큼 타워 피해가 오른다.
+  // 여기가 타워 피해가 한 곳으로 모이는 유일한 지점이다(레이저도 이 함수를 탄다).
+  // 마법사는 제외한다 — 타워가 주력이라는 기존 설계(WIZARD_DPS_CAP_RATIO)와 맞춘다.
+  if (source.type) damage *= simCore.focusDamageMultiplier(focusPoints);
+
   // v6: 웨이브 변이 — 강철 피부(타워 피해↓) / 마법 억제(마법사 피해↓)
   if (currentWaveModifier) {
     if (source.type && currentWaveModifier.towerDamageFactor)
@@ -4126,6 +4140,16 @@ function checkAnswer(answer, clickedBtn) {
       // v5: 학습=화력 — 정답 시 마법 쿨다운 30% 감소
       // v7: 문제를 넘겨야 라이트너 상자 승급(세션 3→7→15 확장, 날짜 1→3→7→16일)이 된다
       learnLoop.recordCorrect(currentProblem, currentWave, isReviewProblem);
+      // v8: 집중력 상승 → 모든 타워 피해 증가
+      {
+        const beforeTier = simCore.focusTier(focusPoints);
+        focusPoints = simCore.focusAfter(focusPoints, true);
+        const tier = simCore.focusTier(focusPoints);
+        if (tier > beforeTier)
+          showUpgradeNotification(
+            `🎯 집중력 ${tier}단계! 모든 타워 공격력 +${Math.round((simCore.focusDamageMultiplier(focusPoints) - 1) * 100)}%`,
+          );
+      }
       if (isReviewProblem)
         checkAchievements("review_correct", {
           reviewCleared: learnLoop.stats.reviewCleared,
@@ -4179,6 +4203,7 @@ function checkAnswer(answer, clickedBtn) {
     resultDiv.style.color = "#ff3366";
     if (currentProblem)
       learnLoop.recordWrong(currentProblem, currentWave, isNoteReviewProblem);
+    focusPoints = simCore.focusAfter(focusPoints, false); // v8: 집중력 하락(0 아래로는 안 간다)
     gold = Math.max(0, gold - simCore.WRONG_PENALTY.gold);
     castleHealth = Math.max(0, castleHealth - simCore.WRONG_PENALTY.castleHp);
     score = Math.max(0, score - simCore.WRONG_PENALTY.score);
@@ -4274,6 +4299,7 @@ function handleTimeOut() {
   resultDiv.style.color = "#ff8c00";
   if (currentProblem)
     learnLoop.recordWrong(currentProblem, currentWave, isNoteReviewProblem);
+  focusPoints = simCore.focusAfter(focusPoints, false); // v8
 
   // Penalty: same as wrong answer but slightly less harsh
   gold = Math.max(0, gold - 20);
@@ -4839,6 +4865,7 @@ function updateFullUI() {
     monsters,
     monstersInWave,
     wizardLevel,
+    focusPoints,
   };
   ui.updateUI(currentState);
 }
@@ -5125,6 +5152,7 @@ function buildGameState() {
     // --- Extended save data ---
     activeSpell,
     maxCombo: comboSystem.maxCombo || 0,
+    focusPoints, // v8: 이어하기 때 집중력을 잃지 않게
     totalKillCount,
     totalBossKills,
     totalTowersBuilt,
