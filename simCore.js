@@ -167,7 +167,21 @@ export function applyTowerUpgrade(tower) {
   tower.range = Math.floor(tower.range * 1.1);
   tower.rangeSq = tower.range * tower.range;
   if (tower.cooldown) tower.cooldown = Math.floor(tower.cooldown * 0.95);
+  // 멀티샷은 2레벨마다 동시 공격 대상이 하나 늘어난다.
+  // v8: 이 규칙이 main.js의 upgradeTower와 recreateTower 두 곳에만 있어,
+  //     세이브 복원 경로와 실시간 업그레이드 경로가 각각 재구현돼 있었다.
+  //     단일 진실원으로 끌어올린다(수치 어긋남은 크래시가 아니라 조용히 벌어진다).
+  if (tower.type === "multi-shot" && tower.level % 2 === 0)
+    tower.numTargets = (tower.numTargets || 1) + 1;
   return tower;
+}
+
+// ---------- 마법사 ----------
+// v8: 비용 공식이 main.js(실제 차감)와 ui.js(버튼 비활성 판정)에 각각 리터럴로
+//     박혀 있었다. 한쪽만 고치면 "눌리는데 아무 일도 안 일어나는" 버튼이 된다.
+export const WIZARD_UPGRADE_COST_PER_LEVEL = 150;
+export function wizardUpgradeCost(level) {
+  return WIZARD_UPGRADE_COST_PER_LEVEL * level;
 }
 
 // 타워 이론 DPS (밸런스 분석용)

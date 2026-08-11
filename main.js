@@ -664,6 +664,28 @@ window.addEventListener("DOMContentLoaded", () => {
       placeTower(type);
       pendingTile = null;
     },
+    // v8: 발사체 그리기 분기를 전수 실행한다. 실제 플레이로는 어떤 타워가 언제
+    //     쏠지가 운에 달려 있어 "관측된 종류 N개"가 판마다 달라진다(실측: 4~5종).
+    //     렌더러를 직접 호출해 24개 분기를 결정적으로 전부 태운다.
+    qaRenderAllProjectiles: (types) => {
+      const ctx = dynamicCtx || gameElements.dynamicLayerCanvas.getContext("2d");
+      const failures = [];
+      const origWarn = console.warn;
+      console.warn = (...a) => {
+        if (String(a[0]).includes("[projectile]")) failures.push(String(a[0]));
+        origWarn.apply(console, a);
+      };
+      // 타입당 1회만 경고하는 캐시를 비워야 두 번째 실행에서도 잡힌다
+      ProjectileRenderer._warned.clear();
+      const ts = performance.now();
+      for (const t of types) {
+        for (const [dx, dy] of [[40, 0], [0, 40], [-30, -30]]) {
+          projectileRenderer.renderProjectile(ctx, t, 200, 200, 16, 200 + dx, 200 + dy, ts + dx * 7);
+        }
+      }
+      console.warn = origWarn;
+      return { tested: types.length, failures };
+    },
     qaPlaceTowers: (type, count) => {
       // 타일에 타워 강제 배치 (성능 테스트용)
       const tiles = [...document.querySelectorAll(".placement-tile")].slice(0, count);
@@ -1506,15 +1528,13 @@ function recreateTower(towerData) {
     splashRadiusSq: (stat.splashRadius || 0) ** 2,
   };
 
-  for (let i = 1; i < tower.level; i++) {
-    tower.damage = Math.floor(tower.damage * 1.3);
-    if (tower.dps) tower.dps = Math.floor(tower.dps * 1.25);
-    tower.range = Math.floor(tower.range * 1.1);
-    if (tower.cooldown) tower.cooldown = Math.floor(tower.cooldown * 0.95);
-    if (tower.type === "multi-shot" && (i + 1) % 2 === 0) {
-      tower.numTargets++;
-    }
-  }
+  // v8: 레벨업 계산을 여기서 재구현하지 않는다. simCore가 단일 진실원이고,
+  //     사본을 두면 밸런스 패치가 한쪽에만 적용돼 "복원된 타워"와 "방금 올린 타워"의
+  //     능력치가 조용히 어긋난다(크래시가 아니라 수치 차이라 QA에서 안 걸린다).
+  //     applyTowerUpgrade는 level을 스스로 올리므로 1에서 시작해 목표 레벨까지 돌린다.
+  const targetLevel = tower.level;
+  tower.level = 1;
+  while (tower.level < targetLevel) simCore.applyTowerUpgrade(tower);
   tower.rangeSq = tower.range * tower.range;
 
   // v6: 각성 단계 복원
@@ -2589,6 +2609,13 @@ function renderDynamicLayer() {
 // --- 웨이브 및 몬스터 관리 ---
 function startWave() {
   if (waveInProgress) return;
+  // v8: waveInProgress 가드만으로는 부족하다. 이어하기 직후 연타·강제 진행처럼
+  //     타이밍이 겹치는 경로에서 이전 웨이브의 스폰 인터벌이 살아남아 겹쳐 돌면
+  //     몬스터가 두 배 속도로 쏟아진다. 진입 시 무조건 정리한다.
+  if (spawnIntervalId) {
+    clearInterval(spawnIntervalId);
+    spawnIntervalId = null;
+  }
   sfx.play("wave_start");
   const { startWaveBtn } = gameElements;
   waveInProgress = true;
@@ -2999,9 +3026,9 @@ function upgradeTower() {
   const cost = simCore.towerUpgradeCost(tower);
   if (gold < cost) return showMessage("골드가 부족합니다!");
   gold -= cost;
-  simCore.applyTowerUpgrade(tower);
-  if (tower.type === "multi-shot" && tower.level % 2 === 0) {
-    tower.numTargets++;
+  const beforeTargets = tower.numTargets;
+  simCore.applyTowerUpgrade(tower); // 멀티샷 numTargets 증가도 여기 포함(단일 진실원)
+  if (tower.type === "multi-shot" && tower.numTargets !== beforeTargets) {
     showUpgradeNotification(
       `멀티샷 타워가 이제 ${tower.numTargets}명의 적을 동시 공격합니다!`,
     );
@@ -4360,7 +4387,6 @@ function checkGameOver() {
       weakLine.style.display = weakness ? "block" : "none";
 
       // v6: 오답노트 — 이번 판 틀린 문제 + 풀이 힌트 복습 (localStorage 저장 → 다음 판 복습 퀴즈)
-      learnLoop.saveWrongNote(selectedDifficulty);
       let noteBox = modal.querySelector(".wrongnote-box");
       if (!noteBox) {
         noteBox = document.createElement("div");
@@ -4464,7 +4490,6 @@ async function saveAndSubmit() {
   const finalPlayerName = currentNickname();
 
   try {
-    learnLoop.saveWrongNote(selectedDifficulty); // v6: 종료 전 오답노트 저장
     await submitScore(finalPlayerName, score, currentWave, selectedDifficulty);
 
     gameRunning = false;
@@ -4651,7 +4676,7 @@ function setupEventListeners() {
   });
 
   document.getElementById("upgradeWizardBtn").addEventListener("click", () => {
-    const cost = 150 * wizardLevel;
+    const cost = simCore.wizardUpgradeCost(wizardLevel);
     if (gold >= cost) {
       gold -= cost;
       wizardLevel++;
@@ -5100,7 +5125,6 @@ function buildGameState() {
     // --- Extended save data ---
     activeSpell,
     maxCombo: comboSystem.maxCombo || 0,
-    currentCombo: comboSystem.getCombo(),
     totalKillCount,
     totalBossKills,
     totalTowersBuilt,
@@ -5108,23 +5132,34 @@ function buildGameState() {
       .getAll()
       .filter((a) => a.unlocked)
       .map((a) => a.id),
-    problemSetIndex: currentProblemSet.length,
     shownProblemIds: shownProblemIds ? [...shownProblemIds] : [],
     gameSpeed,
   };
 }
 
 function saveGame(silent = false) {
-  const gameState = buildGameState();
-
-  // v5: 게임ID 네임스페이스 + 버전 래퍼 (마이그레이션 체인용)
-  localStorage.setItem(
-    "mathcastle:save",
-    JSON.stringify({ version: 6, data: gameState }),
-  );
-  localStorage.removeItem("towerDefenseSave"); // 구 키 정리
-  if (!silent) {
-    showMessage("게임이 저장되었습니다!");
-    sfx.play("blip");
+  // v8: 여기가 프로젝트에서 유일하게 try/catch 없는 저장 경로였다.
+  //     저장공간이 가득 찬 기기(사파리 프라이빗 모드·용량 부족)에서는
+  //     setItem이 QuotaExceededError를 던지고, 이 함수가 checkWaveCompletion 안에서
+  //     호출되기 때문에 그 뒤의 스테이지 체크포인트 기록과 클리어 메시지까지
+  //     통째로 날아갔다. 아이 눈에는 원인 모를 "먹통"으로 보인다.
+  //     예외는 여기서 흡수한다 — 저장 실패가 게임 진행을 막으면 안 된다.
+  try {
+    const gameState = buildGameState();
+    // v5: 게임ID 네임스페이스 + 버전 래퍼 (마이그레이션 체인용)
+    localStorage.setItem(
+      "mathcastle:save",
+      JSON.stringify({ version: 6, data: gameState }),
+    );
+    localStorage.removeItem("towerDefenseSave"); // 구 키 정리
+    if (!silent) {
+      showMessage("게임이 저장되었습니다!");
+      sfx.play("blip");
+    }
+    return true;
+  } catch (err) {
+    console.warn("게임 저장 실패:", err);
+    showMessage("⚠️ 저장 공간이 부족해 저장하지 못했어요. 게임은 계속할 수 있어요!");
+    return false;
   }
 }

@@ -130,7 +130,7 @@ export function updateUI(state) {
 
   document.getElementById("wizardLevel").textContent = state.wizardLevel;
   document.getElementById("upgradeWizardBtn").disabled =
-    state.gold < 150 * state.wizardLevel;
+    state.gold < simCore.wizardUpgradeCost(state.wizardLevel);
 
   // Update wave progress bar
   updateWaveProgress(state);

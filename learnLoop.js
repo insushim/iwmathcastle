@@ -399,10 +399,10 @@ export function getSessionWrongs() {
   return [...sessionWrongs];
 }
 
-/** 구 API 호환 — 노트 갱신은 이제 매 문항 즉시 이뤄지므로 할 일이 없다.
- *  (판 도중 브라우저가 닫혀도 진도가 남는다) */
-export function saveWrongNote() { /* no-op */ }
-export function clearFromNote() { /* no-op — noteOnCorrect가 대신한다 */ }
+// v8: saveWrongNote()/clearFromNote()는 no-op 스텁이면서 호출부에는
+// "종료 전 오답노트 저장"이라는 주석이 붙어 있었다. 실제 저장은 매 문항 즉시
+// writeNotes()가 한다. 있지도 않은 저장 시점을 코드가 거짓으로 알리고 있어서
+// 스텁과 호출부를 모두 지웠다.
 
 // ---------- ⑤ 통계 ----------
 export function accuracyText() {

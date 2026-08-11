@@ -70,6 +70,25 @@ export function getProgress(difficulty) {
   return all[k] || legacy || { highest: 1, checkpoints: {} };
 }
 
+/** 학기당 보관할 체크포인트 최대 개수.
+ *  v8: 이전에는 상한이 없어 스테이지를 클리어할수록 스냅샷(타워 배치 전체)이
+ *  무한히 쌓였다. 웨이브 상한이 없는 구조라 오래 하는 아이일수록 이 키만 계속
+ *  커졌고, localStorage 5MB 한도에 가장 먼저 닿을 후보였다.
+ *  최근 것부터 남긴다 — 아이가 실제로 재도전하는 건 방금 죽은 근처 스테이지다. */
+export const MAX_CHECKPOINTS = 12;
+
+function pruneCheckpoints(checkpoints) {
+  const keys = Object.keys(checkpoints)
+    .map(Number)
+    .filter((n) => Number.isFinite(n))
+    .sort((a, b) => b - a); // 높은 스테이지 = 최근
+  if (keys.length <= MAX_CHECKPOINTS) return checkpoints;
+  const keep = new Set(keys.slice(0, MAX_CHECKPOINTS).map(String));
+  const out = {};
+  for (const k of Object.keys(checkpoints)) if (keep.has(k)) out[k] = checkpoints[k];
+  return out;
+}
+
 /** 스테이지 클리어 시 다음 스테이지 시작 스냅샷 기록 (재클리어 시 덮어씀 = 더 좋아진 상태 반영) */
 export function recordCheckpoint(difficulty, stage, snapshot) {
   const all = readAll();
@@ -78,6 +97,7 @@ export function recordCheckpoint(difficulty, stage, snapshot) {
   // 첫 신규 체크포인트 기록이 legacy 진행을 빈 객체로 덮어 유실하던 버그
   const cur = getProgress(difficulty);
   cur.checkpoints[String(stage)] = snapshot;
+  cur.checkpoints = pruneCheckpoints(cur.checkpoints);
   cur.highest = Math.max(cur.highest, stage);
   all[k] = cur;
   writeAll(all);

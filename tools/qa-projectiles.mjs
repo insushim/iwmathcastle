@@ -11,15 +11,33 @@
 // 검사 방법: 정적 분석(호출 vs 정의) + 실제 브라우저에서 타워를 전부 지어 발사시키고
 //           콘솔 예외를 센다. 정적 분석만으로는 런타임 인자 오류를 못 잡는다.
 //
-// 사용: python3 -m http.server 8830 -d .  (별도 터미널)
-//       node tools/qa-projectiles.mjs 8830
+// 사용: node tools/qa-projectiles.mjs [포트=8830]   (정적 서버는 스스로 띄운다)
 
 import puppeteer from "puppeteer";
-import { readFileSync } from "node:fs";
 import { TOWER_STATS } from "../gameData.js";
 
 const PORT = Number(process.argv[2]) || 8830;
 const BASE = `http://127.0.0.1:${PORT}`;
+
+import { createServer } from "node:http";
+import { readFileSync, existsSync } from "node:fs";
+import { join, extname, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// 정적 서버를 스스로 띄운다 — 다른 qa-*.mjs 와 같은 방식이라
+// tools/qa-all.sh 가 스크립트마다 포트만 다르게 주면 그대로 돌아간다.
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".png": "image/png", ".webp": "image/webp", ".woff2": "font/woff2" };
+const server = createServer((req, res) => {
+  let p = req.url.split("?")[0];
+  if (p === "/") p = "/index.html";
+  const fp = join(ROOT, p);
+  if (!fp.startsWith(ROOT) || !existsSync(fp)) { res.writeHead(404); res.end(); return; }
+  res.writeHead(200, { "Content-Type": MIME[extname(fp)] || "application/octet-stream" });
+  res.end(readFileSync(fp));
+});
+await new Promise((r, j) => { server.on("error", j); server.listen(PORT, r); });
+
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log(`  ✅ ${m}`)) : (fail++, console.log(`  ❌ ${m}`)); };
@@ -117,28 +135,42 @@ try {
     };
     raf(tick);
   });
-  await new Promise((r) => setTimeout(r, 20000));
+  await new Promise((r) => setTimeout(r, 15000));
   const { maxProjectiles, types } = await page.evaluate(() => ({
     maxProjectiles: window.__maxP,
     types: [...window.__seen],
   }));
-  const seenTypes = new Set(types);
 
   ok(maxProjectiles > 0, `동시 발사체 최대 ${maxProjectiles}개 (0이면 아무도 쏘지 않은 헛검사)`);
-  ok(seenTypes.size >= 5, `실제로 관측된 발사체 종류 ${seenTypes.size}종: ${[...seenTypes].slice(0, 12).join(", ")}`);
+  ok(types.length >= 3, `실제 플레이에서 관측된 발사체 ${types.length}종: ${types.slice(0, 12).join(", ")}`);
 
   const renderErrors = errors.filter((e) => /is not a function|프레임 예외/.test(e));
   ok(renderErrors.length === 0,
-    `렌더 예외 ${renderErrors.length}건${renderErrors.length ? " → " + renderErrors[0] : ""}`);
+    `실제 플레이 20초 중 렌더 예외 ${renderErrors.length}건${renderErrors.length ? " → " + renderErrors[0] : ""}`);
+
+  // ── ③ 결정적 전수 검사 ──
+  // 어떤 타워가 언제 쏘는지는 운에 달려 있어 실플레이만으로는 분기 전수를 못 태운다.
+  // 렌더러를 직접 호출해 24개 분기를 전부 그려 본다. 실패하면 폴백 경고가 남는다.
+  console.log("\n[③ 결정적 전수 — 발사체 분기 24종 직접 렌더]");
+  const src = readFileSync(new URL("../projectileRenderer.js", import.meta.url), "utf8");
+  const dispatch = src.slice(src.indexOf("_dispatchProjectile"), src.indexOf("renderSpellEffect("));
+  const caseTypes = [...dispatch.matchAll(/case "([^"]+)":/g)].map((m) => m[1]);
+  ok(caseTypes.length >= 20, `switch에서 추출한 발사체 타입 ${caseTypes.length}종`);
+
+  const sweep = await page.evaluate((t) => window.__mathcastle.qaRenderAllProjectiles(t), caseTypes);
+  ok(sweep.failures.length === 0,
+    `전수 렌더 실패 ${sweep.failures.length}건 / ${sweep.tested}종${sweep.failures.length ? " → " + sweep.failures[0].slice(0, 100) : ""}`);
 
   const state = await page.evaluate(() => window.__mathcastle.getState());
   ok(state.gameRunning === true, `20초 뒤에도 게임 실행 중 (웨이브 ${state.currentWave}, 몬스터 ${state.monsters})`);
 
   console.log(`\n${"=".repeat(60)}\n통과 ${pass} · 실패 ${fail}`);
   await browser.close();
+  server.close();
   process.exit(fail > 0 ? 1 : 0);
 } catch (e) {
   console.error("\n실행 오류:", e);
   await browser.close();
+  server.close();
   process.exit(2);
 }

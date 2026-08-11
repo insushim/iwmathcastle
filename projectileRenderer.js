@@ -1173,7 +1173,7 @@ export class ProjectileRenderer {
   }
 
   /** 그물 — 회전하는 거미줄 뭉치 */
-  _drawWebBall(ctx, x, y, r, _angle, _ts) {
+  _drawWebBall(ctx, x, y, r, _angle, ts) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(ts * 0.003);

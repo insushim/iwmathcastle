@@ -87,7 +87,7 @@ try {
   // ── 게임 로드 ──
   await page.evaluateOnNewDocument(() => {
     try {
-      localStorage.setItem("mathcastle:howto", JSON.stringify({ hide: true }));
+      localStorage.setItem("mathcastle:howto", JSON.stringify({ never: true }));
     } catch {}
   });
   await page.goto(BASE, { waitUntil: "networkidle0", timeout: 30000 });
