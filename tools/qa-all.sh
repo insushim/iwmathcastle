@@ -16,7 +16,7 @@ SCRIPTS=(
   qa-smoke qa-stages qa-spells qa-learning qa-adaptive
   qa-projectiles qa-resilience qa-progression qa-retention
   qa-tower-onroad qa-save-onroad qa-tower-render qa-build-panel qa-build-nav
-  qa-ux-controls qa-mobile qa-ime qa-wizard-flicker qa-audio qa-perf
+  qa-ux-controls qa-mobile qa-ime qa-wizard-flicker qa-audio qa-a11y-load qa-perf
 )
 
 # 앞선 실행이 비정상 종료하면 chrome-headless-shell 프로세스가 남는다.

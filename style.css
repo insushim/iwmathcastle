@@ -18,7 +18,11 @@
     --accent-purple: #a855f7;
     --text-primary: #e2e8f0;
     --text-secondary: #94a3b8;
-    --text-dim: #475569;
+    /* v8: #475569는 --bg-primary(#0a0e1a) 위에서 명도대비 2.54:1로 WCAG AA(4.5:1)의
+       절반이었다. 마법 이름·업적 설명·랭킹 갱신 시각처럼 아이가 실제로 읽어야 하는
+       글자에 쓰이고 있어서, 교실 전자칠판이나 창가 채광에서 특히 안 보였다.
+       #7c8aa0 = 5.50:1 (AA 통과). 톤은 그대로 두고 밝기만 올렸다. */
+    --text-dim: #7c8aa0;
     --glow-cyan: 0 0 20px rgba(0, 229, 255, 0.3);
     --glow-gold: 0 0 20px rgba(255, 215, 0, 0.3);
     --glow-magenta: 0 0 20px rgba(255, 0, 229, 0.3);
@@ -1716,16 +1720,18 @@ body.is-touch .mobile-only { display: inline; }
 }
 
 .tower-option-symbol { font-size: 24px; margin-bottom: 2px; line-height: 1.2; }
+/* v8: 9px → 12px. 타워 이름은 아이가 건설 중에 빠르게 읽어야 하는 글자다.
+   저가 안드로이드(화면 밀도 낮음)에서 9px는 사실상 판독 불가였다. */
 .tower-option-name {
-    font-size: 9px;
-    color: var(--text-dim);
+    font-size: 12px;
+    color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 60px;
+    max-width: 72px;
     text-align: center;
 }
-.tower-option-cost { font-size: 11px; color: var(--accent-gold); font-family: var(--font-display); font-weight: 700; }
+.tower-option-cost { font-size: 12px; color: var(--accent-gold); font-family: var(--font-display); font-weight: 700; }
 .tower-option-air-label { font-size: 10px; color: var(--accent-cyan); position: absolute; top: 2px; left: 3px; }
 
 .cancel-build-btn {
@@ -1967,8 +1973,9 @@ body.is-touch .mobile-only { display: inline; }
 }
 
 .spell-option-symbol { font-size: 26px; line-height: 1.2; }
-.spell-option-name { font-size: 9px; color: var(--text-dim); margin-top: 2px; }
-.spell-option-cost { font-size: 11px; color: var(--text-secondary); margin-top: 3px; font-family: var(--font-display); }
+/* v8: 마법 이름도 같은 이유로 12px + 대비 확보 */
+.spell-option-name { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.spell-option-cost { font-size: 12px; color: var(--text-secondary); margin-top: 3px; font-family: var(--font-display); }
 
 /* === Modals === */
 .modal {
@@ -2639,7 +2646,8 @@ body.is-touch .mobile-only { display: inline; }
 
 .achievement-icon { font-size: 24px; margin-bottom: 4px; }
 .achievement-name { font-size: 13px; font-weight: 700; color: var(--accent-gold); }
-.achievement-desc { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+/* v8: 업적 설명 11px → 12.5px */
+.achievement-desc { font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; }
 
 /* === Settings Modal (Modern sliders + toggles) === */
 .settings-modal { text-align: center; max-width: 400px; }
@@ -3618,9 +3626,11 @@ body.is-touch .mobile-only { display: inline; }
         gap: 6px;
     }
     #control-bar .ctrl-btn {
-        padding: 6px 10px;
+        /* 높이는 44px를 지키고(위 pointer:coarse 규칙), 대신 좌우 패딩을 줄여
+           가로 폭을 아낀다. 세로 패딩은 0으로 두고 min-height가 크기를 정하게 한다. */
+        padding: 0 10px;
         font-size: 13px;
-        min-height: 34px;
+        min-height: 44px;
     }
     /* 물리 키보드가 없는 기기에서 단축키 배지는 자리만 차지한다 */
     body.is-touch .key-hint { display: none; }
@@ -3651,8 +3661,8 @@ body.is-touch .mobile-only { display: inline; }
         min-width: 58px;
         padding: 5px 3px 4px;
     }
-    .tower-option-name { font-size: 10px; }
-    .tower-option-cost { font-size: 10px; }
+    .tower-option-name { font-size: 12px; }
+    .tower-option-cost { font-size: 12px; }
     .tower-option-img { width: 30px; height: 30px; }
 }
 
@@ -3662,8 +3672,14 @@ body.is-touch kbd {
     display: none;
 }
 
-/* 터치 조작에 최소 44px 타깃 확보 — 애플 HIG 권장치 */
+/* 터치 조작에 최소 44px 타깃 확보 — 애플 HIG 권장치
+   ⚠️ v8: 여기 있던 `.ctrl-btn`(특이도 0,1,0)은 가로 화면 규칙
+   `#control-bar .ctrl-btn { min-height: 34px }`(특이도 1,1,0)에 밀려 죽어 있었다.
+   그래서 폰 가로에서 컨트롤 버튼 8개 중 6개가 실제로 35px였다(실측).
+   버튼이 작으면 9살 손가락은 '다음 웨이브 강제 진행'과 '일시정지'를 잘못 누른다.
+   같은 특이도로 맞춰 되살린다. 세로 공간은 패딩을 줄여 벌충한다. */
 @media (pointer: coarse) {
+    #control-bar .ctrl-btn,
     .ctrl-btn { min-height: 44px; min-width: 44px; }
     .tower-option { min-height: 76px; }
 }

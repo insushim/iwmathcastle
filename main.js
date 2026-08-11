@@ -71,11 +71,11 @@ function paintNickname(n) {
 import { ParticleSystem } from "./particles.js";
 import { MusicSystem } from "./music.js";
 import { AchievementSystem, ComboSystem } from "./achievements.js";
-import { WizardSprite } from "./wizardSprite.js";
-import { CastleRenderer } from "./castleRenderer.js";
-import { MonsterRenderer } from "./monsterRenderer.js";
-import { TowerRenderer } from "./towerRenderer.js";
-import { ProjectileRenderer } from "./projectileRenderer.js";
+// v8: 렌더러 5종(약 370KB)은 **게임에 들어간 뒤에** 받는다.
+// 정적 import면 브라우저가 main.js를 실행하기 전에 이걸 전부 내려받고, 그동안
+// DOMContentLoaded가 안 끝나 메뉴 버튼이 눌리지 않는다. 느린 학교 와이파이에서
+// 첫 화면까지 6.1초가 걸린 주범이었다(3G 에뮬레이션 실측).
+// 메뉴 화면은 이 모듈들을 하나도 쓰지 않는다.
 
 // --- [NEW] 공간 분할(Spatial Partitioning) 클래스 ---
 /**
@@ -276,11 +276,30 @@ let waveStartTime = 0;
 let menuParticleCtx = null;
 let menuParticleAnimId = null;
 let menuParticles = [];
-const wizardSprite = new WizardSprite();
-const castleRenderer = new CastleRenderer();
-const monsterRenderer = new MonsterRenderer();
-const towerRenderer = new TowerRenderer();
-const projectileRenderer = new ProjectileRenderer();
+let wizardSprite = null;
+let castleRenderer = null;
+let monsterRenderer = null;
+let towerRenderer = null;
+let projectileRenderer = null;
+let ProjectileRendererClass = null;   // QA 훅이 경고 캐시를 비울 때 쓴다
+
+/** 렌더러를 한 번만 받아 인스턴스를 만든다 (initializeGame이 await 한다) */
+async function loadRenderers() {
+  if (monsterRenderer) return;
+  const [w, c, m, t, p] = await Promise.all([
+    import("./wizardSprite.js"),
+    import("./castleRenderer.js"),
+    import("./monsterRenderer.js"),
+    import("./towerRenderer.js"),
+    import("./projectileRenderer.js"),
+  ]);
+  wizardSprite = new w.WizardSprite();
+  castleRenderer = new c.CastleRenderer();
+  monsterRenderer = new m.MonsterRenderer();
+  towerRenderer = new t.TowerRenderer();
+  ProjectileRendererClass = p.ProjectileRenderer;
+  projectileRenderer = new p.ProjectileRenderer();
+}
 const activeCanvasEffects = []; // Canvas-based spell effects tracking
 
 // --- [OPTIMIZATION] Object Pooling ---
@@ -824,7 +843,7 @@ window.addEventListener("DOMContentLoaded", () => {
         origWarn.apply(console, a);
       };
       // 타입당 1회만 경고하는 캐시를 비워야 두 번째 실행에서도 잡힌다
-      ProjectileRenderer._warned.clear();
+      ProjectileRendererClass?._warned.clear();
       const ts = performance.now();
       for (const t of types) {
         for (const [dx, dy] of [[40, 0], [0, 40], [-30, -30]]) {
@@ -851,7 +870,9 @@ window.addEventListener("DOMContentLoaded", () => {
       pendingTile = null;
     },
   };
-  window.__spritesReady = preloadSprites(); // v5: AI 스프라이트 로드 (없으면 절차적 폴백)
+  // v8: 여기서 207장(2.5MB)을 전부 받고 있었다. 학년을 고르기도 전에.
+  //     3학년만 할 아이도 6학년 보스 스프라이트까지 받았고, 그 요청들이 정작 필요한
+  //     문제 파일과 커넥션을 다퉜다. 이제 학년을 고른 뒤 필요한 것부터 받는다.
   // categorizeAnswers()는 학년 선택 후 initializeGame에서 실행 (문제 동적 로드 이후)
   ui.initializeUI(handleBuildStep);
 
@@ -886,6 +907,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
 async function initializeGame(difficulty, savedState = null) {
   difficulty = migrateDifficulty(difficulty); // v6: 구 학년 표기("3") → 학기 표기("3-1")
+  await loadRenderers(); // v8: 렌더러는 게임에 들어올 때 받는다 (메뉴는 안 쓴다)
   const {
     difficultyModal,
     gameCanvas,
@@ -917,8 +939,11 @@ async function initializeGame(difficulty, savedState = null) {
 
   // v5: 학년별 AI 배경 (없으면 기존 CSS 배경 유지)
   {
-    try { await window.__spritesReady; } catch {}
     const bgKey = { 3: "bg_meadow", 4: "bg_meadow", 5: "bg_canyon", 6: "bg_volcano" }[parseInt(difficulty, 10)];
+    // v8: 이 학년에 필요한 것부터 받고, 후반 전용 몬스터는 백그라운드로 이어 받는다.
+    //     스프라이트가 아직 없으면 렌더러가 절차적 드로잉으로 폴백하므로 안전하다.
+    if (!window.__spritesReady) window.__spritesReady = preloadSprites("assets", bgKey);
+    try { await window.__spritesReady; } catch {}
     const bgImg = getSprite(bgKey);
     // #gameCanvas 자체의 불투명 CSS 배경을 인라인으로 교체해야 보인다
     // (#game-content에 걸면 자식 gameCanvas 배경에 완전히 가려짐 — 시각 QA 실측)
