@@ -78,6 +78,9 @@ function hexToRgba(hex, alpha) {
 // ProjectileRenderer Class
 // ============================================================
 export class ProjectileRenderer {
+  // 같은 타입의 렌더 실패를 매 프레임 로그로 도배하지 않기 위한 1회 경고 집합
+  static _warned = new Set();
+
   constructor() {
     // Reusable arrays to avoid per-frame allocations
     this._trailPoints = [];
@@ -120,7 +123,23 @@ export class ProjectileRenderer {
     const r = size * 0.5;
 
     ctx.save();
+    try {
+      this._dispatchProjectile(ctx, type, x, y, r, angle, timestamp);
+    } catch (err) {
+      // 한 발사체의 그리기 실패가 그 프레임의 나머지 렌더를 통째로 죽이면 안 된다.
+      // (v8 이전에는 미구현 메서드 9종이 여기서 throw해 화면이 프레임 단위로 깜빡였다)
+      if (!ProjectileRenderer._warned.has(type)) {
+        ProjectileRenderer._warned.add(type);
+        console.warn(`[projectile] '${type}' 렌더 실패 — 기본 모양으로 대체:`, err);
+      }
+      try {
+        this._drawDefaultProjectile(ctx, x, y, r, timestamp);
+      } catch { /* 기본 모양마저 실패하면 이 발사체만 건너뛴다 */ }
+    }
+    ctx.restore();
+  }
 
+  _dispatchProjectile(ctx, type, x, y, r, angle, timestamp) {
     switch (type) {
       // ----- Math Tower Projectiles (Energy Bolts) -----
       case "plus":
@@ -263,8 +282,6 @@ export class ProjectileRenderer {
         this._drawDefaultProjectile(ctx, x, y, r, timestamp);
         break;
     }
-
-    ctx.restore();
   }
 
   // ==========================================================
@@ -1015,6 +1032,360 @@ export class ProjectileRenderer {
     ctx.beginPath();
     ctx.arc(x, y, r * 0.3, 0, TWO_PI);
     ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // ==========================================================
+  // v8 복구: 호출만 되고 정의가 없던 9종
+  //
+  // 2026-08-12 실측 — 메테오·독·기절·그물·멀티샷·금광·파쇄기·궁극·황금 타워는
+  // 발사체를 그릴 때마다 `TypeError: this._drawX is not a function`을 던졌다.
+  // 이 throw가 renderProjectile의 ctx.save()와 ctx.restore() 사이에서 터지는 바람에
+  //  ① 그 발사체가 안 보이고
+  //  ② 같은 프레임의 그 뒤 렌더(다른 발사체·몬스터·이펙트)가 통째로 중단되며
+  //  ③ save/restore 짝이 깨져 컨텍스트 상태가 다음 프레임으로 샜다.
+  // 20종 타워 중 9종 = 절반 가까이가 이 상태였다. qa-projectiles.mjs가 감시한다.
+  // ==========================================================
+
+  /** 메테오 — 불타는 암석 + 잔염 꼬리 */
+  _drawMeteor(ctx, x, y, r, angle, ts) {
+    const nx = -Math.cos(angle);
+    const ny = -Math.sin(angle);
+    for (let i = 0; i < 6; i++) {
+      const dist = r * (1.2 + i * 1.1);
+      const px = x + nx * dist + Math.sin(ts * 0.008 + i * 1.7) * r * 0.5;
+      const py = y + ny * dist + Math.cos(ts * 0.007 + i * 1.3) * r * 0.5;
+      ctx.globalAlpha = 0.45 - i * 0.06;
+      ctx.fillStyle = i < 3 ? "#FF9800" : "#B71C1C";
+      ctx.beginPath();
+      ctx.arc(px, py, r * (0.75 - i * 0.08), 0, TWO_PI);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+    this._glow(ctx, x, y, r * 2.2, "#FF5722", 0.5);
+
+    // 암석 본체 — 울퉁불퉁한 다각형
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(ts * 0.004);
+    ctx.fillStyle = "#4E342E";
+    ctx.beginPath();
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * TWO_PI;
+      const rad = r * (0.85 + ((i * 37) % 10) / 40);
+      const px = Math.cos(a) * rad;
+      const py = Math.sin(a) * rad;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // 균열 사이로 새어 나오는 용암
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = "#FF7043";
+    ctx.beginPath();
+    ctx.arc(-r * 0.25, -r * 0.2, r * 0.28, 0, TWO_PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(r * 0.3, r * 0.15, r * 0.2, 0, TWO_PI);
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  /** 독 — 방울방울 떨어지는 산성 액체 */
+  _drawToxicGlob(ctx, x, y, r, angle, ts) {
+    const nx = -Math.cos(angle);
+    const ny = -Math.sin(angle);
+    for (let i = 0; i < 4; i++) {
+      const dist = r * (1.3 + i * 1.0);
+      const px = x + nx * dist + Math.sin(ts * 0.006 + i * 2.1) * r * 0.45;
+      const py = y + ny * dist + Math.cos(ts * 0.005 + i * 1.6) * r * 0.45;
+      ctx.globalAlpha = 0.35 - i * 0.07;
+      ctx.fillStyle = "#7CB342";
+      ctx.beginPath();
+      ctx.arc(px, py, r * (0.45 - i * 0.07), 0, TWO_PI);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+    this._glow(ctx, x, y, r * 1.8, "#8BC34A", 0.4);
+
+    // 물방울 본체 (진행 방향으로 살짝 늘어남)
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.fillStyle = "#558B2F";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 1.15, r * 0.85, 0, 0, TWO_PI);
+    ctx.fill();
+
+    // 표면에서 터지는 기포
+    ctx.fillStyle = "#AED581";
+    for (let i = 0; i < 3; i++) {
+      const ph = ts * 0.004 + i * 2.0;
+      const bx = Math.cos(ph) * r * 0.4;
+      const by = Math.sin(ph * 1.3) * r * 0.35;
+      ctx.globalAlpha = 0.5 + 0.4 * Math.abs(Math.sin(ph));
+      ctx.beginPath();
+      ctx.arc(bx, by, r * 0.18, 0, TWO_PI);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  /** 기절 — 지그재그 번개 화살 */
+  _drawLightningBolt(ctx, x, y, r, angle, ts) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+
+    this._glow(ctx, 0, 0, r * 2.0, "#FFEB3B", 0.55);
+
+    // 뒤로 뻗는 지그재그
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = "#FFF59D";
+    ctx.lineWidth = Math.max(1.5, r * 0.35);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(r * 1.1, 0);
+    const jitter = Math.sin(ts * 0.03) * r * 0.35;
+    ctx.lineTo(-r * 0.2, jitter);
+    ctx.lineTo(-r * 1.1, -jitter * 0.7);
+    ctx.lineTo(-r * 2.1, jitter * 0.4);
+    ctx.stroke();
+
+    // 밝은 코어
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = "#FFFFFF";
+    ctx.lineWidth = Math.max(1, r * 0.16);
+    ctx.stroke();
+
+    // 앞머리 스파크
+    ctx.fillStyle = "#FFEE58";
+    ctx.beginPath();
+    ctx.arc(r * 1.1, 0, r * 0.35, 0, TWO_PI);
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  /** 그물 — 회전하는 거미줄 뭉치 */
+  _drawWebBall(ctx, x, y, r, _angle, _ts) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(ts * 0.003);
+
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = "#ECEFF1";
+    ctx.lineWidth = Math.max(1, r * 0.12);
+
+    // 방사선 8줄
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * TWO_PI;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * r * 1.15, Math.sin(a) * r * 1.15);
+      ctx.stroke();
+    }
+    // 동심 거미줄 3겹
+    for (let ring = 1; ring <= 3; ring++) {
+      const rad = (r * 1.15 * ring) / 3;
+      ctx.globalAlpha = 0.5 + ring * 0.12;
+      ctx.beginPath();
+      for (let i = 0; i <= 8; i++) {
+        const a = (i / 8) * TWO_PI;
+        const px = Math.cos(a) * rad;
+        const py = Math.sin(a) * rad;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  /** 멀티샷 — 푸른 화살 */
+  _drawBlueArrow(ctx, x, y, r, angle, _ts) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+
+    this._glow(ctx, 0, 0, r * 1.6, "#2196F3", 0.45);
+
+    // 화살대
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#1565C0";
+    ctx.fillRect(-r * 1.4, -r * 0.16, r * 2.2, r * 0.32);
+
+    // 촉
+    ctx.fillStyle = "#64B5F6";
+    ctx.beginPath();
+    ctx.moveTo(r * 1.5, 0);
+    ctx.lineTo(r * 0.7, -r * 0.55);
+    ctx.lineTo(r * 0.7, r * 0.55);
+    ctx.closePath();
+    ctx.fill();
+
+    // 깃
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = "#90CAF9";
+    ctx.beginPath();
+    ctx.moveTo(-r * 1.4, 0);
+    ctx.lineTo(-r * 2.0, -r * 0.45);
+    ctx.lineTo(-r * 1.1, 0);
+    ctx.lineTo(-r * 2.0, r * 0.45);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  /** 금광 — 회전하는 금화 */
+  _drawGoldCoin(ctx, x, y, r, _angle, ts) {
+    this._glow(ctx, x, y, r * 1.8, "#FFC107", 0.5);
+
+    // 회전으로 폭이 줄었다 늘었다 (동전이 도는 느낌)
+    const w = Math.abs(Math.cos(ts * 0.006)) * r + r * 0.15;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#FFB300";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, w, r, 0, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.fillStyle = "#FFE082";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, w * 0.6, r * 0.6, 0, 0, TWO_PI);
+    ctx.fill();
+
+    // 각인 (폭이 충분할 때만 — 얇을 땐 옆면이라 안 보이는 게 맞다)
+    if (w > r * 0.45) {
+      ctx.fillStyle = "#F57F17";
+      ctx.fillRect(-w * 0.28, -r * 0.42, w * 0.56, r * 0.16);
+      ctx.fillRect(-w * 0.28, r * 0.26, w * 0.56, r * 0.16);
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  /** 파쇄기 — 고속 회전 톱날 */
+  _drawSawblade(ctx, x, y, r, _angle, ts) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(ts * 0.02);
+
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#B0BEC5";
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.95, 0, TWO_PI);
+    ctx.fill();
+
+    // 톱니 8개
+    ctx.fillStyle = "#ECEFF1";
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * TWO_PI;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r * 0.9, Math.sin(a) * r * 0.9);
+      ctx.lineTo(Math.cos(a + 0.22) * r * 1.45, Math.sin(a + 0.22) * r * 1.45);
+      ctx.lineTo(Math.cos(a + 0.44) * r * 0.9, Math.sin(a + 0.44) * r * 0.9);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 중심 축
+    ctx.fillStyle = "#455A64";
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.3, 0, TWO_PI);
+    ctx.fill();
+    ctx.restore();
+
+    // 잔상
+    ctx.globalAlpha = 0.25;
+    ctx.strokeStyle = "#CFD8DC";
+    ctx.lineWidth = Math.max(1, r * 0.2);
+    ctx.beginPath();
+    ctx.arc(x, y, r * 1.3, 0, TWO_PI);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  /** 궁극 수호자 — 무지개 구슬 */
+  _drawRainbowOrb(ctx, x, y, r, _angle, ts) {
+    const hues = ["#FF5252", "#FFB300", "#FFEE58", "#66BB6A", "#42A5F5", "#AB47BC"];
+
+    // 궤도를 도는 색 고리들
+    for (let i = 0; i < hues.length; i++) {
+      const a = ts * 0.005 + (i / hues.length) * TWO_PI;
+      const ox = x + Math.cos(a) * r * 1.25;
+      const oy = y + Math.sin(a) * r * 1.25;
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = hues[i];
+      ctx.beginPath();
+      ctx.arc(ox, oy, r * 0.4, 0, TWO_PI);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+    this._glow(ctx, x, y, r * 2.4, "#E1BEE7", 0.6);
+
+    // 흰 코어
+    ctx.fillStyle = "#FFFFFF";
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.7, 0, TWO_PI);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = hues[Math.floor(ts * 0.01) % hues.length];
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.45, 0, TWO_PI);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  /** 황금 왕관 — 금빛 화살 */
+  _drawGoldenBolt(ctx, x, y, r, angle, _ts) {
+    const nx = -Math.cos(angle);
+    const ny = -Math.sin(angle);
+    for (let i = 0; i < 4; i++) {
+      const dist = r * (1.2 + i * 1.1);
+      ctx.globalAlpha = 0.4 - i * 0.08;
+      ctx.fillStyle = "#FFD54F";
+      ctx.beginPath();
+      ctx.arc(x + nx * dist, y + ny * dist, r * (0.55 - i * 0.1), 0, TWO_PI);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+    this._glow(ctx, x, y, r * 2.0, "#FFC107", 0.6);
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+
+    // 마름모 본체
+    ctx.fillStyle = "#FFA000";
+    ctx.beginPath();
+    ctx.moveTo(r * 1.5, 0);
+    ctx.lineTo(0, -r * 0.7);
+    ctx.lineTo(-r * 1.0, 0);
+    ctx.lineTo(0, r * 0.7);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#FFF8E1";
+    ctx.beginPath();
+    ctx.moveTo(r * 0.9, 0);
+    ctx.lineTo(0, -r * 0.32);
+    ctx.lineTo(-r * 0.5, 0);
+    ctx.lineTo(0, r * 0.32);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
     ctx.globalAlpha = 1;
   }
 
