@@ -160,6 +160,31 @@ try {
       `업적·학습 기록 화면에서 새 CSP 위반 ${cspViolations.length - before}건`);
   }
 
+  // ── ④-3 CSP 아래에서 학습 기능이 실제로 동작하는가 (v8) ──
+  // Node QA는 CSP가 없어서 통과하는데 브라우저에서만 죽는 부류가 있다.
+  // 실제로 풀이 힌트 검산기가 Function()을 써서, 배포 환경에서만 전멸하고
+  // 옛 힌트로 조용히 폴백하고 있었다(codex 교차검증 → wrangler 실서버로 확인).
+  console.log("\n[④-3 실제 CSP에서 학습 기능]");
+  {
+    const r = await page.evaluate(async () => {
+      const m = await import("./learnLoop.js");
+      let evalBlocked = false;
+      try { Function("return 1"); } catch { evalBlocked = true; }
+      return {
+        evalBlocked,
+        hints: [
+          m.getSolutionHint("밑변 22cm, 높이 8cm인 삼각형의 넓이는?", "88"),
+          m.getSolutionHint("국어 80점, 수학 90점, 영어 70점의 평균은?", "80"),
+          m.getSolutionHint("장난감 191원짜리 6개를 사고 1313원을 내면 거스름돈은?", "167"),
+        ],
+      };
+    });
+    ok(r.evalBlocked, "배포 CSP가 실제로 eval/Function을 막고 있다(헛검사 방지)");
+    const numeric = r.hints.filter((h) => /=\s*[\d\s+\-×÷().−]+\s*=/.test(h));
+    ok(numeric.length === r.hints.length,
+      `브라우저에서 숫자 대입 풀이 ${numeric.length}/${r.hints.length}건 — 예: ${r.hints[0]}`);
+  }
+
   // ── ① 개인정보 입력 경로 ──
   console.log("\n[① 개인정보 입력 경로]");
   const inputs = await page.evaluate(() =>

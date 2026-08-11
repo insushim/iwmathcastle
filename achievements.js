@@ -182,6 +182,15 @@ export class AchievementSystem {
     this._flushSoon();
   }
 
+  /** 탭이 닫히거나 백그라운드로 갈 때 남은 진행을 굳힌다(2초 타이머 유실 방지) */
+  installFlushOnExit() {
+    if (typeof window === "undefined" || this._exitHooked) return;
+    this._exitHooked = true;
+    const flush = () => { if (this._flushTimer) { clearTimeout(this._flushTimer); this._flushTimer = null; } this._saveBest(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flush(); });
+  }
+
   _flushSoon() {
     if (this._flushTimer) return;
     this._flushTimer = setTimeout(() => {
@@ -192,7 +201,14 @@ export class AchievementSystem {
 
   _saveBest() {
     try {
-      localStorage.setItem("mathcastle:achbest", JSON.stringify(this.best));
+      // ⚠️ 통째로 덮어쓰면 안 된다. 이건 "최고 기록"이라 항상 큰 값이 이겨야 하는데,
+      //    탭을 두 개 열어 두면(또는 pagehide flush가 늦게 들어오면) 오래된 메모리 값이
+      //    나중에 쓰여 더 높은 기록을 지운다. 저장된 값과 metric별로 큰 쪽을 남긴다.
+      const merged = { ...this._loadBest() };
+      for (const [k, v] of Object.entries(this.best))
+        if (!(merged[k] >= v)) merged[k] = v;
+      this.best = merged;
+      localStorage.setItem("mathcastle:achbest", JSON.stringify(merged));
     } catch { /* 저장 실패해도 게임은 계속 */ }
   }
 

@@ -174,6 +174,10 @@ console.log("\n[⑥ 힌트 계산식의 정확성]");
   // 힌트에 계산식이 들어 있으면 실제로 계산해 정답과 맞는지 확인한다.
   // v7에는 "33 + 15 ÷ 3"에 "33 + 15: 더하면 38!"이라 답하는 버그가 있었다(33+15=48).
   // 아이가 그걸 믿으면 틀린 계산법을 배운다. 힌트는 틀릴 바에 없는 게 낫다.
+  // 게이트의 검산기는 제품 코드와 **다른 구현**이어야 의미가 있다(같은 걸 두 번 쓰면
+  // 검산이 아니라 두 번째 구현이다). 여기서는 Function()을 써도 된다 — Node라 CSP가 없다.
+  // ⚠️ 단, 제품 코드가 Function()을 쓰면 배포 CSP(script-src 'self')에서 전멸한다.
+  //    그건 아래 ⑧이 실제 브라우저로 감시한다.
   const evalExpr = (expr) => {
     const e = expr.replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-").trim();
     if (!/^[\d\s+\-*/().]+$/.test(e)) return null;   // 숫자·사칙연산·괄호만
@@ -258,6 +262,26 @@ console.log("\n[⑦ 엉뚱한 힌트]");
     }
   }
   ok(fracCalc === 0, `분수·비율 정답에 붙은 계산식 힌트 ${fracCalc}건${fracCalc ? " → " + fracCases[0] : ""}`);
+}
+
+// ── ⑧ 제품 코드가 eval 계열을 쓰지 않는가 ──
+console.log("\n[⑧ CSP 안전성]");
+{
+  const { readFileSync } = await import("node:fs");
+  const files = ["../learnLoop.js", "../problemSelector.js", "../main.js", "../ui.js", "../simCore.js", "../dailyQuest.js"];
+  const offenders = [];
+  for (const f of files) {
+    const src = readFileSync(new URL(f, import.meta.url), "utf8");
+    src.split("\n").forEach((line, i) => {
+      if (/^\s*(\/\/|\*)/.test(line)) return;           // 주석 제외
+      if (/\bnew Function\s*\(|\bFunction\s*\(\s*["\`']|\beval\s*\(/.test(line))
+        offenders.push(`${f.replace("../", "")}:${i + 1}`);
+    });
+  }
+  // 배포 CSP는 script-src 'self' — eval/Function은 EvalError를 던진다.
+  // 그 예외를 삼키는 코드였던 탓에 "힌트가 조용히 옛 버전으로 폴백"하는 일이 실제로 있었다.
+  ok(offenders.length === 0,
+    `제품 코드의 eval/Function 사용 ${offenders.length}곳${offenders.length ? " → " + offenders.join(", ") : ""} (배포 CSP에서 EvalError)`);
 }
 
 console.log(`\n${"=".repeat(60)}\n통과 ${pass} · 실패 ${fail}`);

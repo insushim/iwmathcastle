@@ -40,16 +40,71 @@ function withNums(q, need, build) {
   }
 }
 
-/** 사칙연산 식을 계산한다. 숫자·연산자·괄호만 허용. 못 읽으면 null. */
+/**
+ * 사칙연산 식을 계산한다. 숫자·+·-·×·÷·괄호만. 못 읽으면 null.
+ *
+ * ⚠️ `Function()`이나 `eval()`을 쓰면 안 된다. 배포 CSP가 `script-src 'self'`라
+ * 브라우저에서 EvalError가 난다. 처음엔 Function()으로 짰는데, Node로 돌리는 QA에는
+ * CSP가 없어서 전부 통과했고 **실제 브라우저에서만 조용히 전멸**했다 —
+ * 검산이 다 실패하니 숫자 대입 풀이가 하나도 안 나가고 옛 힌트로 폴백했다
+ * (codex 교차검증 지적 → wrangler 실서버로 확인. QA가 못 잡는 부류였다).
+ * 그래서 재귀 하강 파서를 직접 쓴다.
+ */
 function calcExpr(expr) {
-  const e = String(expr).replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
-  if (!/^[\d\s+\-*/().]+$/.test(e)) return null;
-  try {
-    const v = Function(`"use strict";return (${e});`)();
-    return Number.isFinite(v) ? v : null;
-  } catch {
-    return null;
+  const src = String(expr).replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
+  if (!/^[\d\s+\-*/().]+$/.test(src)) return null;
+
+  let i = 0;
+  const ws = () => { while (i < src.length && src[i] === " ") i++; };
+  const peek = () => { ws(); return src[i]; };
+
+  function parseExpr() {
+    let v = parseTerm();
+    if (v === null) return null;
+    for (;;) {
+      const c = peek();
+      if (c !== "+" && c !== "-") return v;
+      i++;
+      const r = parseTerm();
+      if (r === null) return null;
+      v = c === "+" ? v + r : v - r;
+    }
   }
+  function parseTerm() {
+    let v = parseFactor();
+    if (v === null) return null;
+    for (;;) {
+      const c = peek();
+      if (c !== "*" && c !== "/") return v;
+      i++;
+      const r = parseFactor();
+      if (r === null) return null;
+      if (c === "/" && r === 0) return null;   // 0으로 나누기는 힌트로 쓸 수 없다
+      v = c === "*" ? v * r : v / r;
+    }
+  }
+  function parseFactor() {
+    const c = peek();
+    if (c === "-") { i++; const v = parseFactor(); return v === null ? null : -v; }
+    if (c === "+") { i++; return parseFactor(); }
+    if (c === "(") {
+      i++;
+      const v = parseExpr();
+      if (v === null || peek() !== ")") return null;
+      i++;
+      return v;
+    }
+    const start = i;
+    while (i < src.length && /[\d.]/.test(src[i])) i++;
+    if (i === start) return null;
+    const n = Number(src.slice(start, i));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  const out = parseExpr();
+  ws();
+  if (i !== src.length) return null;           // 남은 글자가 있으면 식이 아니다
+  return out === null || !Number.isFinite(out) ? null : out;
 }
 
 /**
@@ -504,7 +559,7 @@ export function resetQueue() {
 export function recordWrong(problem, currentWave, fromNote = false) {
   if (!problem || !problem.q) return;
   if (!sessionWrongs.some((w) => w.q === problem.q))
-    sessionWrongs.push({ q: problem.q, a: problem.a, d: problem.d, t: problem.t });
+    sessionWrongs.push({ q: problem.q, a: problem.a, d: problem.d, t: problem.t, u: problem.u });
 
   const type = classifyProblem(problem.q);
   stats.wrongByType[type] = (stats.wrongByType[type] || 0) + 1;
@@ -606,6 +661,10 @@ function noteOnWrong(problem) {
       q: problem.q, a: problem.a,
       d: Array.isArray(problem.d) ? problem.d.slice(0, 3) : [],
       t: problem.t || 2,
+      // v8: 단원 코드를 같이 저장하지 않으면, 다음 판 복습 문제에 u가 없어서
+      //     bumpUnit이 조기 반환하고 단원별 성취도에서 복습 정답·오답이 통째로 빠진다
+      //     (codex 교차검증 지적 → 코드로 확인).
+      u: problem.u,
       box: 0, due: today + BOX_DAYS[0], seen: 1, ok: 0, added: today,
     });
   }
@@ -655,7 +714,7 @@ export function seedReviewFromNote(difficulty) {
   picks.forEach((p, i) => {
     p.rr = ++rr;                      // 방금 나왔으니 대기열 맨 뒤로
     wrongQueue.push({
-      problem: { q: p.q, a: p.a, d: p.d, t: p.t },
+      problem: { q: p.q, a: p.a, d: p.d, t: p.t, u: p.u },
       dueWave: i + 1, stage: 0, fromNote: true, pending: false,
     });
   });

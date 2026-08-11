@@ -161,6 +161,7 @@ let gold = 300,
   currentWave = 1,
   monstersInWave = 10,
   monstersSpawned = 0;
+let gameInitializing = false; // v8: 초기화 중복 진입 가드
 let waveInProgress = false,
   gameRunning = false,
   gamePaused = false,
@@ -283,9 +284,22 @@ let towerRenderer = null;
 let projectileRenderer = null;
 let ProjectileRendererClass = null;   // QA 훅이 경고 캐시를 비울 때 쓴다
 
-/** 렌더러를 한 번만 받아 인스턴스를 만든다 (initializeGame이 await 한다) */
-async function loadRenderers() {
-  if (monsterRenderer) return;
+/** 렌더러를 한 번만 받아 인스턴스를 만든다 (initializeGame이 await 한다).
+ *  ⚠️ 진행 중인 Promise를 공유해야 한다. 완료된 인스턴스만 검사하면 느린 회선에서
+ *  학년 버튼을 연달아 누를 때 초기화가 여러 번 겹쳐 전역 상태를 서로 덮어쓴다. */
+let renderersPromise = null;
+function loadRenderers() {
+  if (monsterRenderer) return Promise.resolve();
+  if (!renderersPromise) {
+    renderersPromise = doLoadRenderers().catch((e) => {
+      renderersPromise = null; // 실패하면 다음 시도에서 다시 받을 수 있게
+      throw e;
+    });
+  }
+  return renderersPromise;
+}
+
+async function doLoadRenderers() {
   const [w, c, m, t, p] = await Promise.all([
     import("./wizardSprite.js"),
     import("./castleRenderer.js"),
@@ -894,6 +908,7 @@ window.addEventListener("DOMContentLoaded", () => {
   setupSettingsModal();
   setupHowToPlay();
   setupAchievementModal();
+  achievementSystem.installFlushOnExit(); // v8: 탭 닫힘 시 업적 진행 유실 방지
   setupReportModal();
   renderDailyPanel();
 
@@ -916,7 +931,17 @@ window.addEventListener("DOMContentLoaded", () => {
 
 async function initializeGame(difficulty, savedState = null) {
   difficulty = migrateDifficulty(difficulty); // v6: 구 학년 표기("3") → 학기 표기("3-1")
-  await loadRenderers(); // v8: 렌더러는 게임에 들어올 때 받는다 (메뉴는 안 쓴다)
+  if (gameInitializing) return;   // 느린 회선에서 학년 버튼 연타 → 초기화 중복 방지
+  gameInitializing = true;
+  try {
+    // v8: 렌더러는 게임에 들어올 때 받는다 (메뉴는 안 쓴다)
+    await loadRenderers();
+  } catch (err) {
+    gameInitializing = false;
+    console.error("렌더러 로드 실패:", err);
+    showMessage("게임 파일을 불러오지 못했어요. 새로고침 후 다시 시도해 주세요.");
+    return;
+  }
   const {
     difficultyModal,
     gameCanvas,
@@ -963,6 +988,7 @@ async function initializeGame(difficulty, savedState = null) {
   } catch (err) {
     console.error("문제 데이터 로드 실패:", err);
     gameInitialized = false;
+    gameInitializing = false;
     showMessage("문제 데이터를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.");
     return;
   }
@@ -1090,6 +1116,7 @@ async function initializeGame(difficulty, savedState = null) {
     gameLoop.isRunning = true;
     requestAnimationFrame(gameLoop);
   }
+  gameInitializing = false;
 }
 
 // --- [OPTIMIZATION] Object Pooling Functions ---
@@ -4580,8 +4607,15 @@ function checkGameOver() {
   if (castleHealth <= 0 && gameRunning) {
     gameRunning = false;
     if (spawnIntervalId) clearInterval(spawnIntervalId);
-    localStorage.removeItem("towerDefenseSave");
-    localStorage.removeItem("mathcastle:save");
+    // 여기서 예외가 나면 게임 루프는 이미 멈춘 뒤라 점수 표시·게임오버 모달까지
+    // 도달하지 못하고 화면이 그대로 굳는다(사파리 프라이빗 모드 등).
+    // 세이브 정리 실패는 게임오버 화면을 막을 만한 일이 아니다.
+    try {
+      localStorage.removeItem("towerDefenseSave");
+      localStorage.removeItem("mathcastle:save");
+    } catch (e) {
+      console.warn("세이브 정리 실패:", e);
+    }
     document.getElementById("finalScore").textContent = score;
     document.getElementById("finalWave").textContent = currentWave;
     // v5: 학습 리포트 한 줄 (v6: 취약 유형 + 오답노트 확장)
@@ -4739,8 +4773,15 @@ async function saveAndSubmit() {
 
     gameRunning = false;
     if (spawnIntervalId) clearInterval(spawnIntervalId);
-    localStorage.removeItem("towerDefenseSave");
-    localStorage.removeItem("mathcastle:save");
+    // 여기서 예외가 나면 게임 루프는 이미 멈춘 뒤라 점수 표시·게임오버 모달까지
+    // 도달하지 못하고 화면이 그대로 굳는다(사파리 프라이빗 모드 등).
+    // 세이브 정리 실패는 게임오버 화면을 막을 만한 일이 아니다.
+    try {
+      localStorage.removeItem("towerDefenseSave");
+      localStorage.removeItem("mathcastle:save");
+    } catch (e) {
+      console.warn("세이브 정리 실패:", e);
+    }
 
     showMessage("랭킹 등록 완료! 메인 화면으로 돌아갑니다.");
     setTimeout(restartGame, 1500);

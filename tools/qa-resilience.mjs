@@ -173,6 +173,50 @@ try {
   const writeOnly = roundtrip.filter((k) => !readKeys.has(k));
   ok(writeOnly.length === 0, `저장만 하고 복원하지 않는 죽은 필드 ${writeOnly.length}개${writeOnly.length ? " → " + writeOnly.join(", ") : ""}`);
 
+  // ── ⑦ 게임오버 경로가 저장소 예외를 견디는가 (v8) ──
+  console.log("\n[⑦ 게임오버 중 저장소 예외]");
+  {
+    const r = await page.evaluate(() => {
+      const origRemove = Storage.prototype.removeItem;
+      let threw = false;
+      Storage.prototype.removeItem = function (k) {
+        if (String(k).includes("mathcastle:save") || String(k) === "towerDefenseSave") {
+          threw = true; throw new DOMException("QuotaExceededError");
+        }
+        return origRemove.apply(this, arguments);
+      };
+      let crashed = null;
+      try { window.__mathcastle.qaForceGameOver(); } catch (e) { crashed = String(e); }
+      Storage.prototype.removeItem = origRemove;
+      const modal = document.getElementById("gameOverModal");
+      return { threw, crashed, modalShown: modal.classList.contains("show"),
+               score: document.getElementById("finalScore")?.textContent };
+    });
+    ok(r.threw, "게임오버 중 세이브 정리가 실제로 예외를 맞았다(헛검사 방지)");
+    ok(r.crashed === null, `예외가 전파되지 않음${r.crashed ? " → " + r.crashed : ""}`);
+    ok(r.modalShown, "저장소가 실패해도 게임오버 화면이 뜬다(화면이 굳지 않는다)");
+  }
+
+  // ── ⑧ 오답노트 왕복에서 단원 코드가 살아남는가 (v8) ──
+  console.log("\n[⑧ 오답노트 단원 코드 보존]");
+  {
+    const r = await page.evaluate(async () => {
+      localStorage.removeItem("mathcastle:wrongnote");
+      const L = await import("./learnLoop.js");
+      L.startSession("5-1");
+      L.recordWrong({ q: "테스트 문항 3 + 4", a: "7", d: ["6", "8", "9"], t: 2, u: "mixed" }, 1);
+      const note = L.getWrongNote("5-1");
+      // 다음 판을 흉내내 시드까지 왕복
+      L.startSession("5-1");
+      const sched = L.reviewSchedule();
+      const raw = JSON.parse(localStorage.getItem("mathcastle:wrongnote"));
+      const stored = raw.data["5-1"][0];
+      return { savedU: stored?.u, noteU: note[0]?.u, seeded: sched.length };
+    });
+    ok(r.savedU === "mixed", `오답노트에 단원 코드 저장됨: ${r.savedU}`);
+    ok(r.seeded > 0, `다음 판 복습 큐에 시드됨 (${r.seeded}문항)`);
+  }
+
   // ── ④ 전역 예외 안내 ──
   console.log("\n[④ 전역 예외 안전망]");
   const fatal = await page.evaluate(async () => {
