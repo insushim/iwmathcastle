@@ -251,6 +251,9 @@ let buildStep = "idle",
   pendingTowerType = null;
 const isMobile = /Mobi/i.test(window.navigator.userAgent);
 let spawnIntervalId = null;
+// 스폰 루프 상태 — 웨이브 도중 배속을 바꾸면 간격을 다시 잡아야 해서 모듈 스코프에 둔다.
+let spawnCount = 0;
+let waveComposition = [];
 let lastFrameTime = 0;
 let isForcedProgress = false;
 let currentProblemSet = [];
@@ -786,6 +789,10 @@ window.addEventListener("DOMContentLoaded", () => {
       projectiles: projectiles.length,
       gameRunning, gamePaused,
       gameSpeed, gameClock, // 배속 회귀 검증용 — gameClock은 배속만큼 빨리 흘러야 한다
+      // 재시작 시 쿨다운이 이전 판에서 넘어오지 않는지 검증하려면 값이 보여야 한다
+      // (안 보이면 게이트가 그 회귀를 못 잡는다 — 실제로 교차검증이 그 사각지대를 지적했다)
+      spellCooldowns: { ...wizardCooldowns },
+      autoCooldownUntil: WIZARD_AUTO_ATTACK_STATS.cooldownUntil || 0,
     }),
     qaSetWizardLevel: (lv) => { wizardLevel = lv; populateSpellbook(); },
     qaCastSpell: async (key, x, y) => {
@@ -908,6 +915,38 @@ window.addEventListener("DOMContentLoaded", () => {
         placeTower(type);
       });
       pendingTile = null;
+    },
+    /**
+     * 길에 가까운 타일부터 채워 타워를 짓는다.
+     * ⚠️ qaPlaceTowers는 DOM 순서로 앞 N개를 잡는데, 배치 타일 대부분은 길에서 멀어
+     *    사거리에 몬스터가 안 들어온다 → "발사체 0개"인 헛검사가 된다(기록된 QA 함정).
+     *    발사 빈도·명중처럼 **타워가 실제로 쏴야** 성립하는 측정은 이걸 쓸 것.
+     */
+    qaPlaceTowersNearPath: (type, count) => {
+      const pts = pathPoints;
+      const dist2 = (x, y) => {
+        let best = Infinity;
+        for (const pt of pts) {
+          const dx = pt.x - x, dy = pt.y - y;
+          const d = dx * dx + dy * dy;
+          if (d < best) best = d;
+        }
+        return best;
+      };
+      const tiles = [...document.querySelectorAll(".placement-tile")]
+        .map((t) => {
+          const x = parseInt(t.style.left), y = parseInt(t.style.top);
+          return { t, x, y, d: dist2(x + 20, y + 20) };
+        })
+        .sort((a, b) => a.d - b.d)
+        .slice(0, count);
+      tiles.forEach(({ x, y }) => {
+        gold += 10000;
+        pendingTile = { x, y };
+        placeTower(type);
+      });
+      pendingTile = null;
+      return towers.length;
     },
   };
   // v8: 여기서 207장(2.5MB)을 전부 받고 있었다. 학년을 고르기도 전에.
@@ -1115,6 +1154,9 @@ async function initializeGame(difficulty, savedState = null) {
     WIZARD_AUTO_ATTACK_STATS.damage = WIZARD_AUTO_ATTACK_STATS.initialDamage;
     WIZARD_AUTO_ATTACK_STATS.range = 120;
     WIZARD_AUTO_ATTACK_STATS.rangeSq = 120 * 120;
+    // 새 판은 쿨다운도 새로 — restartGame을 안 거치는 진입(학년 재선택 등)도 있다
+    WIZARD_AUTO_ATTACK_STATS.cooldownUntil = 0;
+    wizardCooldowns = {};
     regenerateLayout();
   }
 
@@ -1198,7 +1240,7 @@ function createDamageText(target, text, type = "normal") {
     y: target.y,
     text,
     type,
-    creationTime: performance.now(),
+    creationTime: gameClock, // updateDamageTexts가 게임 시계로 비교한다
     duration: 1500, // ms
     opacity: 1,
   };
@@ -1833,15 +1875,20 @@ function gameLoop(timestamp) {
     if (!gamePaused) {
       // [NEW] 게임 루프의 핵심 업데이트 순서 변경
       gameClock += deltaTime; // 배속·일시정지가 반영된 게임 시간
+      // ⚠️ 아래 갱신들은 전부 **게임 시계**를 받는다(예전엔 벽시계 timestamp였다).
+      //    쿨다운·상태이상 지속시간이 벽시계면, 2배속에서 몬스터만 2배로 오고
+      //    타워는 그대로 쏘게 된다 — 배속이 난이도를 바꿔 버린다.
+      //    게임 시계는 일시정지 중 멈추므로 예전의 일시정지 보정(adjustPerfTimers)도
+      //    필요 없어졌다(있으면 오히려 이중 보정이 된다).
       updateSpatialGrid(); // 1. 몬스터 위치를 그리드에 업데이트
       updateWizard(deltaTime); // 2. 마법사 이동
-      updateWizardCooldownVisual(timestamp);
-      wizardAutoAttack(timestamp); // 3. 마법사 공격 (그리드 사용)
-      updateTowers(timestamp, deltaTime); // 4. 타워 업데이트 (그리드 사용)
-      updateProjectiles(deltaTime, timestamp); // 5. 발사체 이동
-      updateMonsters(timestamp, deltaTime); // 6. 몬스터 이동 및 상태 업데이트
-      updateEffects(timestamp, deltaTime); // 7. 각종 효과 업데이트
-      updateDamageTexts(timestamp, deltaTime); // 8. 데미지 텍스트 업데이트
+      updateWizardCooldownVisual(gameClock);
+      wizardAutoAttack(gameClock); // 3. 마법사 공격 (그리드 사용)
+      updateTowers(gameClock, deltaTime); // 4. 타워 업데이트 (그리드 사용)
+      updateProjectiles(deltaTime, gameClock); // 5. 발사체 이동
+      updateMonsters(gameClock, deltaTime); // 6. 몬스터 이동 및 상태 업데이트
+      updateEffects(gameClock, deltaTime); // 7. 각종 효과 업데이트
+      updateDamageTexts(gameClock, deltaTime); // 8. 데미지 텍스트 업데이트
       if (particleSystem) particleSystem.update(deltaTime); // 8.5. [V2] 파티클 업데이트
       checkWaveCompletion(); // 9. 웨이브 종료 확인
       renderDynamicLayer(); // 10. 동적 요소 렌더링
@@ -2820,7 +2867,7 @@ function renderDynamicLayer() {
   // [V3] 캔버스 기반 스펠 이펙트 렌더링
   for (let i = activeCanvasEffects.length - 1; i >= 0; i--) {
     const e = activeCanvasEffects[i];
-    const elapsed = now - e.startTime;
+    const elapsed = gameClock - e.startTime; // startTime이 게임 시계 기준
     const progress = Math.min(1, elapsed / e.duration);
     if (progress >= 1) {
       activeCanvasEffects.splice(i, 1);
@@ -2894,7 +2941,9 @@ function startWave() {
   const { startWaveBtn } = gameElements;
   waveInProgress = true;
   monstersSpawned = 0;
-  waveStartTime = performance.now();
+  // 업적("N초 안에 클리어")에 쓰이는 값이라 게임 시계로 잰다 —
+  // 벽시계로 재면 2배속에서 그냥 절반이 찍혀 업적이 공짜가 된다.
+  waveStartTime = gameClock;
   waveDamageTaken = 0;
 
   // [V2] 웨이브 알림 & 음악 인텐시티
@@ -2916,7 +2965,7 @@ function startWave() {
   // v6: "오늘의 시드" — 같은 날·같은 학기는 전국 어디서나 같은 웨이브 조성·변이
   // (일간 랭킹 = 같은 조건에서의 순위 경쟁이 되도록)
   const dailyRng = seededRand(dailySeedForWave(currentWave));
-  const waveComposition = simCore.buildWaveComposition(currentWave, dailyRng);
+  waveComposition = simCore.buildWaveComposition(currentWave, dailyRng);
 
   // v6: 웨이브 변이 (30+) — 후반 조합 변주 (역시 일일 시드)
   currentWaveModifier = simCore.waveModifier(currentWave, dailyRng);
@@ -2930,11 +2979,20 @@ function startWave() {
 
   startWaveBtn.disabled = true;
   setStartWaveLabel(`🌊...`, false);
-  let spawnCount = 0;
-  const spawnInterval = simCore.spawnIntervalMs(currentWave, gameSpeed);
+  spawnCount = 0;
+  startSpawnLoop();
+}
 
+/**
+ * 스폰 타이머를 (다시) 건다.
+ * ⚠️ 간격은 벽시계 setInterval인데 `spawnIntervalMs`가 gameSpeed로 나눠 주는 구조라,
+ *    **웨이브 도중 배속을 바꾸면 간격만 옛 배속에 묶인다.** 실제로 1→2배속이면 게임시간
+ *    기준 스폰이 절반으로 성겨져 쉬워지고, 2→1배속이면 두 배로 몰려 어려워진다 —
+ *    이 변경이 없애려던 "배속이 난이도를 바꾼다"가 스폰 경로에서 그대로 재현된다.
+ *    그래서 배속 토글이 이 함수를 다시 부른다(spawnCount는 이어받는다).
+ */
+function startSpawnLoop() {
   if (spawnIntervalId) clearInterval(spawnIntervalId);
-
   spawnIntervalId = setInterval(
     () => {
       if (gamePaused || !gameRunning) return;
@@ -2947,7 +3005,7 @@ function startWave() {
         spawnIntervalId = null;
       }
     },
-    spawnInterval,
+    simCore.spawnIntervalMs(currentWave, gameSpeed),
   );
 }
 
@@ -3749,8 +3807,12 @@ async function handleWizardAttack(clickPos = null) {
   }
 
   await sfx.init();
+  // ⚠️ 위 await 동안 아이가 일시정지를 눌렀을 수 있다. 재확인 없이 진행하면
+  //    "정지했는데 마법이 나가는" 상태가 된다(오디오 초기화가 늦는 첫 시전에서 특히).
+  if (gamePaused) return;
 
-  const nowPerf = performance.now();
+  // 스펠 쿨다운·상태이상도 게임 시계 기준(배속을 따라가야 한다)
+  const nowPerf = gameClock;
   const spell = WIZARD_SPELLS[activeSpell];
 
   if (
@@ -3974,17 +4036,28 @@ async function handleWizardAttack(clickPos = null) {
               x: Math.random() * window.innerWidth,
               y: 100 + Math.random() * (window.innerHeight - 200),
             };
-        setTimeout(() => {
+        // ⚠️ 이 낙하는 게임 루프가 아니라 벽시계 setTimeout이라 **일시정지를 모른다**.
+        //    그대로 두면 정지된 화면에서 몬스터가 맞아 죽고 골드·점수까지 오른다
+        //    (교차검증 2계열이 독립 지적). 정지 중이면 떨어뜨리지 말고 **미뤘다가**
+        //    재개될 때 떨어뜨린다 — 그냥 버리면 아이가 쓴 스펠이 사라진다.
+        const dropMeteor = () => {
+          if (!gameRunning) return; // 판이 끝났으면 조용히 버린다
+          if (gamePaused) {
+            setTimeout(dropMeteor, 100);
+            return;
+          }
           createMagicEffect(strikePos.x, strikePos.y, spell.aoe, "magic-attack", 450);
           const hitSq = spell.aoe * spell.aoe;
           spatialGrid
             .getNearby(strikePos.x, strikePos.y, spell.aoe)
             .filter((m) => !m.isDead && getDistanceSq(strikePos, m) < hitSq)
             .forEach((m) =>
-              handleHit({ source: { damage: meteorDamage }, target: m }, performance.now()),
+              handleHit({ source: { damage: meteorDamage }, target: m }, gameClock),
             );
           if (particleSystem) particleSystem.explosion(strikePos.x, strikePos.y, "#ff8c42", 12);
-        }, i * 220);
+        };
+        // 낙하 간격도 배속을 따라간다 — 안 그러면 2배속에서 메테오만 느리게 떨어진다
+        setTimeout(dropMeteor, (i * 220) / gameSpeed);
       }
       break;
     }
@@ -4087,7 +4160,7 @@ function addCanvasSpellEffect(x, y, radius, type, duration) {
     radius,
     type,
     duration,
-    startTime: performance.now(),
+    startTime: gameClock, // 게임 이벤트 연출이라 배속을 따라간다
   });
 }
 
@@ -4420,7 +4493,7 @@ function checkAnswer(answer, clickedBtn) {
         checkAchievements("review_correct", {
           reviewCleared: learnLoop.stats.reviewCleared,
         });
-      const nowCd = performance.now();
+      const nowCd = gameClock; // 쿨다운이 게임 시계 기준이라 감소도 같은 축에서 계산
       for (const key in wizardCooldowns) {
         if (wizardCooldowns[key] > nowCd) {
           wizardCooldowns[key] = nowCd + (wizardCooldowns[key] - nowCd) * 0.7;
@@ -4614,7 +4687,7 @@ function checkWaveCompletion() {
     }
 
     // [V2] 웨이브 클리어 업적 체크
-    const clearTime = (performance.now() - waveStartTime) / 1000;
+    const clearTime = (gameClock - waveStartTime) / 1000;
     checkAchievements("wave_clear", {
       wave: currentWave,
       clearTime,
@@ -5174,6 +5247,8 @@ function setupEventListeners() {
     speedBtn.addEventListener("click", () => {
       gameSpeed = gameSpeed === 1 ? 2 : 1;
       speedBtn.textContent = gameSpeed === 1 ? "1x" : "2x";
+      // 스폰 중이면 새 배속으로 간격을 다시 잡는다(startSpawnLoop 주석 참조)
+      if (spawnIntervalId) startSpawnLoop();
       sfx.play("blip");
       showMessage(`게임 속도: ${gameSpeed}x`);
     });
@@ -5195,48 +5270,6 @@ function updateFullUI() {
   ui.updateUI(currentState);
 }
 
-function adjustPerfTimers(duration) {
-  if (duration <= 0) return;
-
-  towers.forEach((t) => {
-    if (t.cooldownUntil > 0) t.cooldownUntil += duration;
-    if (t.disabledUntil > 0) t.disabledUntil += duration;
-    if (t.timeWarpedUntil > 0) t.timeWarpedUntil += duration;
-  });
-
-  if (WIZARD_AUTO_ATTACK_STATS.cooldownUntil > 0) {
-    WIZARD_AUTO_ATTACK_STATS.cooldownUntil += duration;
-  }
-
-  for (const spell in wizardCooldowns) {
-    if (wizardCooldowns[spell] > 0) {
-      wizardCooldowns[spell] += duration;
-    }
-  }
-
-  monsters.forEach((m) => {
-    if (m.lastHealTime > 0) m.lastHealTime += duration;
-    if (m.lastShieldTime > 0) m.lastShieldTime += duration;
-    if (m.lastSummonTime > 0) m.lastSummonTime += duration;
-    if (m.lastTeleportTime > 0) m.lastTeleportTime += duration;
-    if (m.lastDisruptTime > 0) m.lastDisruptTime += duration;
-    if (m.lastTimeWarpTime > 0) m.lastTimeWarpTime += duration;
-    if (m.lastStealthTime > 0) m.lastStealthTime += duration;
-    if (m.stealthEndTime > 0) m.stealthEndTime += duration;
-    if (m.lastPoisonTick > 0) m.lastPoisonTick += duration;
-
-    for (const effect in m.statusEffects) {
-      if (m.statusEffects[effect].endTime > 0) {
-        m.statusEffects[effect].endTime += duration;
-      }
-    }
-  });
-
-  effects.forEach((e) => {
-    if (e.lastTick > 0) e.lastTick += duration;
-    if (e.endTime > 0) e.endTime += duration;
-  });
-}
 
 function togglePause() {
   sfx.play("blip");
@@ -5253,8 +5286,10 @@ function togglePause() {
     updateActionHint();
   } else {
     if (pauseStartTimePerf > 0) {
-      const pauseDurationPerf = performance.now() - pauseStartTimePerf;
-      adjustPerfTimers(pauseDurationPerf);
+      // ⚠️ 예전엔 여기서 모든 쿨다운·지속시간을 일시정지한 만큼 뒤로 밀어줬다
+      //    (adjustPerfTimers). 타이머가 벽시계 기준이라 정지 중에도 흘렀기 때문이다.
+      //    이제 전부 게임 시계 기준이고 게임 시계는 정지 중 멈추므로 보정이 필요 없다 —
+      //    남겨두면 오히려 정지한 시간만큼 두 번 밀어주는 꼴이 된다.
       lastFrameTime = performance.now();
       pauseStartTimePerf = 0;
     }
@@ -5314,6 +5349,12 @@ function restartGame() {
   updateComboDisplay();
 
   // Reset extended state
+  // ⚠️ 쿨다운은 gameClock의 **절대값**으로 저장된다. gameClock은 판이 바뀌어도
+  //    리셋하지 않으므로(리셋하면 남은 절대값이 미래로 남아 스킬이 영구 잠긴다),
+  //    새 판을 시작할 땐 쿨다운 쪽을 비워야 한다. 안 그러면 직전 판에서 쓴 스펠이
+  //    새 게임 시작부터 쿨다운 상태로 남는다(교차검증 3계열 합의).
+  wizardCooldowns = {};
+  WIZARD_AUTO_ATTACK_STATS.cooldownUntil = 0;
   gameSpeed = 1;
   shownProblemIds = new Set();
   activeSpell = "fireball";

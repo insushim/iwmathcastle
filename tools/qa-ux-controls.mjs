@@ -215,7 +215,64 @@ try {
     await wait(300);
   }
 
-  // ⑧ 콘솔 에러
+  // ⑩ 배속 배선 소스 가드 — 게임플레이 갱신이 **게임 시계**를 받는지 원문에서 확인한다.
+  //    위 ⑨는 gameClock 자체가 배속을 따라가는지만 본다. 누가 updateTowers(gameClock,…)를
+  //    다시 updateTowers(timestamp,…)로 돌려놔도 ⑨는 통과한다 — 쿨다운만 조용히 벽시계로
+  //    돌아가 2배속 난이도가 달라진다(실측: 2배속 발사율이 1배속의 0.58배였다).
+  //    런타임으로 가르려면 발사율 표본이 여러 판 필요해 게이트로는 너무 흔들린다.
+  //    그래서 여기서는 **배선 자체**를 결정론적으로 단언한다.
+  {
+    const src = readFileSync(join(ROOT, "main.js"), "utf8");
+    // ⚠️ 종료 표지로 "gameLoop.isRunning = false;"를 쓰면 안 된다 — 함수 **안에도** 있어서
+    //    구간이 앞에서 잘린다(이 가드가 처음에 그래서 전부 FAIL을 냈다).
+    //    들여쓰기 없는 모듈 레벨 선언(\ngameLoop.isRunning)을 종료 표지로 쓴다.
+    const loopStart = src.indexOf("function gameLoop(");
+    const loopEnd = src.indexOf("\ngameLoop.isRunning = false;", loopStart);
+    const loop = src.slice(loopStart, loopEnd);
+    const mustUseGameClock = [
+      "updateWizardCooldownVisual",
+      "wizardAutoAttack",
+      "updateTowers",
+      "updateProjectiles",
+      "updateMonsters",
+      "updateEffects",
+      "updateDamageTexts",
+    ];
+    const offenders = mustUseGameClock.filter((fn) => {
+      const m = loop.match(new RegExp(`${fn}\\(([^)]*)\\)`));
+      return !m || !m[1].includes("gameClock");
+    });
+    check("게임플레이 갱신이 벽시계가 아니라 게임 시계를 받는다(배속 공정성)",
+      offenders.length === 0,
+      offenders.length ? `벽시계로 남은 것: ${offenders.join(", ")}` : "7/7");
+
+    // 위 검사는 gameLoop 진입점만 본다. 실제 쿨다운·상태이상은 그 아래 호출체인에서
+    // 설정되므로, 거기서 누가 performance.now()를 다시 꺼내 쓰면 위 검사는 그냥 통과한다
+    // (교차검증이 지적한 사각지대). 그래서 게임플레이 함수 본문에 벽시계가 있는지도 본다.
+    const GAMEPLAY_FNS = [
+      "handleWizardAttack", "handleHit", "handleMonsterDeath",
+      "updateMonsters", "updateTowers", "updateProjectiles",
+      "updateEffects", "updateDamageTexts", "createDamageText",
+      "addCanvasSpellEffect", "wizardAutoAttack", "checkWaveCompletion",
+    ];
+    const bodyOf = (name) => {
+      const m = src.match(new RegExp(`\\n(?:async )?function ${name}\\(`));
+      if (!m) return null;
+      const start = m.index + 1;
+      const next = src.slice(start + 1).search(/\n(?:async )?function [a-zA-Z]/);
+      return next < 0 ? src.slice(start) : src.slice(start, start + 1 + next);
+    };
+    const missing = GAMEPLAY_FNS.filter((f) => bodyOf(f) === null);
+    const wallClock = GAMEPLAY_FNS.filter((f) => (bodyOf(f) || "").includes("performance.now()"));
+    // 함수를 못 찾으면 검사가 조용히 통과해 버린다 — 그것도 실패로 잡는다
+    check("게임플레이 함수 본문에 벽시계(performance.now)가 남아 있지 않다",
+      wallClock.length === 0 && missing.length === 0,
+      [wallClock.length ? `벽시계 사용: ${wallClock.join(", ")}` : "",
+       missing.length ? `함수 못 찾음(가드 무효): ${missing.join(", ")}` : ""].filter(Boolean).join(" / ")
+       || `${GAMEPLAY_FNS.length}/${GAMEPLAY_FNS.length}`);
+  }
+
+  // ⑪ 콘솔 에러
   const filtered = errors.filter((e) => !/net::ERR|favicon|[Ff]irebase|Failed to load resource/.test(e));
   check(`콘솔 에러 0건`, filtered.length === 0, filtered.slice(0, 3).join(" | "));
 
