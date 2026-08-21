@@ -2015,7 +2015,25 @@ const TILE_SIZE = 40;
  * 폰 가로에선 바가 CSS로 얇아져서 상수 55/60보다 30px 가까이 여유가 더 있다.
  * 바가 아직 안 그려진 초기 호출은 상수로 폴백한다.
  */
+let _pfCache = null;
+let _pfCacheAt = 0;
+/**
+ * 바 실측값 캐시를 버린다. 창 크기·전체화면·회전처럼 바 위치가 바뀔 수 있는
+ * 사건에서만 부른다(setupEventListeners에서 배선).
+ */
+function invalidatePlayfieldBounds() {
+  _pfCache = null;
+}
 function playfieldBounds() {
+  // ⚠️ getBoundingClientRect는 강제 동기 레이아웃(reflow)이다. 이 함수는 worldScale()을
+  //    거쳐 renderDynamicLayer에서 매 프레임 호출돼 왔고, 그래서 저사양 기기(웨일북)에서는
+  //    프레임마다 레이아웃 재계산 4회가 얹혔다(실측: CPU 12배 스로틀 프로파일에서
+  //    getBoundingClientRect가 self-time 5.3%로 JS 최상위).
+  //    바 위치는 창 크기가 바뀔 때만 변하므로 캐시한다. 놓친 변화도 1초 안에 자가치유되게
+  //    TTL(1초)을 함께 둔다 — 강제 레이아웃이 초당 240회(60fps × 4)에서 초당 2회로 줄어든다.
+  const nowMs = performance.now();
+  if (_pfCache && nowMs - _pfCacheAt < 1000) return _pfCache;
+
   const infoB = document
     .getElementById("info-bar")
     ?.getBoundingClientRect().bottom;
@@ -2025,7 +2043,15 @@ function playfieldBounds() {
   const top = infoB > 0 ? Math.round(infoB) : 55;
   const bottom =
     ctrlT > 0 ? Math.round(ctrlT) : window.innerHeight - 60;
-  return { top, bottom, height: Math.max(120, bottom - top) };
+  const res = { top, bottom, height: Math.max(120, bottom - top) };
+
+  // 바가 아직 안 그려진 초기 호출(상수 폴백)은 캐시하지 않는다 — 진짜 값이 나오면
+  // 즉시 그걸 쓰게. 캐시했다가는 1초 동안 폴백값으로 길·타일을 깔아버린다.
+  if (infoB > 0 && ctrlT > 0) {
+    _pfCache = res;
+    _pfCacheAt = nowMs;
+  }
+  return res;
 }
 
 /**
@@ -4829,7 +4855,19 @@ function readSavedState() {
 
 // --- 이벤트 리스너 설정 ---
 function setupEventListeners() {
+  // 바 위치 캐시는 레이아웃 재생성보다 먼저 버려야 한다 — debounce가 걸린
+  // regenerateLayout이 뒤늦게 돌 때 이미 새 값으로 계산되도록.
+  window.addEventListener("resize", invalidatePlayfieldBounds);
+  window.addEventListener("orientationchange", invalidatePlayfieldBounds);
+  document.addEventListener("fullscreenchange", invalidatePlayfieldBounds);
+  document.addEventListener("webkitfullscreenchange", invalidatePlayfieldBounds);
+
   window.addEventListener("resize", debouncedRegenerateLayout);
+  // ⚠️ orientationchange를 캐시 무효화에만 걸어두면 비대칭이 생긴다 — worldScale·마법사
+  //    위치는 새 값을 쓰는데 길·타일·성 좌표는 옛 값으로 남아 타일이 길 위로 올라탈 수 있다.
+  //    (대부분 기기는 회전 시 resize도 함께 오지만, 안 오는 조합이 있다.) 디바운스가
+  //    걸려 있어 resize와 겹쳐 와도 재생성은 한 번만 돈다.
+  window.addEventListener("orientationchange", debouncedRegenerateLayout);
   document.addEventListener("fullscreenchange", debouncedRegenerateLayout);
   document.addEventListener(
     "webkitfullscreenchange",

@@ -1,5 +1,6 @@
 // towerRenderer.js - Canvas 2D Tower Renderer (Isometric / Pseudo-3D)
 import { drawSpriteCentered } from "./spriteAssets.js";
+import { quality } from "./perfQuality.js";
 // Pixel-art style sprites using canvas primitives (fillRect, arc, lineTo, bezierCurveTo)
 // Self-contained, no external dependencies
 // All animations driven by `timestamp` parameter
@@ -1399,20 +1400,22 @@ export class TowerRenderer {
 
   _drawLevelRings(ctx, level, ts) {
     const pulse = (Math.sin(ts * 0.003) + 1) / 2;
+    // 링 개수 = 타워 레벨이다. 저사양이라고 줄이면 아이가 레벨을 구분 못 하므로
+    // **개수는 건드리지 않는다**. 대신 링마다 반복하던 save/restore를 한 번으로 묶는다
+    // (레벨 5·타워 14기 기준 프레임당 컨텍스트 저장 70회 → 14회, 화면은 그대로).
     const maxRings = Math.min(level, 5);
+    ctx.save();
+    ctx.globalAlpha = 0.3 + pulse * 0.25;
+    ctx.lineWidth = 1.5;
     for (let i = 0; i < maxRings; i++) {
       const ry = 10 + i * 4;
-      const alpha = 0.3 + pulse * 0.25;
       const hue = (ts * 0.05 + i * 60) % 360;
-      ctx.save();
-      ctx.globalAlpha = alpha;
       ctx.strokeStyle = `hsl(${hue}, 70%, 60%)`;
-      ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.ellipse(0, ry, 20 + i * 1.5, 6 + i * 0.5, 0, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.restore();
     }
+    ctx.restore();
   }
 
   // ---------------------------------------------------------------------------
@@ -1500,14 +1503,21 @@ export class TowerRenderer {
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 0.3;
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius * 1.5, 0, Math.PI * 2);
-    ctx.fill();
+    // 저사양(웨일북)에서는 바깥 헤일로를 생략한다. 반지름이 1.5배라 칠하는 면적은
+    // 2.25배 — 타워 14기면 이 원 하나만으로 매 프레임 큰 면적을 다시 칠한다.
+    if (!quality.low) {
+      ctx.globalAlpha = 0.3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
   _drawParticles(ctx, ts, cx, cy, count, spread, color, speed) {
+    // 순수 장식이다. 저사양에서는 그리지 않는다 — 타워당 4~6개의 arc+fill이라
+    // 14기면 프레임마다 최대 84회, 게임 정보는 하나도 안 담고 있다.
+    if (quality.low) return;
     ctx.save();
     for (let i = 0; i < count; i++) {
       const angle = (ts * speed + i * ((Math.PI * 2) / count)) % (Math.PI * 2);
