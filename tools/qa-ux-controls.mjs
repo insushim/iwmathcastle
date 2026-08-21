@@ -183,6 +183,38 @@ try {
   const spawned = await page.evaluate(() => window.__mathcastle.getState().monsters);
   check("Enter로 웨이브 시작됨(몬스터 스폰)", spawned > 0, `monsters=${spawned}, running=${waveBefore}`);
 
+  // ⑨ 2배속 — 게임 시계가 배속을 따라가야 한다.
+  //    움직임(deltaTime)만 배속되고 연출 시계가 벽시계에 머물면, 몬스터는 2배로
+  //    가는데 다리는 1배로 움직여 "미끄러지는/끊기는" 화면이 된다(사용자 실측 신고).
+  //    ⚠️ 판정은 넉넉하게(>1.5) 한다 — 머신이 바쁘면 프레임 상한(MAX_SIM_FRAME_MS)에
+  //       걸려 비율이 2.0보다 낮아질 수 있다. 여기서 가르려는 건 "2.0이냐"가 아니라
+  //       "1.0에 머무느냐(=배속 미반영)"다.
+  const speedBtn = await page.$("#speedBtn");
+  check("속도 전환 버튼 존재", !!speedBtn);
+  if (speedBtn) {
+    const measure = async () => {
+      const a = await page.evaluate(() => ({
+        c: window.__mathcastle.getState().gameClock, w: performance.now(),
+      }));
+      await wait(2000);
+      const b = await page.evaluate(() => ({
+        c: window.__mathcastle.getState().gameClock, w: performance.now(),
+      }));
+      return (b.c - a.c) / (b.w - a.w);
+    };
+    const r1 = await measure();
+    await speedBtn.click();
+    await wait(300);
+    const label = await page.evaluate(() => document.getElementById("speedBtn")?.textContent);
+    const r2 = await measure();
+    check("속도 버튼이 2x로 전환됨", label === "2x", `label='${label}'`);
+    check("1배속에서 게임 시계 = 벽시계", r1 > 0.8 && r1 < 1.3, `비율 ${r1.toFixed(2)}`);
+    check("2배속에서 게임 시계도 함께 빨라짐(연출-이동 불일치 방지)", r2 > 1.5,
+      `비율 ${r2.toFixed(2)} (1.0 근처면 걷기 애니메이션이 안 따라온다)`);
+    await speedBtn.click(); // 원복
+    await wait(300);
+  }
+
   // ⑧ 콘솔 에러
   const filtered = errors.filter((e) => !/net::ERR|favicon|[Ff]irebase|Failed to load resource/.test(e));
   check(`콘솔 에러 0건`, filtered.length === 0, filtered.slice(0, 3).join(" | "));

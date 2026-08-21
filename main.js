@@ -185,6 +185,21 @@ let currentProblem = null; // v5: 학습 루프용 현재 문제
 let isReviewProblem = false; // v5: 복습(재출제) 문제 여부
 let isNoteReviewProblem = false; // v6: 오답노트 복습 퀴즈 여부 (보너스 골드)
 let gameSpeed = 1; // 1x or 2x speed multiplier
+
+/**
+ * 게임 시계(ms). 배속이 반영된 "게임 안의 시간"이며 일시정지 중엔 멈춘다.
+ * 움직임과 함께 가야 하는 연출(몬스터 걷기 사이클)은 벽시계가 아니라 이걸 봐야 한다 —
+ * 안 그러면 2배속에서 몸만 2배로 가고 다리는 1배로 움직여 미끄러지듯 보인다(실측 증상).
+ */
+let gameClock = 0;
+
+/**
+ * 한 프레임이 시뮬레이션에 반영할 수 있는 최대 실시간(ms).
+ * 탭 복귀·긴 히치 뒤에는 timestamp 차가 수백ms~수초까지 벌어지는데, 그걸 그대로
+ * 곱하면 몬스터가 한 프레임에 순간이동한다(2배속이면 그 폭이 2배). 상한을 넘으면
+ * 시뮬이 잠깐 느려질 뿐 화면이 튀지는 않는다 — 튀는 쪽이 훨씬 나쁘다.
+ */
+const MAX_SIM_FRAME_MS = 50;
 let currentWaveModifier = null; // v6: 웨이브 변이 (웨이브 30+)
 // v8: 집중력 — 이번 판의 학습 성과가 그대로 타워 화력이 된다.
 // 정답 +1, 오답 -2, 0~40. 규칙은 simCore가 단일 진실원.
@@ -768,7 +783,9 @@ window.addEventListener("DOMContentLoaded", () => {
     getState: () => ({
       gold, castleHealth, currentWave, wizardLevel, activeSpell,
       monsters: monsters.length, towers: towers.length,
+      projectiles: projectiles.length,
       gameRunning, gamePaused,
+      gameSpeed, gameClock, // 배속 회귀 검증용 — gameClock은 배속만큼 빨리 흘러야 한다
     }),
     qaSetWizardLevel: (lv) => { wizardLevel = lv; populateSpellbook(); },
     qaCastSpell: async (key, x, y) => {
@@ -1806,13 +1823,16 @@ function gameLoop(timestamp) {
   const rawDeltaTime = timestamp - lastFrameTime;
   lastFrameTime = timestamp;
   // Apply game speed multiplier to deltaTime for all gameplay updates
-  const deltaTime = rawDeltaTime * gameSpeed;
+  // ⚠️ 시뮬에 넣는 값에만 상한을 둔다(MAX_SIM_FRAME_MS 주석 참조).
+  //    저사양 감지에는 상한 없는 원본을 준다 — 상한 걸린 값을 먹이면 진짜 렉을 못 본다.
+  const deltaTime = Math.min(rawDeltaTime, MAX_SIM_FRAME_MS) * gameSpeed;
 
   // v5: 예외 1회로 루프가 영구 정지하지 않도록 — 재예약은 무조건 (finally)
   try {
     feedFrameTime(rawDeltaTime); // 저사양 런타임 감지
     if (!gamePaused) {
       // [NEW] 게임 루프의 핵심 업데이트 순서 변경
+      gameClock += deltaTime; // 배속·일시정지가 반영된 게임 시간
       updateSpatialGrid(); // 1. 몬스터 위치를 그리드에 업데이트
       updateWizard(deltaTime); // 2. 마법사 이동
       updateWizardCooldownVisual(timestamp);
@@ -2401,7 +2421,11 @@ function updateProjectiles(deltaTime, timestamp) {
       p.x += (dx / dist) * moveAmount;
       p.y += (dy / dist) * moveAmount;
       // [V2] 발사체 트레일 (3프레임마다 1번만 생성)
-      if (particleSystem && p.size >= 10 && (timestamp | 0) % 3 === 0)
+      // 예전엔 `(timestamp|0) % 3` 이라 판정이 **발사체마다가 아니라 프레임마다** 났다 —
+      // 같은 프레임의 발사체 전부가 한꺼번에 트레일을 찍거나 아무도 안 찍었다.
+      // 개체별 카운터로 바꿔 생성 시점이 서로 어긋나게 흩뿌린다.
+      p.trailTick = (p.trailTick | 0) + 1;
+      if (particleSystem && p.size >= 10 && p.trailTick % 3 === 0)
         particleSystem.trail(p.x, p.y, p.color);
     }
   }
@@ -2758,7 +2782,10 @@ function renderDynamicLayer() {
       {
         isFlying: m.type === "air",
         isBoss: m.isBoss,
-        now, // v5.1: 걷기 애니메이션 시간
+        // v9: 걷기 사이클은 **게임 시계**로 돈다. 벽시계(now)를 쓰면 2배속에서
+        //     몸은 2배로 가는데 다리는 1배라 미끄러진다. 배속을 껐다 켜도
+        //     gameClock은 끊기지 않고 이어져서 위상이 튀지 않는다.
+        now: gameClock,
         phase: m.animPhase, // v5.1: 몬스터별 걷기 위상 (발맞춰 행진 방지)
         isElite: m.isElite, // v5: 엘리트 캔버스 링 (구 CSS 클래스는 미적용 상태였음)
         isShielded: !!m.statusEffects.shielded,
