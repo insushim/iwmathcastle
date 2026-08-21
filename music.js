@@ -481,22 +481,83 @@ export class MusicSystem {
     this.dryGain = null;
 
     // v6.1: CC0 실물 BGM (assets/audio/bgm/*.mp3) — 아래 절차 합성은 로드 실패 시 폴백으로 남는다.
-    // 곡 하나가 2MB라 게임 시작 때 전부 받지 않고, 그 트랙이 처음 필요할 때 받는다(lazy).
-    this.trackBuffers = new Map();
-    this._trackLoading = new Set();
+    //
+    // v9(웨일북): 예전엔 mp3를 통째로 decodeAudioData 해서 AudioBuffer로 들고 있었다.
+    //   그 대가가 실측으로 확인됐다 — 원본 2.98MB → **PCM 92MB**
+    //   (gameplay.mp3 한 곡이 186초·2ch·48kHz = **68.2MB**, 디코드에 M맥에서도 686ms).
+    //   4GB짜리 웨일북에서는 이 한 방이 메모리를 밀어내고, 디코드 자체가 게임 시작
+    //   직후를 수 초 얼린다. 그래서 <audio> 스트리밍으로 바꿨다 — 재생 중 메모리는
+    //   버퍼 몇 MB, 디코드는 재생하면서 조금씩. 볼륨·페이드는 masterGain 경유라 그대로다.
+    this._trackEls = new Map(); // name → HTMLAudioElement (MediaElementSource 연결 완료)
     this._trackFailed = new Set();
-    this._trackNode = null;
+    this._trackEl = null; // 지금 울리고 있는 element
   }
 
-  /** 파일 BGM을 루프 재생한다. 절차 스케줄러와 달리 노드 하나로 끝난다. */
-  _playTrackBuffer(buf) {
+  /**
+   * 트랙용 <audio>를 만들어 Web Audio 그래프에 물린다(트랙당 한 번만).
+   * ⚠️ createMediaElementSource는 element당 1회만 부를 수 있다 — 그래서 캐시한다.
+   */
+  _getTrackEl(name) {
+    const cached = this._trackEls.get(name);
+    if (cached) return cached;
+
+    const el = new Audio(`assets/audio/bgm/${name}.mp3`);
+    el.loop = true;
+    el.preload = "auto";
+    // 파일이 없거나 디코드 못 하면(Pages는 없는 경로에 index.html을 200으로 준다)
+    // 이 트랙은 앞으로 절차 합성으로 간다 — 예전 decodeAudioData 실패 경로와 같은 처리.
+    el.addEventListener("error", () => {
+      this._trackFailed.add(name);
+      this._trackEls.delete(name);
+      if (this.currentTrack === name && this.isPlaying) {
+        this.setIntensity(this.intensity);
+        this._startScheduler();
+      }
+    });
+
+    try {
+      this.ctx.createMediaElementSource(el).connect(this.masterGain);
+    } catch {
+      // ⚠️ 여기서 실패 마킹을 빼면 play()를 부를 때마다 새 <audio>와 error 리스너가
+      //    쌓이고, 그 각각이 나중에 _startScheduler를 불러 setInterval이 고아로 남는다
+      //    (구 _loadTrack은 _trackFailed로 이 재진입을 막고 있었다 — 그 보장을 복원).
+      this._trackFailed.add(name);
+      return null; // 그래프 연결 실패 → 절차 합성으로
+    }
+    this._trackEls.set(name, el);
+    return el;
+  }
+
+  /** 파일 BGM을 루프 재생한다. 절차 스케줄러와 달리 element 하나로 끝난다. */
+  _playTrackStream(name) {
     this._stopTrackNode();
-    const src = this.ctx.createBufferSource();
-    src.buffer = buf;
-    src.loop = true;
-    src.connect(this.masterGain);
-    src.start();
-    this._trackNode = src;
+    const el = this._getTrackEl(name);
+    if (!el) return false;
+    try {
+      el.currentTime = 0;
+    } catch {
+      /* 아직 메타데이터 전이면 무시 — 어차피 처음부터 난다 */
+    }
+    this._trackEl = el;
+    // 자동재생 정책 등으로 거절될 수 있다. 이걸 조용히 삼키면 **완전 무음**이 된다 —
+    // 파일도 안 나고, play()는 이미 성공으로 알고 절차 합성도 안 켰기 때문이다.
+    // (게다가 currentTrack이 세팅돼 있어 같은 트랙 재요청은 dedup에 걸려 재시도도 없다.)
+    // 그래서 거절되면 절차 합성으로 떨어뜨린다. _trackFailed에는 넣지 않는다 —
+    // 파일이 없는 게 아니라 "지금은 못 트는 것"이라 다음 전환에선 다시 시도해야 한다.
+    const pr = el.play();
+    if (pr && pr.catch) {
+      pr.catch((err) => {
+        console.warn(
+          `[music] ${name} 파일 재생 거절 — 절차 합성으로 대체:`,
+          (err && err.name) || err,
+        );
+        if (this.currentTrack === name && this.isPlaying && this._trackEl === el) {
+          this._stopTrackNode();
+          this.setIntensity(this.intensity);
+          this._startScheduler();
+        }
+      });
+    }
     // 절차 재생과 동일하게 페이드 인 — 트랙 전환이 뚝 끊기지 않게
     if (this.masterGain) {
       this.masterGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.01);
@@ -506,45 +567,17 @@ export class MusicSystem {
         0.4,
       );
     }
+    return true;
   }
 
   _stopTrackNode() {
-    if (!this._trackNode) return;
+    if (!this._trackEl) return;
     try {
-      this._trackNode.stop();
+      this._trackEl.pause();
     } catch {
-      /* 이미 멈춘 노드 */
+      /* 이미 멈춘 element */
     }
-    this._trackNode = null;
-  }
-
-  /**
-   * 트랙 mp3를 받아 디코드한다. 성공했는데 그 사이 사용자가 다른 트랙으로 넘어갔으면
-   * 재생하지 않고 캐시만 해둔다(뒤늦게 엉뚱한 곡이 끼어드는 것 방지).
-   */
-  _loadTrack(name) {
-    if (this._trackLoading.has(name) || this._trackFailed.has(name)) return;
-    this._trackLoading.add(name);
-    fetch(`assets/audio/bgm/${name}.mp3`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.arrayBuffer();
-      })
-      .then((ab) => this.ctx.decodeAudioData(ab))
-      .then((buf) => {
-        this.trackBuffers.set(name, buf);
-        this._trackLoading.delete(name);
-        if (this.currentTrack === name && this.isPlaying) this._playTrackBuffer(buf);
-      })
-      .catch(() => {
-        // 파일이 없거나 디코드 실패 → 이 트랙은 앞으로 절차 합성으로 간다
-        this._trackLoading.delete(name);
-        this._trackFailed.add(name);
-        if (this.currentTrack === name && this.isPlaying) {
-          this.setIntensity(this.intensity);
-          this._startScheduler();
-        }
-      });
+    this._trackEl = null;
   }
 
   init() {
@@ -693,16 +726,9 @@ export class MusicSystem {
     this.sectionIndex = 0;
     this.stepsInSection = 0;
 
-    // CC0 실물 곡이 준비돼 있으면 그걸 튼다.
-    const buf = this.trackBuffers.get(trackName);
-    if (buf) {
-      this._playTrackBuffer(buf);
-      return;
-    }
-    // 아직 안 받았으면 지금 받는다. 받는 동안(보통 1~2초)은 조용히 둔다 —
-    // 합성음을 잠깐 틀었다가 바꾸면 오히려 어색하다. 실패하면 _loadTrack이 절차 재생으로 돌린다.
-    if (!this._trackFailed.has(trackName)) {
-      this._loadTrack(trackName);
+    // CC0 실물 곡을 스트리밍으로 튼다. 통째로 디코드하지 않으므로 기다릴 것도,
+    // 미리 받아둘 것도 없다 — element가 알아서 버퍼링하며 난다.
+    if (!this._trackFailed.has(trackName) && this._playTrackStream(trackName)) {
       return;
     }
 
@@ -735,6 +761,10 @@ export class MusicSystem {
   _startScheduler() {
     const track = TRACKS[this.currentTrack];
     if (!track) return;
+    // 이미 돌고 있으면 그 타이머를 먼저 거둔다. 안 그러면 참조를 잃은 setInterval이
+    // 영원히 남아(_stopScheduler는 "지금 아는" 타이머만 끈다) 저사양 기기에서
+    // 쓸데없이 CPU를 먹는다 — 고치려던 것과 정반대가 된다.
+    if (this.schedulerTimer) clearInterval(this.schedulerTimer);
     const beatMs = 60000 / track.bpm;
     this.schedulerTimer = setInterval(() => this._onBeat(track), beatMs);
   }
@@ -1082,6 +1112,11 @@ export class MusicSystem {
 
     // Stop current loop if any
     if (this.isPlaying) this._stopScheduler();
+    // ⚠️ 스케줄러(절차 합성)만 끄고 파일 트랙을 안 끄면, 게임오버 징글이 울리는 동안
+    //    전투 BGM이 계속 난다(실측: play("defeat") 후 1.2초 뒤에도 gameplay.mp3가
+    //    2.67초 지점을 재생 중). 이 게임에서 실제로 도달하는 원샷은 defeat 하나뿐이라
+    //    "게임오버인데 전투 음악이 안 꺼진다"로 그대로 드러난다.
+    this._stopTrackNode();
 
     const beatDur = 60 / bpm;
     const t = this.ctx.currentTime;

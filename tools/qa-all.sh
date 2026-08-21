@@ -8,7 +8,9 @@
 #   API가 필요한 게이트(qa-anticheat·qa-privacy)는 wrangler가 떠 있을 때만 의미가 있어
 #   기본 목록에서 뺐다. 배포 전 별도로 돌린다:
 #     npx wrangler pages dev . --port 8791 --local
-#     node tools/qa-privacy.mjs 8791 && node tools/qa-anticheat.mjs 8791
+#     node tools/qa-privacy.mjs 8791
+#     QA_API_BASE=http://localhost:8791/api node tools/qa-anticheat.mjs
+#     node tools/qa-bgm-csp.mjs http://localhost:8791/   ← BGM은 media-src라 CSP 환경에서만 검증된다
 set -uo pipefail
 cd "$(dirname "$0")/.."
 

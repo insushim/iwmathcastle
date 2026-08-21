@@ -111,47 +111,140 @@ try {
   });
   check("볼륨 설정이 샘플 경로에도 적용(masterGain 경유)", vol < 0.5, `masterGain=${vol.toFixed(2)}`);
 
-  // ⑤ BGM — 파일 트랙이 실제로 로드·루프 재생되는지
+  // ⑤ BGM — 파일 트랙이 실제로 "소리가 나는 상태"로 도는지.
+  //    v9부터 통째 디코드(AudioBuffer)가 아니라 <audio> 스트리밍이다. 그래서 버퍼 존재가
+  //    아니라 **재생 위치가 실제로 흐르는지**로 확인한다(멈춰 있으면 무음이다).
   const bgm = await page.evaluate(async () => {
     const { MusicSystem } = await import("/music.js");
     const m = new MusicSystem();
     await m.init();
     m.play("gameplay");
-    for (let i = 0; i < 60 && !m.trackBuffers.has("gameplay"); i++)
-      await new Promise(r => setTimeout(r, 250));
-    const buf = m.trackBuffers.get("gameplay");
+    const el = () => m._trackEl;
+    for (let i = 0; i < 60 && !(el() && el().currentTime > 0); i++)
+      await new Promise(r => setTimeout(r, 100));
+    const t1 = el() ? el().currentTime : 0;
+    await new Promise(r => setTimeout(r, 600));
+    const t2 = el() ? el().currentTime : 0;
     const res = {
-      loaded: !!buf,
-      dur: buf ? Math.round(buf.duration) : 0,
-      looping: m._trackNode?.loop === true,
+      playing: !!el() && !el().paused,
+      advanced: t2 > t1,             // 재생 위치가 흐른다 = 진짜 나고 있다
+      t2: Math.round(t2 * 100) / 100,
+      dur: el() ? Math.round(el().duration) : 0,
+      looping: el()?.loop === true,
       procRunning: !!m.schedulerTimer,   // 절차 스케줄러는 돌면 안 된다(파일이 재생 중이므로)
     };
     m.stop();
     return res;
   });
-  check("BGM 파일 로드·디코드", bgm.loaded, `gameplay ${bgm.dur}초`);
+  check("BGM 파일이 실제 재생됨(스트리밍)", bgm.playing && bgm.advanced,
+    `gameplay ${bgm.dur}초 · 재생위치 ${bgm.t2}초`);
   check("BGM이 루프 재생됨", bgm.looping);
   check("BGM 재생 중 절차 합성은 안 돌아감", !bgm.procRunning);
 
+  // ⑤-b 회귀 방지 — BGM을 통째로 디코드하지 않는다.
+  //    예전 구현은 원본 2.98MB를 PCM 92MB로 폈고(gameplay 한 곡 68.2MB), 4GB 웨일북에서
+  //    이게 메모리를 밀어내고 디코드가 게임 시작을 수 초 얼렸다. 다시 그리로 가지 않도록
+  //    "긴 트랙을 decodeAudioData에 넣지 않는다"를 직접 단언한다.
+  const pcm = await page.evaluate(async () => {
+    const A = window.AudioContext || window.webkitAudioContext;
+    const orig = A.prototype.decodeAudioData;
+    let maxSec = 0;
+    A.prototype.decodeAudioData = function (ab, ...rest) {
+      return orig.call(this, ab, ...rest).then((buf) => {
+        maxSec = Math.max(maxSec, buf.duration);
+        return buf;
+      });
+    };
+    const { MusicSystem } = await import("/music.js");
+    const m = new MusicSystem();
+    await m.init();
+    m.play("gameplay");
+    await new Promise(r => setTimeout(r, 2500));
+    m.stop();
+    A.prototype.decodeAudioData = orig;
+    return maxSec;
+  });
+  check("BGM을 통째로 디코드하지 않음(메모리 회귀 방지)", pcm < 10,
+    `가장 긴 decodeAudioData ${pcm.toFixed(1)}초 (효과음만이어야 함)`);
+
+  // ⑤-c BGM 폴백 2 — <audio>.play()가 **거절**될 때도 무음이 되면 안 된다.
+  //    ⚠️ 이 게이트는 브라우저를 --autoplay-policy=no-user-gesture-required 로 띄우기 때문에
+  //       실제 자동재생 거절이 재현되지 않는다. 그래서 거절을 직접 주입해서 검사한다.
+  //       (구현이 play() 프라미스 거부를 삼키면 파일도 안 나고 절차 합성도 안 켜져
+  //        완전 무음이 된다 — 코드리뷰가 지적한 실제 결함이라 회귀 게이트로 고정한다.)
+  const bgmReject = await page.evaluate(async () => {
+    const proto = HTMLMediaElement.prototype;
+    const origPlay = proto.play;
+    proto.play = function () {
+      return Promise.reject(new DOMException("blocked", "NotAllowedError"));
+    };
+    const { MusicSystem } = await import("/music.js");
+    const m = new MusicSystem();
+    await m.init();
+    m.play("gameplay");
+    for (let i = 0; i < 40 && !m.schedulerTimer; i++)
+      await new Promise(r => setTimeout(r, 50));
+    const res = { proc: !!m.schedulerTimer, elPlaying: !!m._trackEl };
+    m.stop();
+    proto.play = origPlay;
+    return res;
+  });
+  check("BGM 재생이 거절돼도 무음이 아니라 절차 합성으로 떨어짐", bgmReject.proc,
+    `scheduler=${bgmReject.proc}`);
+
+  // ⑤-d 게임오버 원샷이 루프 BGM을 실제로 끄는지.
+  //    _playOneShot이 스케줄러만 끄고 파일 트랙을 안 끄면 "게임오버인데 전투 음악이
+  //    계속 나는" 상태가 된다(실측으로 재현했던 결함 — 회귀 게이트로 고정).
+  const oneShot = await page.evaluate(async () => {
+    const { MusicSystem } = await import("/music.js");
+    const m = new MusicSystem();
+    await m.init();
+    m.play("gameplay");
+    for (let i = 0; i < 40 && !(m._trackEl && m._trackEl.currentTime > 0); i++)
+      await new Promise(r => setTimeout(r, 100));
+    const before = !!m._trackEl && !m._trackEl.paused;
+    m.play("defeat");
+    await new Promise(r => setTimeout(r, 800));
+    const after = !!m._trackEl && !m._trackEl.paused;
+    m.stop();
+    return { before, after };
+  });
+  check("게임오버 징글이 울릴 때 전투 BGM이 꺼짐(겹침 없음)",
+    oneShot.before && !oneShot.after,
+    `재생중→${oneShot.before} · 원샷후→${oneShot.after}`);
+
   // ⑥ BGM 폴백 — mp3를 못 받는 상황(파일 누락·오프라인)에서 절차 합성으로 떨어져야 한다.
   //    실제 트랙명(boss)으로 검사한다 — 존재하지 않는 트랙명은 합성 패턴도 없어서 대조군이 못 된다.
+  //    ⚠️ <audio>는 fetch를 안 탄다 — 네트워크 차단은 요청 가로채기로 해야 한다.
+  // 이 구간에서 나는 콘솔 에러는 우리가 일부러 만든 것이다 — 마지막 "콘솔 에러 0건"
+  // 검사에서 이 구간만 정확히 걷어낸다(전체를 정규식으로 무르게 하지 않기 위해).
+  const errBefore = errors.length;
+  await page.setRequestInterception(true);
+  const blockBoss = (req) => {
+    if (req.url().includes("bgm/boss.mp3")) req.abort().catch(() => {});
+    else req.continue().catch(() => {});
+  };
+  page.on("request", blockBoss);
   const bgmFb = await page.evaluate(async () => {
     const { MusicSystem } = await import("/music.js");
     const m = new MusicSystem();
     await m.init();
-    const realFetch = window.fetch;
-    window.fetch = (u, ...r) =>
-      String(u).includes("bgm/boss.mp3")
-        ? Promise.resolve(new Response("", { status: 404 }))
-        : realFetch(u, ...r);
     m.play("boss");
     for (let i = 0; i < 40 && !m._trackFailed.has("boss"); i++)
       await new Promise(r => setTimeout(r, 100));
     const res = { failed: m._trackFailed.has("boss"), proc: !!m.schedulerTimer };
-    window.fetch = realFetch;
     m.stop();
     return res;
   });
+  page.off("request", blockBoss);
+  await page.setRequestInterception(false);
+  await new Promise((r) => setTimeout(r, 200)); // 차단 에러가 늦게 도착하는 것까지 흡수
+  // ⚠️ 구간을 통째로 지우면 그 4초 사이에 난 **진짜 회귀**까지 같이 사라져 게이트가 헛돈다.
+  //    우리가 유발한 네트워크 차단 메시지만 골라 뺀다.
+  const intentional = /ERR_FAILED|ERR_ABORTED|Failed to load resource/i;
+  for (let i = errors.length - 1; i >= errBefore; i--) {
+    if (intentional.test(errors[i])) errors.splice(i, 1);
+  }
   check("BGM 파일을 못 받으면 절차 합성으로 폴백(무음 아님)", bgmFb.failed && bgmFb.proc,
     `failed=${bgmFb.failed} scheduler=${bgmFb.proc}`);
 
