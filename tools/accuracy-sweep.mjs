@@ -56,6 +56,11 @@ const BUYABLE = Object.entries(TOWER_STATS)
   }))
   .sort((a, b) => b.baseDps / b.cost - a.baseDps / a.cost);
 
+// v9: 축복을 **최악 케이스**로 모델링한다 — 봇이 매 스테이지 화력에 가장 도움이 되는
+// 축복만 고른다고 가정한다. 축복이 학습→결과 연결(정답률 격차)을 흐리는지 보는 게 목적이라
+// "잘 고르는 아이"를 기준으로 재야 한다.
+import * as blessing from "../blessing.js";
+
 const COMBO_TIERS = [
   { minCombo: 10, multiplier: 5, bonusGold: 500 },
   { minCombo: 8, multiplier: 3, bonusGold: 200 },
@@ -77,13 +82,15 @@ function runCell(grade, accuracy, seed) {
   let castleHp = sim.INITIAL_CASTLE_HP;
   let combo = 0;
   let focus = 0;                 // v8
+  let bless = blessing.initialState();  // v9
   const towers = [];
   let answerGold = 0, killGold = 0, cumSpent = 0;
   let deathWave = null;
   const sample = {};
 
   const towerDpsTotal = () => towers.reduce((s, t) => s + sim.towerDps(t), 0);
-  const slowFactor = () => 1 - Math.min(0.35, towers.filter((t) => t.slow).length * 0.12);
+  const slowFactor = () =>
+    1 - Math.min(0.35, towers.filter((t) => t.slow).length * 0.12 * blessing.freezeMult(bless));
   const avgRange = () =>
     towers.length ? towers.reduce((s, t) => s + t.range, 0) / towers.length : 100;
 
@@ -181,13 +188,15 @@ function runCell(grade, accuracy, seed) {
       if (castleHp <= 0) break;
       const aliveList = queue.filter((m) => m.alive);
       if (!aliveList.length) continue;
-      const cover = Math.min(1, (aliveList.length * 2 * avgRange()) / PATH_LEN);
+      const cover = Math.min(1, (aliveList.length * 2 * avgRange() * blessing.rangeMult(bless)) / PATH_LEN);
       const towerEff = towers.reduce(
-        (s, tw) => s + sim.towerDps(tw) * Math.min(tw.splashTargets || 1, Math.max(1, aliveList.length)),
+        (s, tw) => s + sim.towerDps(tw) *
+          Math.min((tw.splashTargets || 1) * ((tw.splashTargets || 1) > 1 ? blessing.splashMult(bless) : 1),
+                   Math.max(1, aliveList.length)),
         0,
       ) * (mod?.towerDamageFactor || 1) * focusMult;
       const wizardEff =
-        (wizardAutoDps(towerDpsTotal()) + WIZARD_SPELL_DPS) *
+        (wizardAutoDps(towerDpsTotal()) * blessing.wizardSpeedMult(bless) + WIZARD_SPELL_DPS) *
         Math.min(2, Math.max(1, aliveList.length)) * (mod?.wizardDamageFactor || 1);
       let dmg = (towerEff + wizardEff) * cover * dt;
       aliveList.sort((a, b) => b.pos - a.pos);
@@ -199,7 +208,16 @@ function runCell(grade, accuracy, seed) {
       }
     }
     if (castleHp <= 0) { deathWave = wave; break; }
-    if (leaked === 0) castleHp = Math.min(100, castleHp + sim.WAVE_CLEAR_HEAL);
+    if (leaked === 0)
+      castleHp = Math.min(100, castleHp + sim.WAVE_CLEAR_HEAL + blessing.healBonus(bless));
+
+    // v9: 스테이지(5웨이브)마다 축복 1개. 봇은 화력 기여가 큰 순서로 고정 선택한다
+    // (최악 케이스 — 잘 고르는 아이 기준으로 격차를 잰다).
+    if (wave % 5 === 0) {
+      const prefer = ["range", "wizardSpeed", "splash", "freeze", "heal"];
+      const pick = prefer.find((id) => (bless[id] || 0) < 4);
+      if (pick) bless = blessing.apply(bless, pick);
+    }
   }
 
   return {

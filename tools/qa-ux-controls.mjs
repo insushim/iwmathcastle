@@ -262,8 +262,16 @@ try {
       const next = src.slice(start + 1).search(/\n(?:async )?function [a-zA-Z]/);
       return next < 0 ? src.slice(start) : src.slice(start, start + 1 + next);
     };
+    // ⚠️ 주석을 먼저 걷어낸다. 안 그러면 "예전 이름은 performance.now()를 뜻했다" 같은
+    //    **설명문이 코드로 읽혀** 멀쩡한 함수가 위반으로 잡힌다(실측: v9에서 그렇게 터졌다).
+    //    게이트가 세야 하는 건 프로즈가 아니라 실행되는 코드다.
+    //    (문자열 리터럴 안의 "//"까지 가리지는 않지만, 그 경우 생기는 건 헛통과가 아니라
+    //     기껏해야 놓침 하나이고 이 프로젝트엔 그런 리터럴이 없다.)
+    const stripComments = (t) =>
+      t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
     const missing = GAMEPLAY_FNS.filter((f) => bodyOf(f) === null);
-    const wallClock = GAMEPLAY_FNS.filter((f) => (bodyOf(f) || "").includes("performance.now()"));
+    const wallClock = GAMEPLAY_FNS.filter((f) =>
+      stripComments(bodyOf(f) || "").includes("performance.now()"));
     // 함수를 못 찾으면 검사가 조용히 통과해 버린다 — 그것도 실패로 잡는다
     check("게임플레이 함수 본문에 벽시계(performance.now)가 남아 있지 않다",
       wallClock.length === 0 && missing.length === 0,
@@ -271,6 +279,59 @@ try {
        missing.length ? `함수 못 찾음(가드 무효): ${missing.join(", ")}` : ""].filter(Boolean).join(" / ")
        || `${GAMEPLAY_FNS.length}/${GAMEPLAY_FNS.length}`);
   }
+
+  // ⑫ 마법사 레벨업이 "있는 줄도 모르는" 상태가 아닌가
+  //    신고: "마법사 레벨업도 할 수 있다는 걸 약간 표시해줘. 사실 유저들이 있는지도 모르겠어"
+  //    ⬆️ 아이콘 하나로는 ㉠ 값 ㉡ 올리면 뭐가 열리는지 ㉢ 지금 살 수 있는지가 전부 화면 밖이다.
+  console.log("\n[⑫ 마법사 레벨업 발견 가능성]");
+  const wz = await page.evaluate(() => {
+    const g = window.__mathcastle;
+    g.qaAddGold(-999999);                 // 일단 못 사는 상태로
+    const poor = document.getElementById("upgradeWizardBtn");
+    const poorState = { text: poor.textContent.trim(), afford: poor.classList.contains("affordable"),
+                        disabled: poor.disabled, title: poor.title };
+    g.qaAddGold(999999);                  // 살 수 있는 상태로
+    const rich = document.getElementById("upgradeWizardBtn");
+    const rect = rich.getBoundingClientRect();
+    return { poorState,
+             richState: { text: rich.textContent.trim(), afford: rich.classList.contains("affordable"),
+                          disabled: rich.disabled, title: rich.title,
+                          w: Math.round(rect.width), h: Math.round(rect.height) } };
+  });
+  check("버튼에 비용이 보인다(못 살 때도 — 얼마를 모으면 되는지가 필요하다)",
+    /\d/.test(wz.poorState.text), `표시: "${wz.poorState.text}"`);
+  check("올리면 열리는 것이 툴팁에 있다",
+    /마법|위력/.test(wz.richState.title), wz.richState.title);
+
+  // 조사(이/가)는 낱말의 받침으로 갈린다. 괄호를 씌운 채로 재면 마지막 글자가 한글이
+  // 아니라 늘 같은 조사가 나온다 — 실측으로 9종 전부 "가"가 찍혔다.
+  const particles = await page.evaluate(() => {
+    const g = window.__mathcastle;
+    const out = [];
+    for (let lv = 2; lv <= 10; lv++) {
+      const sp = g.qaNextSpellAtLevel(lv);
+      if (sp) out.push({ name: sp.name, p: g.qaParticleFor(sp.name, "이", "가") });
+    }
+    return out;
+  });
+  const wrong = particles.filter((x) => {
+    const c = x.name.trim().slice(-1).charCodeAt(0);
+    const hangul = c >= 0xac00 && c <= 0xd7a3;
+    const expect = hangul && (c - 0xac00) % 28 !== 0 ? "이" : "가";
+    return x.p !== expect;
+  });
+  check(`마법 이름 ${particles.length}종의 조사(이/가)가 전부 맞다`,
+    particles.length >= 8 && wrong.length === 0,
+    wrong.length ? wrong.map((w) => `${w.name}→${w.p}`).join(", ")
+                 : particles.slice(0, 3).map((x) => `${x.name}${x.p}`).join(" · "));
+  check("살 수 있게 되면 눈에 띄는 상태로 바뀐다",
+    wz.richState.afford && !wz.poorState.afford,
+    `못 살 때 affordable=${wz.poorState.afford} → 살 수 있을 때 ${wz.richState.afford}`);
+  check("못 살 때는 비활성, 살 수 있으면 활성",
+    wz.poorState.disabled === true && wz.richState.disabled === false,
+    `disabled ${wz.poorState.disabled} → ${wz.richState.disabled}`);
+  check("비용을 넣어도 터치 타깃이 좁아지지 않는다(≥44px)",
+    wz.richState.w >= 44 && wz.richState.h >= 30, `${wz.richState.w}×${wz.richState.h}px`);
 
   // ⑪ 콘솔 에러
   const filtered = errors.filter((e) => !/net::ERR|favicon|[Ff]irebase|Failed to load resource/.test(e));

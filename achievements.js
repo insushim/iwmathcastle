@@ -170,6 +170,11 @@ export class AchievementSystem {
    * 구버전은 매 판 0으로 리셋돼, 웨이브 8~10에서 자주 죽는 아이(가장 흔한 층)는
    * "타워 30개 건설" 같은 업적에 조금씩 가까워지는 감각을 전혀 못 느꼈다.
    */
+  /** 판을 넘어 누적된 최고 기록 조회. v9 게임오버 화면의 "이전 최고"에 쓴다. */
+  bestOf(metric) {
+    return this.best[metric] || 0;
+  }
+
   recordBest(metric, value) {
     if (!metric || !Number.isFinite(value)) return;
     if ((this.best[metric] || 0) >= value) return;

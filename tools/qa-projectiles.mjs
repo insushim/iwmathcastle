@@ -54,8 +54,14 @@ console.log("\n[① 정적 분석 — 호출 vs 정의]");
 }
 
 // ── ② 런타임: 실제로 타워를 짓고 쏘게 해서 예외를 센다 ──
+// ⚠️ v9: 상위 등급(특수·궁극·전설) 타워를 함께 지으면 그들이 몬스터를 **먼저 다 지워서**
+//    나머지 타워는 사거리에 표적이 들어오기 전에 웨이브가 끝난다. 그러면 "관측된 발사체
+//    종류"가 실행마다 2~7종으로 요동쳐 게이트가 운을 재게 된다(v9 이전에도 4~5종으로 흔들렸다).
+//    런타임 검사의 목적은 "여러 타워가 실제로 쏘는가"이므로 과잉 화력을 빼고 잰다 —
+//    빠진 상위 등급은 아래 ③ 결정적 전수 렌더가 어차피 100% 덮는다.
+const OVERKILL = new Set(["ultimate", "transcendent", "golden", "silver", "copper"]);
 const BUYABLE = Object.entries(TOWER_STATS)
-  .filter(([k, s]) => !s.isRandom && s.targetType && s.targetType !== "none")
+  .filter(([k, s]) => !s.isRandom && s.targetType && s.targetType !== "none" && !OVERKILL.has(k))
   .map(([k]) => k);
 
 const browser = await puppeteer.launch({
@@ -142,7 +148,9 @@ try {
   }));
 
   ok(maxProjectiles > 0, `동시 발사체 최대 ${maxProjectiles}개 (0이면 아무도 쏘지 않은 헛검사)`);
-  ok(types.length >= 3, `실제 플레이에서 관측된 발사체 ${types.length}종: ${types.slice(0, 12).join(", ")}`);
+  ok(types.length >= 5,
+    `실제 플레이에서 관측된 발사체 ${types.length}종: ${types.slice(0, 12).join(", ")} ` +
+    `(과잉 화력 타워 ${[...OVERKILL].length}종 제외 — 기준 ≥5)`);
 
   const renderErrors = errors.filter((e) => /is not a function|프레임 예외/.test(e));
   ok(renderErrors.length === 0,

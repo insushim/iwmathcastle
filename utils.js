@@ -18,9 +18,14 @@ export function showMessage(text) {
     setTimeout(() => popup.remove(), 3000);
 }
 
-export function showUpgradeNotification(text) {
+/**
+ * @param {string} text
+ * @param {string} [variant] "legendary" | "epic" — 등급 획득 알림의 테두리·배경 강도.
+ *   CSP(style-src 'self')가 인라인 style을 막으므로 색은 클래스로만 준다.
+ */
+export function showUpgradeNotification(text, variant = '') {
     const popup = document.createElement('div');
-    popup.className = 'upgrade-notification';
+    popup.className = 'upgrade-notification' + (variant ? ` un-${variant}` : '');
     popup.textContent = text;
     document.body.appendChild(popup);
     setTimeout(() => popup.remove(), 3000);

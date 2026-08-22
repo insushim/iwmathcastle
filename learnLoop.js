@@ -590,18 +590,25 @@ export function recordCorrect(problem, currentWave = 0, isReview = false) {
   bumpCumulative(classifyProblem(problem.q), true);
   bumpUnit(problem.u, true);
 
+  let sessionCleared = false;
   const idx = wrongQueue.findIndex((w) => w.problem.q === problem.q);
   if (idx !== -1) {
     const e = wrongQueue[idx];
     e.stage++;
     if (e.stage >= REVIEW_INTERVALS.length) {
       wrongQueue.splice(idx, 1);                             // 세션 내 졸업 — 오늘은 그만
+      sessionCleared = true;
     } else {
       e.dueWave = currentWave + REVIEW_INTERVALS[e.stage];   // 3 → 7 → 15로 확장
       e.pending = false;
     }
   }
-  noteOnCorrect(problem);
+  // v9: 두 졸업은 다른 사건이다.
+  //   sessionCleared = "오늘 이 판에서는 그만 나온다"(세션 큐, 상한 3)
+  //   graduated      = "노트에서 완전히 빠진다"(영속 상자, 상한 4 · 1·3·7·16일)
+  // 배지·축하 문구는 이 둘을 구분해야 한다.
+  const note = noteOnCorrect(problem);
+  return { sessionCleared, ...(note || { box: 0, max: MAX_BOX, graduated: false }) };
 }
 
 /** 재출제 시점이 된 복습 문제. ⚠️ 큐에서 빼지 않는다 —
@@ -671,19 +678,40 @@ function noteOnWrong(problem) {
   saveList(currentDifficulty, trim(list));
 }
 
+/**
+ * @returns {{box:number, max:number, graduated:boolean}|null}
+ *   v9: 진행도를 돌려준다. 화면 배지가 **이 값**을 읽어야 한다 —
+ *   세션 큐의 stage(상한 3, 웨이브 단위)를 쓰면, 세션에서 3번 맞힌 순간
+ *   "완전히 내 거!"라고 축하해 놓고 box는 아직 3이라 16일 뒤 그 문제가 다시 나온다.
+ *   교육 앱이 아이에게 하는 정확한 거짓말이라 진실원을 노트 상자로 맞췄다.
+ */
 function noteOnCorrect(problem) {
-  if (currentDifficulty == null) return;
+  if (currentDifficulty == null) return null;
   const today = todayIndex();
   const list = noteList(currentDifficulty);
   const i = list.findIndex((x) => x.q === problem.q);
-  if (i === -1) return;              // 노트에 없는 문제를 맞힌 건 기록할 게 없다
+  if (i === -1) return null;         // 노트에 없는 문제를 맞힌 건 기록할 게 없다
   const e = list[i];
   e.seen = (e.seen || 0) + 1;
   e.ok = (e.ok || 0) + 1;
   e.box = (e.box || 0) + 1;
-  if (e.box >= MAX_BOX) list.splice(i, 1);          // 졸업 — 노트에서 제거
+  const box = e.box;
+  const graduated = box >= MAX_BOX;
+  if (graduated) list.splice(i, 1);                 // 졸업 — 노트에서 제거
   else e.due = today + BOX_DAYS[e.box];
   saveList(currentDifficulty, list);
+  return { box: Math.min(box, MAX_BOX), max: MAX_BOX, graduated };
+}
+
+/**
+ * 이 문제의 현재 마스터리 진행도(출제 직전 조회용). 노트에 없으면 null.
+ * 배지가 "●●○○" 게이지를 그릴 때 쓴다.
+ */
+export function noteProgress(problem, difficulty = currentDifficulty) {
+  if (!problem || !problem.q || difficulty == null) return null;
+  const e = noteList(difficulty).find((x) => x.q === problem.q);
+  if (!e) return null;
+  return { box: Math.min(e.box || 0, MAX_BOX), max: MAX_BOX };
 }
 
 /** 오늘 복습 예정인 문항 수 (UI 안내용) */

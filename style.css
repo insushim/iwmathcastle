@@ -1029,6 +1029,33 @@ body.is-touch .mobile-only { display: inline; }
     box-shadow: var(--glow-green);
 }
 
+/* v9: 비용을 항상 띄우므로 아이콘 하나짜리 폭으로는 좁다. */
+.icon-btn.upgrade-btn {
+    width: auto;
+    min-width: 44px;          /* 터치 타깃 하한(모바일 게이트 기준) */
+    padding: 0 8px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+    letter-spacing: -0.02em;
+}
+
+/* 살 수 있게 된 순간에만 눈에 띈다. 항상 번쩍이면 그냥 배경이 된다. */
+.icon-btn.upgrade-btn.affordable {
+    border-color: var(--accent-green);
+    background: rgba(0, 255, 136, 0.12);
+    animation: wizardUpgradeReady 2.4s ease-in-out infinite;
+}
+
+@keyframes wizardUpgradeReady {
+    0%, 100% { box-shadow: 0 0 4px rgba(0, 255, 136, 0.25); }
+    50%      { box-shadow: 0 0 14px rgba(0, 255, 136, 0.55); }
+}
+
+/* 움직임을 줄여 달라고 한 사용자에게는 색만 남기고 맥박은 끈다. */
+@media (prefers-reduced-motion: reduce) {
+    .icon-btn.upgrade-btn.affordable { animation: none; }
+}
+
 /* === Combo Display === */
 .combo-display {
     position: fixed;
@@ -1634,55 +1661,175 @@ body.is-touch .mobile-only { display: inline; }
     animation: none;
 }
 
-/* Tier color coding for tower options */
-.tower-option[data-tier="common"] {
-    --tier-color: 74, 222, 128;
-    --tier-glow: 74, 222, 128;
-    border-color: rgba(74, 222, 128, 0.25);
-    animation: tierPulse 2s ease-in-out infinite;
+/* v9: 축복 3택 1 카드 */
+.blessing-panel { width: min(94vw, 560px); }
+.blessing-cards { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 14px 0 4px; }
+.blessing-card {
+    flex: 1 1 150px;
+    min-width: 140px;
+    min-height: 120px;
+    padding: 14px 10px;
+    border-radius: 14px;
+    border: 2px solid rgba(150, 180, 255, 0.3);
+    background: rgba(255, 255, 255, 0.06);
+    color: #eaf0ff;
+    cursor: pointer;
+    text-align: center;
+}
+.blessing-card:active { transform: scale(0.97); }
+.blessing-card-icon { font-size: 30px; line-height: 1.1; }
+.blessing-card-title { font-size: 15px; font-weight: 800; margin-top: 4px; }
+.blessing-card-desc { font-size: 12px; color: var(--text-secondary, #9fb0d0); margin-top: 4px; }
+.blessing-card-level { font-size: 11px; color: #ffd166; margin-top: 5px; }
+
+/* v9: 이어하기 버튼의 부제(학기·웨이브) */
+.menu-btn-sub {
+    display: block;
+    margin-top: 2px;
+    font-size: 11px;
+    font-weight: 500;
+    opacity: 0.75;
 }
 
+/* ===== v9: 일시정지 오버레이 =====
+   .modal 을 쓰지 않는 이유는 index.html 주석 참고(키 가드가 단축키를 막는다). */
+.pause-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(6, 8, 20, 0.78);
+    backdrop-filter: blur(3px);
+}
+.pause-overlay[hidden] { display: none; }
+.pause-panel {
+    width: min(92vw, 400px);
+    padding: 24px 22px;
+    border-radius: 18px;
+    background: linear-gradient(180deg, #1b2140, #121729);
+    border: 2px solid rgba(120, 160, 255, 0.35);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+    text-align: center;
+}
+.pause-title { margin: 0 0 6px; font-size: 24px; color: #eaf0ff; }
+.pause-sub { margin: 0 0 14px; font-size: 14px; color: var(--text-secondary, #9fb0d0); }
+.pause-stats {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+    font-size: 15px;
+    color: #dbe4ff;
+}
+.pause-stat { background: rgba(255, 255, 255, 0.06); border-radius: 10px; padding: 8px 12px; }
+.pause-actions { display: flex; flex-direction: column; gap: 10px; }
+.pause-btn {
+    min-height: 48px;      /* 터치 타깃 44px 규칙 */
+    border-radius: 12px;
+    border: 1px solid rgba(150, 180, 255, 0.3);
+    background: rgba(255, 255, 255, 0.07);
+    color: #eaf0ff;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.pause-btn.primary {
+    background: linear-gradient(180deg, #4f7cff, #3457d6);
+    border-color: #6d94ff;
+}
+.pause-btn:active { transform: scale(0.98); }
+.pause-note { margin: 14px 0 0; font-size: 12px; color: var(--text-dim, #8b9bbd); }
+
+/* v9: 등급 획득 알림 — 전설/특수만 테두리를 달리한다(색 + 별·라벨 텍스트 동반) */
+.upgrade-notification.un-legendary {
+    border: 2px solid #fde047;
+    box-shadow: 0 0 24px rgba(253, 224, 71, 0.55);
+    background: linear-gradient(180deg, rgba(253, 224, 71, 0.16), rgba(20, 20, 30, 0.92));
+    font-weight: 800;
+}
+.upgrade-notification.un-epic {
+    border: 2px solid #c084fc;
+    box-shadow: 0 0 16px rgba(192, 132, 252, 0.4);
+    background: linear-gradient(180deg, rgba(192, 132, 252, 0.12), rgba(20, 20, 30, 0.92));
+    font-weight: 700;
+}
+
+/* ===== v9: 등급(레어도) 표시 =====
+   등급의 진실원은 rarity.js(= gameData.js의 상자 확률표)다. 여기 색은 그 표의
+   1~6등급(기본·중급·상급·특수·궁극·전설)과 1:1로 짝지어져 있다.
+   ⚠️ 색만으로 등급을 구분시키지 않는다 — 별(★)과 한글 라벨이 항상 함께 붙는다.
+   ⚠️ CSP(style-src 'self')가 innerHTML의 style= 을 막으므로 전부 클래스·속성 선택자다. */
+.tower-option[data-tier="t1"] { --tier-color: 156, 163, 175; border-color: rgba(156, 163, 175, 0.25); }
+.tower-option[data-tier="t2"] { --tier-color: 74, 222, 128;  border-color: rgba(74, 222, 128, 0.25);  animation: tierPulse 2.2s ease-in-out infinite; }
+.tower-option[data-tier="t3"] { --tier-color: 96, 165, 250;  border-color: rgba(96, 165, 250, 0.25);  animation: tierPulse 2.4s ease-in-out infinite; }
+.tower-option[data-tier="t4"] { --tier-color: 192, 132, 252; border-color: rgba(192, 132, 252, 0.3);  animation: tierPulse 2s ease-in-out infinite; }
+.tower-option[data-tier="t5"] { --tier-color: 251, 146, 60;  border-color: rgba(251, 146, 60, 0.35);  background: rgba(251, 146, 60, 0.05); animation: legendaryPulse 1.9s ease-in-out infinite; }
+.tower-option[data-tier="t6"] { --tier-color: 253, 224, 71;  border-color: rgba(253, 224, 71, 0.4);   background: rgba(253, 224, 71, 0.06); animation: legendaryPulse 1.6s ease-in-out infinite; }
+
+.tower-option-tier-label {
+    font-size: 9px;
+    line-height: 1.1;
+    margin-top: 1px;
+    letter-spacing: -0.5px;
+    white-space: nowrap;
+}
+
+/* 툴팁 안 등급 줄 */
+.tooltip-rarity {
+    display: inline-block;
+    margin-top: 3px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid currentColor;
+}
+.tooltip-rarity[data-tier="t1"], .tw-rarity[data-tier="t1"] { color: #9ca3af; }
+.tooltip-rarity[data-tier="t2"], .tw-rarity[data-tier="t2"] { color: #4ade80; }
+.tooltip-rarity[data-tier="t3"], .tw-rarity[data-tier="t3"] { color: #60a5fa; }
+.tooltip-rarity[data-tier="t4"], .tw-rarity[data-tier="t4"] { color: #c084fc; }
+.tooltip-rarity[data-tier="t5"], .tw-rarity[data-tier="t5"] { color: #fb923c; }
+.tooltip-rarity[data-tier="t6"], .tw-rarity[data-tier="t6"] { color: #fde047; }
+.tooltip-rarity-stars, .tw-rarity-stars { letter-spacing: -1px; }
+
+/* 업그레이드 패널 안 등급 줄 */
+.tw-rarity {
+    display: inline-block;
+    margin: 2px 0 4px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid currentColor;
+}
+
+/* v9: 구 등급 선택자(common/rare/epic/legendary)는 제거했다. getTowerTier()가
+   드랍표 기준 t1~t6만 반환하도록 바뀌어 어떤 요소에도 매칭되지 않는 죽은 규칙이었고,
+   그 안에 있던 :hover 글로우가 함께 사라져 건설 메뉴 호버가 밋밋해졌다.
+   아래 공용 :hover 규칙 하나로 t1~t6 전부를 덮는다(--tier-color는 각 등급이 세운다). */
 @keyframes tierPulse {
     0%, 100% { box-shadow: 0 0 5px rgba(var(--tier-color), 0.2); }
     50% { box-shadow: 0 0 15px rgba(var(--tier-color), 0.4); }
 }
-.tower-option[data-tier="common"]:hover {
-    border-color: var(--tier-common);
-    background: rgba(74, 222, 128, 0.08);
-    box-shadow: 0 0 15px rgba(74, 222, 128, 0.15);
-}
-
-.tower-option[data-tier="rare"] {
-    --tier-color: 96, 165, 250;
-    --tier-glow: 96, 165, 250;
-    border-color: rgba(96, 165, 250, 0.25);
-    animation: tierPulse 2.2s ease-in-out infinite;
-}
-
-.tower-option[data-tier="epic"] {
-    --tier-color: 192, 132, 252;
-    --tier-glow: 192, 132, 252;
-    border-color: rgba(192, 132, 252, 0.25);
-    animation: tierPulse 2.4s ease-in-out infinite;
-}
-
-.tower-option[data-tier="legendary"] {
-    --tier-color: 251, 191, 36;
-    --tier-glow: 251, 191, 36;
-    border-color: rgba(251, 191, 36, 0.3);
-    background: rgba(251, 191, 36, 0.04);
-    animation: legendaryPulse 1.8s ease-in-out infinite;
-}
 
 @keyframes legendaryPulse {
     0%, 100% {
-        box-shadow: 0 0 8px rgba(251, 191, 36, 0.3);
-        border-color: rgba(251, 191, 36, 0.3);
+        box-shadow: 0 0 8px rgba(var(--tier-color), 0.35);
+        border-color: rgba(var(--tier-color), 0.35);
     }
     50% {
-        box-shadow: 0 0 20px rgba(251, 191, 36, 0.6);
-        border-color: rgba(251, 191, 36, 0.5);
+        box-shadow: 0 0 20px rgba(var(--tier-color), 0.65);
+        border-color: rgba(var(--tier-color), 0.55);
     }
+}
+
+.tower-option[data-tier^="t"]:hover {
+    border-color: rgba(var(--tier-color), 0.75);
+    background: rgba(var(--tier-color), 0.1);
+    box-shadow: 0 0 15px rgba(var(--tier-color), 0.25);
 }
 
 .tower-option[data-tier="random"] {

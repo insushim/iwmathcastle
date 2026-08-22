@@ -2,11 +2,12 @@
 
 // 파일 분리에 따른 import 구문 수정
 import { gameElements, isTouchLike } from "./constants.js";
-import { TOWER_STATS, RANDOM_TOWER_PROBABILITY, RANDOM_TIER_LABEL } from "./gameData.js";
+import { TOWER_STATS, RANDOM_TOWER_PROBABILITY, RANDOM_TIER_LABEL, WIZARD_SPELLS } from "./gameData.js";
 import * as simCore from "./simCore.js";
 import { hideModal, showModal, showMessage } from "./utils.js";
 import { stageOfWave, waveInStage } from "./stageProgress.js";
 import { getSprite } from "./spriteAssets.js";
+import * as rarity from "./rarity.js";
 
 const isMobile = /Mobi/i.test(window.navigator.userAgent);
 let buildStepCallback = null;
@@ -26,38 +27,19 @@ export function initializeUI(callback) {
 }
 
 /**
- * Determine tower tier by cost for color coding
+ * 타워 등급 — 판정은 rarity.js가 한다(상자 확률표와 같은 표).
+ * 구버전은 여기서 **비용**으로 등급을 매기고 특수 타워 5종을 이름으로 하드코딩해
+ * 예외 처리했다. 그 결과 cost:0인 황금 왕관이 최하급으로 떨어졌다 — v9에서 제거.
  */
 function getTowerTier(key, towerStat) {
   if (towerStat.isRandom) return "random";
-  if (key === "ultimate" || key === "transcendent") return "legendary";
-  if (key === "golden") return "legendary";
-  if (key === "silver" || key === "copper") return "epic";
-  const cost = towerStat.cost;
-  if (cost <= 100) return "common";
-  if (cost <= 200) return "rare";
-  if (cost <= 300) return "epic";
-  return "legendary";
+  return rarity.tierAttr(key); // "t1" ~ "t6"
 }
 
-/**
- * Get tier color for dot indicator
- */
 function getTierColor(tier) {
-  switch (tier) {
-    case "common":
-      return "#4ade80";
-    case "rare":
-      return "#60a5fa";
-    case "epic":
-      return "#c084fc";
-    case "legendary":
-      return "#fbbf24";
-    case "random":
-      return "#a855f7";
-    default:
-      return "#94a3b8";
-  }
+  if (tier === "random") return "#a855f7";
+  const n = Number(String(tier).replace("t", ""));
+  return rarity.tierColorOf(n);
 }
 
 /**
@@ -149,11 +131,62 @@ export function updateUI(state) {
   }
 
   document.getElementById("wizardLevel").textContent = state.wizardLevel;
-  document.getElementById("upgradeWizardBtn").disabled =
-    state.gold < simCore.wizardUpgradeCost(state.wizardLevel);
+  updateWizardUpgradeHint(state);
 
   // Update wave progress bar
   updateWaveProgress(state);
+}
+
+
+/**
+ * 한글 받침 유무로 조사를 고른다. "「서리 고리」이 열려요"처럼 틀리면
+ * 아이들이 읽는 화면에서 바로 눈에 걸린다.
+ * (한글 음절 U+AC00~U+D7A3에서 (코드-0xAC00) % 28 != 0 이면 받침이 있다.)
+ *
+ * ⚠️ 판정 대상은 **낱말 자체**다. 「」 같은 괄호를 씌운 채로 재면 마지막 글자가
+ *    한글이 아니라 늘 같은 조사가 나온다(실측: 9종 전부 "가"로 찍혔다).
+ *    괄호는 호출부에서 씌우고, 이 함수에는 알맹이만 준다.
+ */
+export function particleFor(word, withBatchim, withoutBatchim) {
+  const ch = String(word || "").trim().slice(-1);
+  const code = ch.charCodeAt(0);
+  const isHangul = code >= 0xac00 && code <= 0xd7a3;
+  // 한글이 아니면(숫자·영문) 받침 없는 쪽 — 오히려 덜 어색하다.
+  return isHangul && (code - 0xac00) % 28 !== 0 ? withBatchim : withoutBatchim;
+}
+
+export function nextSpellAtLevel(level) {
+  for (const [key, sp] of Object.entries(WIZARD_SPELLS)) {
+    if (sp.level === level) return { key, ...sp };
+  }
+  return null;
+}
+
+/**
+ * 마법사 레벨업 버튼을 "있는 줄도 모르는 아이콘"에서 "지금 뭘 얼마에 살 수 있는지"로 바꾼다.
+ *
+ * 원래는 ⬆️ 하나뿐이라 ㉠ 값이 얼만지 ㉡ 올리면 뭐가 좋아지는지 ㉢ 지금 살 수 있는지가
+ * 전부 화면 밖이었다. 레벨 하나가 **새 마법 하나**를 여는데도 그 사실이 어디에도 없었다.
+ * 밸런스는 건드리지 않는다 — 비용도 효과도 그대로고, 보이게만 한다.
+ */
+function updateWizardUpgradeHint(state) {
+  const btn = document.getElementById("upgradeWizardBtn");
+  if (!btn) return;
+  const lv = state.wizardLevel;
+  const cost = simCore.wizardUpgradeCost(lv);
+  const next = nextSpellAtLevel(lv + 1);
+  const affordable = state.gold >= cost;
+
+  btn.disabled = !affordable;
+  // 비용은 항상 보인다. 못 살 때야말로 "얼마를 모으면 되는지"가 필요하다.
+  const label = `⬆️ ${cost}`;
+  if (btn.textContent !== label) btn.textContent = label;
+  btn.classList.toggle("affordable", affordable);
+
+  btn.title = next
+    ? `마법사 Lv.${lv + 1} — ${cost}골드 · 새 마법 「${next.name}」${particleFor(next.name, "이", "가")} 열려요`
+    : `마법사 Lv.${lv + 1} — ${cost}골드 · 마법 위력이 올라가요`;
+  btn.setAttribute("aria-label", btn.title);
 }
 
 /**
@@ -182,10 +215,29 @@ export function showDifficultySelector() {
   prevGold = 100;
   prevScore = 0;
   // v5.1: 신 키(mathcastle:save) 우선 확인 — 구 키만 보던 버그 수정
-  const hasSave =
+  const raw =
     localStorage.getItem("mathcastle:save") ||
     localStorage.getItem("towerDefenseSave");
-  document.getElementById("loadGameBtn").disabled = !hasSave;
+  const loadBtn = document.getElementById("loadGameBtn");
+  loadBtn.disabled = !raw;
+
+  // v9: "이어하기"가 무엇을 이어 주는지 버튼에 적는다. 구버전은 라벨이 그냥
+  //     "이어하기"라, 아이는 어느 학기 몇 웨이브가 살아 있는지 눌러 봐야 알았다.
+  //     CSP(style-src 'self') 때문에 색은 클래스로만 준다.
+  loadBtn.innerHTML = '<span class="btn-icon">💾</span> 이어하기';
+  if (raw) {
+    try {
+      const w = JSON.parse(raw);
+      const d = w && w.data ? w.data : w;
+      if (d && d.difficulty) {
+        const midWave = !!(d.wave && d.wave.inProgress);
+        const sub = document.createElement("span");
+        sub.className = "menu-btn-sub";
+        sub.textContent = `${d.difficulty} · 웨이브 ${d.currentWave || 1}${midWave ? " 방어 중" : ""}`;
+        loadBtn.appendChild(sub);
+      }
+    } catch { /* 손상된 세이브 — 버튼 라벨만 기본값으로 둔다 */ }
+  }
 }
 
 export async function showTowerSelector(x, y, sfx) {
@@ -215,6 +267,16 @@ export async function showTowerSelector(x, y, sfx) {
     tierDot.style.backgroundColor = getTierColor(tier);
     tierDot.style.boxShadow = `0 0 6px ${getTierColor(tier)}`;
 
+    // v9: 색만으로 등급을 나타내지 않는다(색각이상). 별·라벨을 항상 함께 낸다.
+    let tierBadge = null;
+    if (!towerStat.isRandom) {
+      const r = rarity.towerRarity(key);
+      tierBadge = document.createElement("div");
+      tierBadge.className = "tower-option-tier-label";
+      tierBadge.textContent = `${r.stars} ${r.label}`;
+      tierBadge.style.color = r.color;
+    }
+
     // v5.1: AI 타워 스프라이트 우선, 없으면 이모지 폴백 (multi-shot 등 스프라이트 미생성 타워)
     const towerSprite = getSprite(`tower_${key.replace(/-/g, "_")}`);
     const symbolHtml = towerSprite
@@ -222,6 +284,7 @@ export async function showTowerSelector(x, y, sfx) {
       : towerStat.symbol;
     option.innerHTML = `<div class="tower-option-symbol">${symbolHtml}</div><div class="tower-option-name">${towerStat.name}</div><div class="tower-option-cost">${towerStat.cost}G</div>`;
     option.appendChild(tierDot);
+    if (tierBadge) option.appendChild(tierBadge);
 
     // 앞의 9개는 숫자키로 바로 지을 수 있다 — 몇 번인지 보이게 배지를 단다
     if (!isTouchLike && optionIndex <= 9) {
@@ -426,6 +489,15 @@ export function showTowerUpgradeSelector(
   const awakenBadge = awaken > 0 ? ` <span class="tw-awaken">★${awaken}</span>` : "";
   let statsHtml = `<b>${tower.name}</b> <span class="tw-level">(Lv.${tower.level}${awakenBadge})</span><br>`;
 
+  // v9: 필드에 놓인 타워에도 등급을 보여준다. 구버전은 여기 등급 표시가 아예 없어서
+  //     상자에서 뽑은 특급 타워와 기본 타워가 화면에서 똑같이 보였다.
+  {
+    const r = rarity.towerRarity(tower.type);
+    const rk = rarity.attackRank(tower.type);
+    statsHtml += `<div class="tw-rarity" data-tier="t${r.tier}"><span class="tw-rarity-stars">${r.stars}</span> ${r.label} 등급` +
+      (rk ? ` · 공격력 ${rk.rank}위` : " · 지원 타워") + `</div>`;
+  }
+
   if (tower.level < 10) {
     if (tower.damage) {
       statsHtml += `데미지: ${tower.damage} <span class="stat-arrow">→</span> <span class="tw-next">${nextDamage}</span><br>`;
@@ -505,6 +577,16 @@ export function showMathProblemUI(problem, options, answerCallback) {
   if (timerEl) timerEl.style.display = "block";
 }
 
+/**
+ * 툴팁이 받는 값은 TOWER_STATS의 원본이기도 하고(건설창) 살아 있는 타워이기도 하다
+ * (필드). 살아 있는 타워는 type을 갖고, 원본은 동일성으로 찾는다.
+ */
+function resolveTowerKey(data) {
+  if (!data) return null;
+  if (data.type && TOWER_STATS[data.type]) return data.type;
+  return Object.keys(TOWER_STATS).find((k) => TOWER_STATS[k] === data) || null;
+}
+
 export function showTowerInfoTooltip(towerData, x, y) {
   const { tooltip } = gameElements;
   let data = towerData;
@@ -540,6 +622,14 @@ export function showTowerInfoTooltip(towerData, x, y) {
 
   const range = isMobile ? (data.range * 1.05).toFixed(0) : data.range;
 
+  // v9: 이 타워가 "좋은 건지" 툴팁 한 장으로 답한다.
+  //   구버전은 황금 왕관에게 "비용: 0G"만 보여줬다 — 상자에서만 나오는 특급 타워인데
+  //   화면은 공짜 싸구려라고 말하고 있었다.
+  const towerKey = resolveTowerKey(data);
+  const r = towerKey ? rarity.towerRarity(towerKey) : null;
+  const pow = towerKey ? rarity.powerInfo(towerKey) : null;
+  const rankInfo = towerKey ? rarity.attackRank(towerKey) : null;
+
   // Build structured tooltip
   let specialLines = [];
   if (data.slow) specialLines.push(`둔화 ${data.slow.factor * 100}%`);
@@ -554,10 +644,25 @@ export function showTowerInfoTooltip(towerData, x, y) {
         ? "모두"
         : "지상";
 
+  // 비용 0 = 골드로 살 수 없는 타워다. "0G"라고 쓰면 아이는 싸구려로 읽는다.
+  const costLine = r && r.boxOnly
+    ? `<span class="tooltip-stat">얻는 법:</span> 🎁 보물상자에서만 나와요`
+    : `<span class="tooltip-stat">비용:</span> ${data.cost}G`;
+  const rarityLine = r
+    ? `<div class="tooltip-rarity" data-tier="t${r.tier}"><span class="tooltip-rarity-stars">${r.stars}</span> ${r.label} 등급</div>`
+    : "";
+  const rankLine = rankInfo
+    ? `<span class="tooltip-stat">공격력:</span> 전체 ${rankInfo.total}종 중 <b>${rankInfo.rank}위</b><br>`
+    : pow && pow.role === "지원"
+      ? `<span class="tooltip-stat">역할:</span> 지원 — 힘 대신 특기로 도와요<br>`
+      : "";
+
   tooltip.innerHTML = `
         <b>${data.name}</b> ${data.level ? `<span class="tooltip-stat">(Lv.${data.level})</span>` : ""}
+        ${rarityLine}
         <div class="tooltip-divider"></div>
-        <span class="tooltip-stat">비용:</span> ${data.cost}G<br>
+        ${costLine}<br>
+        ${rankLine}
         <span class="tooltip-stat">데미지:</span> ${data.damage || (data.dps ? data.dps + " DPS" : "N/A")}<br>
         <span class="tooltip-stat">사거리:</span> ${range}<br>
         <span class="tooltip-stat">대상:</span> ${targetText}

@@ -12,6 +12,13 @@ import {
 import { mathProblems, loadGradeProblems } from "./problems.js";
 import * as simCore from "./simCore.js";
 import { quality, detectLowEnd, feedFrameTime } from "./perfQuality.js";
+import {
+  initA11y, prefersReducedMotion, tickFlashBudget, claimScreenFlash,
+  setReducedMotionForTest, flashBudgetState as a11yFlashBudgetState, resetFlashBudget,
+} from "./a11y.js";
+import * as impactFx from "./impactFx.js";
+import * as rarity from "./rarity.js";
+import * as blessing from "./blessing.js";
 import * as learnLoop from "./learnLoop.js";
 import * as problemSelector from "./problemSelector.js";
 import * as dailyQuest from "./dailyQuest.js";
@@ -267,6 +274,59 @@ let pathCanvas = null,
   pathCtx = null; // v5.6: 길 전용 캔버스 (한 번만 그림, z-index 1)
 let placementTiles = [];
 let pauseStartTimePerf = 0;
+
+// ── v9: 게임 시계 지연 큐 ──────────────────────────────────
+// 게임 루프 밖 setTimeout은 일시정지를 모른다(기록된 함정: 멈춘 화면에서 메테오가
+// 착탄해 골드까지 올렸다). 상자 개봉·연출 지연은 전부 이 큐를 쓴다 —
+// 일시정지 중에는 gameClock이 멈추므로 자동으로 함께 멈춘다.
+const delayedTasks = []; // { at, fn, tag }
+let delayedSeq = 0;
+function scheduleGameDelay(ms, fn, tag = "") {
+  delayedTasks.push({ at: gameClock + ms, fn, tag, id: ++delayedSeq });
+  return delayedSeq;
+}
+function runDueDelays() {
+  for (let i = delayedTasks.length - 1; i >= 0; i--) {
+    if (gameClock >= delayedTasks[i].at) {
+      const t = delayedTasks.splice(i, 1)[0];
+      try { t.fn(); } catch (e) { console.warn(`[delay:${t.tag}] 실패:`, e); }
+    }
+  }
+}
+
+// ── v9: 히트스톱 ──────────────────────────────────────────
+// ⚠️ 게임 시계를 "멈추는" 방식은 성립하지 않는다. 종료조건을 gameClock으로 쓰면
+//    시계가 멈춘 순간 그 시각에 영영 도달하지 못한다(교착). 그래서 남은 시간은
+//    **실시간 누산기**로 재고, 그동안 시뮬 전체를 아주 느리게 흘린다.
+//    일시정지 중에는 감산 자체가 안 돈다(게임 루프의 !gamePaused 블록 안에 있다).
+let hitstopRemainingMs = 0;
+let hitstopWindowElapsed = 0; // 실시간 1초 창
+let hitstopUsedInWindow = 0;
+const HITSTOP_SCALE = 0.08;   // 히트스톱 중 시뮬 진행 비율
+const HITSTOP_MS = 45;        // 1회 지속(실시간)
+const HITSTOP_MAX_PER_SEC = 2;
+
+let masteredThisRun = 0; // v9: 이번 판에 "완전히 내 것"이 된 문제 수(노트 졸업)
+let bestWaveAtRunStart = 0;  // v9: 판 시작 시점의 이전 최고 웨이브(게임오버 비교용)
+let blessings = blessing.initialState(); // v9: 이번 판 한정 축복
+let blessingOpen = false;
+let noDamageStreak = 0;      // v9: 연속 무피해 웨이브
+let bestNoDamageStreak = 0;
+let meteorDropCount = 0; // QA 계측용 — 메테오 실제 착탄 수(연출 유무와 무관)
+let qaKnockbackPx = 0; // QA 계측용 — 넉백이 실제로 경로를 되돌렸는지 누적한다
+
+function flashBudgetSnapshot() {
+  return a11yFlashBudgetState();
+}
+
+/** 예산 안에서만 히트스톱을 건다. 초과분은 조용히 버린다(연출이 게임을 늦추면 안 된다). */
+function requestHitstop() {
+  if (prefersReducedMotion()) return false;
+  if (hitstopUsedInWindow >= HITSTOP_MAX_PER_SEC) return false;
+  hitstopUsedInWindow++;
+  hitstopRemainingMs = Math.max(hitstopRemainingMs, HITSTOP_MS);
+  return true;
+}
 
 // --- [UX] 마법사 근접 건설 ---
 // 마법사가 올라선 배치 타일. 매 프레임 전체 타일을 훑으면 낭비라 좌표를 캐시해두고
@@ -780,6 +840,7 @@ function renderAchievementList() {
 // --- 게임 초기화 및 설정 ---
 window.addEventListener("DOMContentLoaded", () => {
   detectLowEnd(); // v5: 웨일북(저사양) 자동 감지 → 품질 강등
+  initA11y();     // v9: 움직임 민감도(prefers-reduced-motion) — 흔들림·플래시의 공통 관문
 
   // v5 QA 훅 (고유 전역 키 — window.game 금지 교훈). 프로덕션에서도 무해(읽기+시전 테스트용).
   window.__mathcastle = {
@@ -794,6 +855,142 @@ window.addEventListener("DOMContentLoaded", () => {
       spellCooldowns: { ...wizardCooldowns },
       autoCooldownUntil: WIZARD_AUTO_ATTACK_STATS.cooldownUntil || 0,
     }),
+    // ── v9 QA 훅 ──────────────────────────────────────────
+    // 연출은 수백 ms 만에 사라져 폴링으로는 못 본다 → 상태를 직접 노출한다.
+    qaImpactState: () => ({
+      hitstopRemainingMs,
+      hitstopUsedInWindow,
+      shake: { ...impactFx.shakeState() },
+      flash: flashBudgetSnapshot(),
+      reducedMotion: prefersReducedMotion(),
+      lowQuality: quality.low, // 저사양 강등 시 흔들림·파티클은 정상적으로 꺼진다
+      // 지금 플래시가 켜져 있는 몬스터 수 — "히트 플래시가 실제로 켜지는가"의 증거
+      flashingMonsters: monsters.filter((m) => impactFx.hitFlashAmount(m, gameClock) > 0).length,
+      // 넉백이 실제로 경로를 되돌렸는지 (누적 픽셀)
+      knockbackPx: qaKnockbackPx,
+    }),
+    /** 플래시 예산의 **경계 구간**을 직접 몰아친다.
+     *  루프를 관측하는 것만으로는 고정 구간 결함을 못 본다 — 카운터가 리셋되므로
+     *  "어느 순간에도 2회 이하"로 보이지만 실제로는 20ms 안에 4회가 터진다. */
+    qaNextSpellAtLevel: (lv) => ui.nextSpellAtLevel(lv),
+    qaParticleFor: (w, a, b) => ui.particleFor(w, a, b),
+    qaFlashBudgetProbe: () => {
+      resetFlashBudget();
+      tickFlashBudget(990);
+      let early = 0;
+      for (let i = 0; i < 3; i++) if (claimScreenFlash()) early++;
+      tickFlashBudget(20);          // 여기서 구버전은 창이 리셋됐다
+      let late = 0;
+      for (let i = 0; i < 3; i++) if (claimScreenFlash()) late++;
+      resetFlashBudget();
+      // 990ms 시점과 1010ms 시점은 같은 1초 창 안이다 → 합쳐서 2회를 넘으면 안 된다.
+      return { early, late, within1s: early + late };
+    },
+    qaSetReducedMotion: (v) => setReducedMotionForTest(v),
+    qaSaveNow: () => saveGame(true),
+    qaMeteorDrops: () => meteorDropCount,
+    qaBlessings: () => ({ state: { ...blessings }, open: blessingOpen,
+      towerRanges: towers.map((t) => Math.round(t.range)),
+      wizardCooldown: WIZARD_AUTO_ATTACK_STATS.cooldown }),
+    /** 축복을 제시 카드와 무관하게 **결정적으로** 건다.
+     *  offer()는 Math.random()이라 게이트가 실행마다 다른 축복을 검사하게 된다
+     *  — 5종 중 3종이 "효과 확인 생략"으로 조용히 통과하던 원인. */
+    qaForceBlessing: (id, level = 1) => {
+      blessings = { ...blessings, [id]: level };
+      applyBlessingsToWorld();
+      return { ...blessings };
+    },
+    /** 타워 한 대를 레벨업·각성시켜 "투자한 수치"를 만든다.
+     *  축복 재적용이 이 투자분을 지워 버리는 회귀(실측 590 → 252)를 재려면 필요하다. */
+    qaGrowTower: (type, levels = 0, awakens = 0) => {
+      const t = towers.find((x) => x.type === type);
+      if (!t) return null;
+      for (let i = 0; i < levels; i++) simCore.applyTowerUpgrade(t);
+      for (let i = 0; i < awakens; i++) simCore.applyTowerAwaken(t);
+      return { range: Math.round(t.range), level: t.level, awaken: t.awaken || 0 };
+    },
+    qaBlessingProbe: () => ({
+      byType: Object.fromEntries(
+        towers.map((t) => [t.type, {
+          range: Math.round(t.range),
+          splash: Math.round(t.splashRadius || 0),
+        }]),
+      ),
+      wizardCooldown: WIZARD_AUTO_ATTACK_STATS.cooldown,
+      waveClearHeal: simCore.WAVE_CLEAR_HEAL + blessing.healBonus(blessings),
+    }),
+    /** 슬로우 지속시간을 **실제 소비 경로(handleHit)**로 잰다.
+     *  블레싱 배수를 게이트가 다시 계산하면 그건 재구현이라 회귀를 못 잡는다. */
+    qaSlowProbe: () => {
+      const src = { ...TOWER_STATS.ice, damage: 0, type: "ice" };
+      const dummy = {
+        x: -9999, y: -9999, hp: 1e9, maxHp: 1e9, isBoss: false, isDead: true,
+        statusEffects: {}, pathIndex: 0, monsterKey: "slime", evasionChance: 0,
+      };
+      // isDead=true면 handleHit이 즉시 반환하므로, 상태이상 부여 구간만 태우도록
+      // 잠깐 살려 두고 곧바로 되돌린다(월드에 넣지 않았으므로 렌더·집계에 안 잡힌다).
+      dummy.isDead = false;
+      handleHit({ source: src, target: dummy }, gameClock);
+      dummy.isDead = true;
+      const sl = dummy.statusEffects.slowed;
+      return sl ? Math.round(sl.endTime - gameClock) : null;
+    },
+    qaOpenBlessing: () => new Promise((res) => openBlessingChooser(() => res(true))),
+    qaPickBlessing: (id) => {
+      const el = document.querySelector(`.blessing-card[data-blessing-id="${id}"]`);
+      if (el) { el.click(); return true; }
+      const first = document.querySelector(".blessing-card");
+      if (first) { first.click(); return true; }
+      return false;
+    },
+    /** 필드에 놓인 타워의 툴팁을 실제로 띄우고 그 DOM을 돌려준다.
+     *  hover 이벤트 흉내는 좌표·포인터 종류에 따라 조용히 실패해 헛검사가 되기 쉽다. */
+    qaTowerTooltipHtml: (type) => {
+      const t = towers.find((x) => x.type === type);
+      if (!t) return null;
+      ui.showTowerInfoTooltip(t, 400, 400);
+      return document.getElementById("tower-info-tooltip")?.innerHTML || "";
+    },
+    qaBuildMenuTooltipHtml: (type) => {
+      const stat = TOWER_STATS[type];
+      if (!stat) return null;
+      ui.showTowerInfoTooltip(stat, 400, 400);
+      return document.getElementById("tower-info-tooltip")?.innerHTML || "";
+    },
+    qaRarity: (key) => ({ ...rarity.towerRarity(key), rank: rarity.attackRank(key), power: rarity.powerInfo(key) }),
+    qaUntieredTowers: () => rarity.untieredTowerKeys(),
+    qaSpawnerState: () => ({ spawnActive, nextSpawnAt, spawnCount, monstersInWave, legacyInterval: spawnIntervalId }),
+    /** 스포너를 **성긴 프레임**으로 몰아 돌려 간격 드리프트를 잰다.
+     *  프레임이 간격보다 늦게 오는 상황(저사양·고배속)에서 매번 현재 시각으로
+     *  재기준화하면 늦은 몫이 영구 누적돼 스폰이 성겨진다 = 난이도가 조용히 내려간다. */
+    qaSpawnDriftProbe: (frameMs = 100, frames = 40) => {
+      const iv = simCore.spawnIntervalMs(currentWave, 1);
+      // 프로브는 **월드를 건드리지 않는다** — 전부 스냅샷 뜨고 되돌린다.
+      const snap = { gameClock, spawnActive, spawnCount, nextSpawnAt, monstersInWave };
+      const realSpawn = spawnMonster;
+      let spawned = 0;
+      spawnMonster = () => { spawned++; };   // 실제 몬스터는 만들지 않는다
+      try {
+        spawnActive = true;
+        spawnCount = 0;
+        monstersInWave = 9999;
+        nextSpawnAt = gameClock;
+        for (let f = 0; f < frames; f++) { gameClock += frameMs; pumpSpawner(); }
+      } finally {
+        spawnMonster = realSpawn;
+        gameClock = snap.gameClock;
+        spawnActive = snap.spawnActive;
+        spawnCount = snap.spawnCount;
+        nextSpawnAt = snap.nextSpawnAt;
+        monstersInWave = snap.monstersInWave;
+      }
+      const elapsed = frameMs * frames;
+      // 평균 간격이 아니라 **누적 스폰 수**를 설계치와 견준다. 평균 간격은 마지막
+      // 부분 구간에 희석돼 드리프트를 흐린다 — 실제로 그 지표로는 회귀 주입이 안 잡혔다.
+      const designCount = Math.floor(elapsed / iv);
+      return { intervalMs: iv, frameMs, elapsed, spawned, designCount,
+               ratio: designCount > 0 ? spawned / designCount : null };
+    },
     qaSetWizardLevel: (lv) => { wizardLevel = lv; populateSpellbook(); },
     qaCastSpell: async (key, x, y) => {
       activeSpell = key;
@@ -843,9 +1040,11 @@ window.addEventListener("DOMContentLoaded", () => {
       return { clicked: val, correct: correctAnswer, wasCorrect: String(val) === String(correctAnswer), before };
     },
     qaGetMonsters: () =>
-      monsters.slice(0, 5).map((m) => ({
+      monsters.slice(0, 40).map((m) => ({
         key: m.monsterKey, x: Math.round(m.x), y: Math.round(m.y),
         direction: +m.direction.toFixed(2), pathIndex: Math.round(m.pathIndex),
+        // v9: 이어하기 검증용 — "다친 몬스터가 돌아왔는가"로 같은 전투의 연속임을 증명한다
+        hp: Math.round(m.hp), maxHp: Math.round(m.maxHp),
       })),
     qaGetProjectiles: () =>
       projectiles.map((p) => ({
@@ -1084,6 +1283,9 @@ async function initializeGame(difficulty, savedState = null) {
 
   // [V2] 파티클 시스템 초기화
   particleSystem = new ParticleSystem(dynamicCtx);
+  // v9: 화면 흔들림 대상은 #gameCanvas 컨테이너다(캔버스만 흔들면 .tower 클릭 판정이 어긋난다)
+  impactFx.initImpactFx(gameElements.gameCanvas);
+  impactFx.resetShake();
 
   // [V3] 메뉴 파티클 중지 & 게임플레이 음악 시작
   stopMenuParticles();
@@ -1096,6 +1298,26 @@ async function initializeGame(difficulty, savedState = null) {
   totalKillCount = 0;
   totalBossKills = 0;
   totalTowersBuilt = 0;
+  // v9: 판 단위 카운터. bestWaveAtRunStart는 **플레이가 갱신하기 전**에 찍어야 한다.
+  masteredThisRun = 0;
+  noDamageStreak = 0;
+  bestNoDamageStreak = 0;
+  bestWaveAtRunStart = achievementSystem.bestOf("wave");
+  blessings = blessing.initialState();
+  blessingOpen = false;
+  WIZARD_AUTO_ATTACK_STATS.cooldown = WIZARD_AUTO_ATTACK_STATS.initialCooldown; // 축복으로 줄인 쿨다운을 새 판에서 되돌린다
+  // 새 판 진입이 restartGame을 반드시 거치는 것은 아니다(학년 재선택 등) — 여기서도 비운다.
+  delayedTasks.length = 0;
+  pendingBoxes.length = 0;
+  wizardHintShownAtLevel = -1;
+  hitstopRemainingMs = 0;
+  hitstopUsedInWindow = 0;
+  hitstopWindowElapsed = 0;
+  meteorDropCount = 0;
+  qaKnockbackPx = 0;
+  resetFlashBudget();
+  impactFx.resetShake();
+  renderPauseOverlay(false);
   // v8: 집중력은 판 단위. 다만 오늘의 도전을 깼다면 그만큼 얹어서 시작한다
   //     (보상이 뽑기가 아니라 "학습해서 얻은 화력"이라는 원칙과 같은 방향)
   focusPoints = dailyQuest.startingFocusBonus();
@@ -1149,7 +1371,60 @@ async function initializeGame(difficulty, savedState = null) {
     // 길 배치가 바뀐 빌드면 그대로 심을 경우 길 한복판에 앉는다 — 여기서 구제한다.
     relocateTowersToValidTiles();
 
-    showMessage("게임을 성공적으로 불러왔습니다!");
+    // ── v9(세이브 v7): 웨이브 도중 상태 복원 ────────────────
+    // ⚠️ 전부 옵셔널 가드로 감싼다. v6 이하 세이브에는 이 필드가 없고,
+    //    여기서 예외가 나면 initializeGame 중간에서 멈춰 로딩 화면이 굳는다
+    //    (이 복원 블록에는 원래 try/catch가 없었다 — 교차검증 지적).
+    try {
+      // 쿨다운은 남은 시간으로 저장돼 있다 → 지금 시계 기준으로 되살린다
+      if (Array.isArray(savedState.towerCooldownLeft)) {
+        savedState.towerCooldownLeft.forEach((left, i) => {
+          if (towers[i] && typeof left === "number") towers[i].cooldownUntil = gameClock + left;
+        });
+      }
+      if (savedState.wizardCooldownLeft && typeof savedState.wizardCooldownLeft === "object") {
+        for (const [k, left] of Object.entries(savedState.wizardCooldownLeft)) {
+          if (typeof left === "number") wizardCooldowns[k] = gameClock + left;
+        }
+      }
+      if (typeof savedState.wizardAutoCooldownLeft === "number") {
+        WIZARD_AUTO_ATTACK_STATS.cooldownUntil = gameClock + savedState.wizardAutoCooldownLeft;
+      }
+      if (typeof savedState.masteredThisRun === "number") masteredThisRun = savedState.masteredThisRun;
+      if (savedState.blessings) {
+        blessings = blessing.normalize(savedState.blessings);
+        applyBlessingsToWorld(); // 복원된 타워에도 다시 발라 준다
+      }
+
+      const w = savedState.wave;
+      if (w && w.inProgress) {
+        waveComposition = Array.isArray(w.composition) ? w.composition : [];
+        monstersInWave = w.monstersInWave || waveComposition.length;
+        monstersSpawned = w.monstersSpawned || 0;
+        spawnCount = w.spawnCount || 0;
+        waveDamageTaken = w.damageTaken || 0;
+        currentWaveModifier = w.modifier || null;
+        const restored = restoreMonsters(w.monsters);
+        waveInProgress = true;
+        waveStartTime = gameClock - (w.elapsed || 0);
+        // 아직 안 나온 몬스터가 남아 있으면 스폰을 이어서 돌린다
+        if (w.spawnActive && spawnCount < monstersInWave) {
+          spawnActive = true;
+          nextSpawnAt = gameClock + (w.spawnInLeft || 0);
+        }
+        gameElements.startWaveBtn.disabled = true;
+        setStartWaveLabel("⚔️ 방어 중", false);
+        showMessage(`⚔️ 웨이브 ${currentWave} 중간부터 이어서! (몬스터 ${restored}마리 복귀)`);
+      }
+    } catch (err) {
+      // 중간 상태 복원 실패가 게임 진입 자체를 막으면 안 된다 — 웨이브 시작 상태로 이어간다.
+      console.warn("웨이브 중간 상태 복원 실패(웨이브 시작 상태로 진행):", err);
+      waveInProgress = false;
+    }
+
+    if (!(savedState.wave && savedState.wave.inProgress)) {
+      showMessage("게임을 성공적으로 불러왔습니다!");
+    }
   } else {
     WIZARD_AUTO_ATTACK_STATS.damage = WIZARD_AUTO_ATTACK_STATS.initialDamage;
     WIZARD_AUTO_ATTACK_STATS.range = 120;
@@ -1821,6 +2096,10 @@ function recreateTower(towerData) {
   const savedAwaken = towerData.awaken || 0;
   for (let i = 0; i < savedAwaken; i++) simCore.applyTowerAwaken(tower);
 
+  // 디버프 잔여 복원(저장에 없으면 그대로 0 — 구 세이브 호환)
+  if (towerData.dis > 0) tower.disabledUntil = gameClock + towerData.dis;
+  if (towerData.tw > 0) tower.timeWarpedUntil = gameClock + towerData.tw;
+
   tower.el.className = `tower tower-${tower.type}`;
   if (savedAwaken > 0) tower.el.classList.add("tower-awakened");
   tower.el.style.left = `${x}px`;
@@ -1844,6 +2123,10 @@ function recreateTower(towerData) {
 
   // [수정] 브라우저 리페인트(repaint)를 강제하여 그래픽 깨짐 방지
   void tower.el.offsetWidth;
+
+  // v9: 상자 개봉·세이브 복원으로 생긴 타워에도 이번 판 축복을 바른다.
+  //     배수 추적식이라 복원 직후 applyBlessingsToWorld()가 또 불려도 중복 누적되지 않는다.
+  applyBlessingsToNewTower(tower);
 
   towers.push(tower);
 
@@ -1873,23 +2156,40 @@ function gameLoop(timestamp) {
   try {
     feedFrameTime(rawDeltaTime); // 저사양 런타임 감지
     if (!gamePaused) {
+      // v9: 히트스톱 — 남은 시간은 실시간으로 재고(교착 방지), 그동안 시뮬 전체를
+      //     느리게 흘린다. gameClock도 같이 느려지므로 연출·쿨다운·스폰이 한 몸으로 움직인다.
+      const realDelta = Math.min(rawDeltaTime, MAX_SIM_FRAME_MS);
+      let simDelta = deltaTime;
+      hitstopWindowElapsed += realDelta;
+      if (hitstopWindowElapsed >= 1000) { hitstopWindowElapsed = 0; hitstopUsedInWindow = 0; }
+      if (hitstopRemainingMs > 0) {
+        hitstopRemainingMs -= realDelta;
+        simDelta *= HITSTOP_SCALE;
+      }
+      tickFlashBudget(realDelta); // 광과민성 예산(전면 플래시 실시간 1초 2회)
+
       // [NEW] 게임 루프의 핵심 업데이트 순서 변경
-      gameClock += deltaTime; // 배속·일시정지가 반영된 게임 시간
+      gameClock += simDelta; // 배속·일시정지·히트스톱이 반영된 게임 시간
+      runDueDelays();        // 게임 시계 지연 큐(상자 개봉 등)
+      pumpSpawner();         // v9: 스폰도 게임 시계로 — setInterval 시절의 시간축 분리 해소
       // ⚠️ 아래 갱신들은 전부 **게임 시계**를 받는다(예전엔 벽시계 timestamp였다).
       //    쿨다운·상태이상 지속시간이 벽시계면, 2배속에서 몬스터만 2배로 오고
       //    타워는 그대로 쏘게 된다 — 배속이 난이도를 바꿔 버린다.
       //    게임 시계는 일시정지 중 멈추므로 예전의 일시정지 보정(adjustPerfTimers)도
       //    필요 없어졌다(있으면 오히려 이중 보정이 된다).
       updateSpatialGrid(); // 1. 몬스터 위치를 그리드에 업데이트
-      updateWizard(deltaTime); // 2. 마법사 이동
+      updateWizard(simDelta); // 2. 마법사 이동
       updateWizardCooldownVisual(gameClock);
       wizardAutoAttack(gameClock); // 3. 마법사 공격 (그리드 사용)
-      updateTowers(gameClock, deltaTime); // 4. 타워 업데이트 (그리드 사용)
-      updateProjectiles(deltaTime, gameClock); // 5. 발사체 이동
-      updateMonsters(gameClock, deltaTime); // 6. 몬스터 이동 및 상태 업데이트
-      updateEffects(gameClock, deltaTime); // 7. 각종 효과 업데이트
-      updateDamageTexts(gameClock, deltaTime); // 8. 데미지 텍스트 업데이트
+      updateTowers(gameClock, simDelta); // 4. 타워 업데이트 (그리드 사용)
+      updateProjectiles(simDelta, gameClock); // 5. 발사체 이동
+      updateMonsters(gameClock, simDelta); // 6. 몬스터 이동 및 상태 업데이트
+      updateEffects(gameClock, simDelta); // 7. 각종 효과 업데이트
+      updateDamageTexts(gameClock, simDelta); // 8. 데미지 텍스트 업데이트
+      // ⚠️ 파티클은 히트스톱에 걸리지 않는다 — 타격 순간 튀는 불티까지 멈추면
+      //    "멈췄다"가 아니라 "렉이다"로 읽힌다(연출의 목적이 뒤집힌다).
       if (particleSystem) particleSystem.update(deltaTime); // 8.5. [V2] 파티클 업데이트
+      impactFx.updateCameraShake(realDelta); // 8.6. v9: 화면 흔들림(실시간 — 연출)
       checkWaveCompletion(); // 9. 웨이브 종료 확인
       renderDynamicLayer(); // 10. 동적 요소 렌더링
     }
@@ -2220,7 +2520,11 @@ function handleGameKeydown(e) {
   // 수학 문제 중에도 gamePaused=true이므로 P로 풀어버리면 문제 흐름이 깨진다.
   const modalOpen = !!document.querySelector(".modal.show");
   if (!gameRunning || gamePaused) {
-    if (gameRunning && gamePaused && !modalOpen && e.key.toLowerCase() === "p") {
+    // v9: 일시정지 중에는 P·ESC 둘 다 해제로 받는다.
+    //     오버레이는 일부러 .modal 클래스를 쓰지 않는다 — 쓰면 위 modalOpen이 참이 되어
+    //     자기 자신 때문에 해제가 막힌다(자기 게이트 충돌).
+    const k = e.key.toLowerCase();
+    if (gameRunning && gamePaused && !modalOpen && (k === "p" || k === "escape")) {
       e.preventDefault();
       document.getElementById("pauseBtn")?.click();
     }
@@ -2660,9 +2964,11 @@ function updateMonsters(timestamp, deltaTime) {
         score = Math.max(0, score - 75);
         sfx.play("castle_hit");
         wizardSprite.setDamaged();
-        gameElements.gameCanvas.style.animation = "shake 0.5s";
-        setTimeout(() => (gameElements.gameCanvas.style.animation = ""), 500);
-        if (particleSystem) particleSystem.screenFlash("#ff3366", 200, 0.15);
+        // v9: 구버전은 CSS animation + 벽시계 setTimeout이었다. ㉠ 일시정지를 모르고
+        //     ㉡ 2배속에서도 500ms 그대로였고 ㉢ prefers-reduced-motion을 무시했으며
+        //     ㉣ 신규 흔들림과 같은 엘리먼트의 transform을 다퉜다. impactFx로 통일한다.
+        impactFx.requestShake(6, 260);
+        if (particleSystem && claimScreenFlash()) particleSystem.screenFlash("#ff3366", 200, 0.15);
         handleMonsterDeath(monster, timestamp);
         checkGameOver();
         continue;
@@ -2759,6 +3065,45 @@ function logRenderFailure(what, err) {
   console.error(`[render] ${what} 그리기 실패 — 해당 개체만 생략합니다.`, err);
 }
 
+/**
+ * v9: 필드에 놓인 타워의 등급 링.
+ *
+ * 구버전에는 필드 등급 표시가 **하나도 없었다** — 상자에서 뽑은 특급 타워와 기본
+ * 타워가 화면에서 똑같이 보였다("황금왕관 이런 친구들이 구분이 잘 안 감").
+ * 색만으로 구분시키지 않기 위해 4등급 이상은 링을 **이중**으로 그려 두께로도
+ * 구분되게 하고, 툴팁·업그레이드 패널에는 별과 한글 라벨이 함께 나간다.
+ */
+function drawRarityRing(ctx, tower, scale) {
+  const r = rarity.towerRarity(tower.type);
+  if (r.tier <= 1) return; // 기본 등급은 아무것도 그리지 않는다(화면 소음 방지)
+  const rr = 20 * scale;
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  ctx.strokeStyle = r.color;
+  ctx.lineWidth = r.tier >= 4 ? 3 : 2;
+  ctx.beginPath();
+  ctx.ellipse(tower.x, tower.y + rr * 0.55, rr, rr * 0.42, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  if (r.tier >= 4) {
+    // 이중 링 = 두께로도 등급이 읽힌다(색각이상 대비). 회전 광채는 저사양·움직임
+    // 민감 설정에서 끈다 — 링 자체는 남으므로 정보는 사라지지 않는다.
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(tower.x, tower.y + rr * 0.55, rr + 4, rr * 0.42 + 3, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    if (r.tier >= 5 && !quality.low && !prefersReducedMotion()) {
+      const ph = (gameClock / 900) % (Math.PI * 2);
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      ctx.ellipse(tower.x, tower.y + rr * 0.55, rr + 4, rr * 0.42 + 3, 0, ph, ph + 1.1);
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
 function renderDynamicLayer() {
   if (!dynamicCtx) return;
   const canvas = dynamicCtx.canvas;
@@ -2790,6 +3135,8 @@ function renderDynamicLayer() {
   const towerScale = worldScale();
   for (const t of towers) {
     try {
+      // v9: 등급 링을 **타워보다 먼저** 그린다(발밑 고리). 위에 그리면 타워 그림을 가린다.
+      drawRarityRing(dynamicCtx, t, towerScale);
       towerRenderer.render(dynamicCtx, t.type, t.x, t.y, t.level, now, towerScale);
     } catch (e) {
       dynamicCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -2839,6 +3186,8 @@ function renderDynamicLayer() {
         isPoisoned: !!m.statusEffects.poisoned,
         isSlowed: !!m.statusEffects.slowed,
         isStunned: !!m.statusEffects.stunned,
+        // v9: 히트 플래시 세기(0~1). 게임 시계 기준이라 배속에서도 길이가 맞는다.
+        hitFlash: impactFx.hitFlashAmount(m, gameClock),
       },
     );
     } catch (e) {
@@ -2933,10 +3282,7 @@ function startWave() {
   // v8: waveInProgress 가드만으로는 부족하다. 이어하기 직후 연타·강제 진행처럼
   //     타이밍이 겹치는 경로에서 이전 웨이브의 스폰 인터벌이 살아남아 겹쳐 돌면
   //     몬스터가 두 배 속도로 쏟아진다. 진입 시 무조건 정리한다.
-  if (spawnIntervalId) {
-    clearInterval(spawnIntervalId);
-    spawnIntervalId = null;
-  }
+  stopSpawnLoop();
   sfx.play("wave_start");
   const { startWaveBtn } = gameElements;
   waveInProgress = true;
@@ -2991,22 +3337,53 @@ function startWave() {
  *    이 변경이 없애려던 "배속이 난이도를 바꾼다"가 스폰 경로에서 그대로 재현된다.
  *    그래서 배속 토글이 이 함수를 다시 부른다(spawnCount는 이어받는다).
  */
-function startSpawnLoop() {
-  if (spawnIntervalId) clearInterval(spawnIntervalId);
-  spawnIntervalId = setInterval(
-    () => {
-      if (gamePaused || !gameRunning) return;
+// v9: 스폰을 setInterval에서 **게임 시계 구동**으로 옮겼다.
+//
+// 왜 바꿨나 — 셋이 한꺼번에 풀린다:
+//  ① 히트스톱이 게임 시간을 잠깐 느리게 흘리는데, 스폰만 벽시계로 앞서 나가면
+//     그 초의 웨이브 밀도가 실제로 올라간다(난이도가 연출 때문에 바뀐다).
+//  ② 배속을 토글하면 이미 걸린 인터벌은 옛 간격으로 남는다(기록된 결함 —
+//     스폰이 게임시간 기준 절반으로 성겨져 오히려 쉬워졌다).
+//  ③ 탭을 백그라운드로 보내면 rAF는 멈추는데 setInterval은 계속 돌아,
+//     화면이 얼어붙은 채로 몬스터만 쌓였다.
+// 게임 시계는 배속·일시정지·히트스톱을 전부 이미 반영하고 있으므로
+// `/gameSpeed` 같은 보정이 필요 없다 — 보정 코드가 사라지는 게 옳은 방향의 신호다.
+let nextSpawnAt = 0;
+let spawnActive = false;
 
-      if (spawnCount < monstersInWave) {
-        spawnMonster(waveComposition[spawnCount]);
-        spawnCount++;
-      } else {
-        clearInterval(spawnIntervalId);
-        spawnIntervalId = null;
-      }
-    },
-    simCore.spawnIntervalMs(currentWave, gameSpeed),
-  );
+function startSpawnLoop() {
+  // 구 인터벌이 남아 있으면 정리(구 세이브·구 경로 호환)
+  if (spawnIntervalId) { clearInterval(spawnIntervalId); spawnIntervalId = null; }
+  spawnActive = true;
+  nextSpawnAt = gameClock; // 첫 마리는 즉시
+}
+
+function stopSpawnLoop() {
+  spawnActive = false;
+  if (spawnIntervalId) { clearInterval(spawnIntervalId); spawnIntervalId = null; }
+}
+
+/** 게임 루프가 매 프레임 부른다. 한 프레임이 길어도 밀린 만큼 따라잡는다. */
+function pumpSpawner() {
+  if (!spawnActive || !gameRunning) return;
+  let guard = 0; // 폭주 방지(한 프레임에 최대 8마리)
+  while (spawnActive && gameClock >= nextSpawnAt && guard < 8) {
+    if (spawnCount < monstersInWave) {
+      spawnMonster(waveComposition[spawnCount]);
+      spawnCount++;
+      // 간격은 게임 시간 기준이다 — gameSpeed로 나누지 않는다(게임 시계가 이미 빠르다).
+      // ⚠️ `gameClock + 간격`이 아니라 **예정 시각에 더한다**. 프레임은 간격보다 성기게
+      //    오므로(20fps면 프레임당 50~100ms) 매번 현재 시각으로 재기준화하면 늦은 만큼이
+      //    영구히 누적된다 — 웨이브 70(간격 440ms)이 20fps에서 500ms로 늘어져 스폰이
+      //    성겨지고 **난이도가 조용히 내려간다**(같은 계열의 과거 결함: setInterval 간격을
+      //    시작 시 1회만 계산해 배속이 그 경로만 옛 비율로 남겼던 건). 예정 시각에 더하면
+      //    위 while이 밀린 몫을 실제로 따라잡는다.
+      nextSpawnAt += simCore.spawnIntervalMs(currentWave, 1);
+      guard++;
+    } else {
+      spawnActive = false;
+    }
+  }
 }
 
 function spawnMonster(type, position = null, isSpecialSpawn = false) {
@@ -3163,7 +3540,7 @@ function handleMonsterDeath(monster, timestamp) {
     const colors = ["#ff4444", "#ff8800", "#ffcc00"];
     const c = colors[Math.floor(Math.random() * colors.length)];
     particleSystem.explosion(monster.x, monster.y, c, monster.isBoss ? 40 : 15);
-    if (monster.isBoss) particleSystem.shockwave(monster.x, monster.y, 100);
+    if (monster.isBoss && heavyFxAllowed()) particleSystem.shockwave(monster.x, monster.y, 100);
   }
   totalKillCount++;
   if (monster.isBoss) totalBossKills++;
@@ -3205,18 +3582,73 @@ function handleRandomTowerPlacement(type, tile) {
   resetBuildProcess();
 
   const newTowerType = getRandomTowerType(type);
-  const newTowerStat = TOWER_STATS[newTowerType];
+  const reveal = rarity.revealTier(newTowerType);
 
-  setTimeout(() => {
-    boxEl.remove();
-    recreateTower({
-      type: newTowerType,
-      level: 1,
-      tile: { x: tile.x, y: tile.y },
-    });
-    showUpgradeNotification(`✨ ${newTowerStat.name} 타워 획득! ✨`);
+  // 개봉 대기 상태를 기록한다. 이게 없으면 골드는 이미 깎였는데(위 gold -= stat.cost)
+  // 타워는 아직 없는 1초 사이에 자동저장이 끼어 **골드만 증발**한다.
+  // buildGameState()가 저장 직전 flushPendingBoxes()로 강제 개봉해 그 창을 없앤다.
+  const pending = { boxEl, type: newTowerType, tile: { x: tile.x, y: tile.y }, opened: false };
+  pendingBoxes.push(pending);
+
+  // ⚠️ 벽시계 setTimeout이 아니라 **게임 시계 지연 큐**다. 구버전은 일시정지 중에도
+  //    개봉이 진행됐다(기록된 함정: 멈춘 화면에서 메테오가 착탄하던 것과 같은 계열).
+  //    전설은 조금 더 뜸을 들인다 — 다만 1.2초를 넘기지 않는다(뽑기 연출 상한).
+  scheduleGameDelay(reveal === "legendary" ? 1200 : 900, () => openBox(pending), "box");
+}
+
+/** 개봉 대기 목록. 저장 직전 flushPendingBoxes()가 비운다. */
+const pendingBoxes = [];
+
+function openBox(pending) {
+  if (!pending || pending.opened) return;
+  pending.opened = true;
+  const i = pendingBoxes.indexOf(pending);
+  if (i !== -1) pendingBoxes.splice(i, 1);
+
+  try { pending.boxEl?.remove(); } catch { /* 이미 제거됨 */ }
+  recreateTower({ type: pending.type, level: 1, tile: { x: pending.tile.x, y: pending.tile.y } });
+
+  const stat = TOWER_STATS[pending.type];
+  const r = rarity.towerRarity(pending.type);
+  const reveal = rarity.revealTier(pending.type);
+  const rank = rarity.attackRank(pending.type);
+
+  // v9: 등급이 **글자로도** 보인다. 구버전은 전설이든 기본이든 똑같이
+  //     "✨ ○○ 타워 획득! ✨" 한 줄이라, 뭘 뽑았는지 좋은지 알 수가 없었다.
+  //     색만으로 구분시키지 않으려고 별(★)과 한글 등급을 항상 함께 낸다.
+  const rankText = rank ? ` · 공격력 ${rank.rank}위` : " · 지원 타워";
+  showUpgradeNotification(
+    `${r.stars} ${r.label} · ${stat.name}${rankText}`,
+    reveal === "legendary" ? "legendary" : reveal === "epic" ? "epic" : "",
+  );
+
+  // 연출 강도는 등급에 비례하되 상한이 있다(아동 대상 — 뽑기 감각을 키우지 않는다).
+  if (reveal === "legendary") {
     sfx.play("powerup");
-  }, 1000);
+    if (particleSystem && !quality.low) {
+      particleSystem.explosion(tileCenterX(pending.tile), tileCenterY(pending.tile), r.color, 22);
+      if (heavyFxAllowed())
+        particleSystem.shockwave(tileCenterX(pending.tile), tileCenterY(pending.tile), 110, r.color);
+    }
+    if (particleSystem && claimScreenFlash()) particleSystem.screenFlash(r.color, 320, 0.14);
+    impactFx.requestShake(3, 200);
+  } else if (reveal === "epic") {
+    sfx.play("powerup");
+    if (particleSystem && !quality.low) {
+      particleSystem.explosion(tileCenterX(pending.tile), tileCenterY(pending.tile), r.color, 12);
+    }
+  } else {
+    sfx.play("blip");
+  }
+  updateFullUI();
+}
+
+function tileCenterX(tile) { return tile.x + 20; }
+function tileCenterY(tile) { return tile.y + 20; }
+
+/** 저장·게임오버 직전 호출 — 대기 중인 상자를 즉시 개봉해 "골드만 사라진 상태"를 없앤다. */
+function flushPendingBoxes() {
+  while (pendingBoxes.length) openBox(pendingBoxes[0]);
 }
 
 function getRandomTowerType(randomBoxType) {
@@ -3289,6 +3721,11 @@ function placeTower(type) {
   // [수정] 브라우저 리페인트(repaint)를 강제하여 그래픽 깨짐 방지
   void tower.el.offsetWidth;
 
+  // v9: 판 도중에 지은 타워에도 이번 판 축복을 즉시 바른다. 이게 없으면
+  //     '멀리 보는 눈'을 이미 배운 상태에서 새로 지은 타워만 조용히 미적용이라
+  //     다음 스테이지 클리어(축복 재선택) 전까지 카드가 약속한 효과가 빠진다.
+  applyBlessingsToNewTower(tower);
+
   towers.push(tower);
   const tileToRemove = placementTiles.find(
     (t) => parseInt(t.style.left) === x && parseInt(t.style.top) === y,
@@ -3324,7 +3761,7 @@ function upgradeTower() {
       `✨ ${tower.name} 각성 ${tower.awaken}단계! 공격력이 크게 올랐습니다!`,
     );
     sfx.play("powerup");
-    if (particleSystem) particleSystem.screenFlash("#ffd166", 400, 0.15);
+    if (particleSystem && claimScreenFlash()) particleSystem.screenFlash("#ffd166", 400, 0.15);
     hideModal(gameElements.towerUpgradeSelector);
     gameElements.rangeIndicator.style.display = "none";
     updateFullUI();
@@ -3398,6 +3835,12 @@ function transformRandomTower(newType) {
     rangeSq: newStats.range * newStats.range,
     splashRadiusSq: (newStats.splashRadius || 0) ** 2,
   });
+  // ⚠️ 위 assign이 사거리·광역을 **축복 적용 전 기본값**으로 덮어썼는데 배수 기록
+  //    (_blessRange/_blessSplash)은 그대로 남는다 → 다음 재적용 때 "이미 발라져 있다"고
+  //    판단해 건너뛰고, 변신한 타워만 영영 축복을 잃는다. 기록을 지우고 다시 바른다.
+  delete towerToTransform._blessRange;
+  delete towerToTransform._blessSplash;
+  applyBlessingsToNewTower(towerToTransform);
   towerToTransform.el.className = `tower tower-${newType}`;
   showUpgradeNotification(`✨ 타워가 ${newStats.name} 타워로 변신했습니다!`);
   sfx.play("powerup");
@@ -3586,6 +4029,10 @@ function handleHit(projectile, timestamp) {
     particleSystem.sparkle(monster.x, monster.y, projectile.color);
   }
 
+  // v9: 히트 플래시 — 맞은 개체가 하얗게 번쩍인다. 셋 중 비용이 가장 싸고
+  //     "맞았다"는 체감은 가장 크다(렌더러가 gameClock으로 세기를 계산한다).
+  impactFx.markHitFlash(monster, timestamp);
+
   let damage = source.damage;
 
   // v8: 집중력 — 이번 판에서 문제를 맞힌 만큼 타워 피해가 오른다.
@@ -3666,7 +4113,8 @@ function handleHit(projectile, timestamp) {
       if (tower.slow)
         monster.statusEffects.slowed = {
           factor: tower.slow.factor,
-          endTime: timestamp + tower.slow.duration,
+          // v9: '차가운 손길' 축복이 붙잡는 시간을 늘린다(세기는 그대로 — 지속만).
+          endTime: timestamp + tower.slow.duration * blessing.freezeMult(blessings),
         };
       if (tower.stun && Math.random() < tower.stun.chance)
         monster.statusEffects.stunned = {
@@ -3691,6 +4139,17 @@ function handleHit(projectile, timestamp) {
           "splash-damage-effect",
           800,
         );
+        // v9: 폭발 승격 — 구버전은 반경 65짜리 미사일도 25px 원 하나로 끝났다.
+        //     충격파는 반경에 비례시키고, 파편은 저사양에서만 끈다.
+        const R = Math.sqrt(tower.splashRadiusSq);
+        if (particleSystem && !quality.low) {
+          if (heavyFxAllowed())
+            particleSystem.shockwave(monster.x, monster.y, R * 1.6, projectile.color || "#ffd166");
+          particleSystem.explosion(
+            monster.x, monster.y, projectile.color || "#ff9f43",
+            Math.round(Math.min(16, 8 + R / 12)),
+          );
+        }
       }
 
       monsters.forEach((m) => {
@@ -3720,6 +4179,20 @@ function handleHit(projectile, timestamp) {
         }
       });
     }
+  }
+
+  // ── v9 타격감 ────────────────────────────────────────────
+  // 여기가 피해량이 확정되는 유일한 지점이다(레이저·독도 이 함수를 탄다).
+  // ⚠️ 레이저는 매 프레임 이 함수를 부르므로 큰 타격 판정에서 제외한다 —
+  //    안 그러면 히트스톱이 초당 수십 번 걸려 게임이 슬로모션이 된다.
+  if (source.type !== "laser-damage" && source.type !== "poison") {
+    const heavy = impactFx.isHeavyHit(damage, monster, !!(source.splashRadiusSq > 0));
+    if (heavy) {
+      requestHitstop();
+      // 광역 타격만 화면을 흔든다(단발 타격까지 흔들면 화면이 쉴 새 없이 떤다)
+      if (source.splashRadiusSq > 0) impactFx.requestShake(4, 160);
+    }
+    qaKnockbackPx += impactFx.applyKnockback(monster, damage, { maxPx: heavy ? 6 : 3 });
   }
 
   monster.hp -= damage;
@@ -3812,12 +4285,14 @@ async function handleWizardAttack(clickPos = null) {
   if (gamePaused) return;
 
   // 스펠 쿨다운·상태이상도 게임 시계 기준(배속을 따라가야 한다)
-  const nowPerf = gameClock;
+  // 값은 게임 시계다. 예전 이름(nowPerf)은 performance.now()를 뜻해
+  // 벽시계처럼 읽혔다 — 이 프로젝트가 한 번 비싸게 치른 실패 유형이라 이름을 맞춘다.
+  const spellClock = gameClock;
   const spell = WIZARD_SPELLS[activeSpell];
 
   if (
     !spell ||
-    (wizardCooldowns[activeSpell] && nowPerf < wizardCooldowns[activeSpell])
+    (wizardCooldowns[activeSpell] && spellClock < wizardCooldowns[activeSpell])
   ) {
     showMessage("아직 스킬 쿨타임입니다!");
     return;
@@ -3830,7 +4305,7 @@ async function handleWizardAttack(clickPos = null) {
     return;
   }
 
-  wizardCooldowns[activeSpell] = nowPerf + spell.cooldown;
+  wizardCooldowns[activeSpell] = spellClock + spell.cooldown;
 
   const levelBonus = Math.max(0, wizardLevel - spell.level);
   // v6 교차검증 수정: 변이 "마법 억제"는 handleHit에서 단일 적용 — 여기서 곱하면 이중 적용(0.4²) 버그
@@ -3868,7 +4343,7 @@ async function handleWizardAttack(clickPos = null) {
       particleSystem.explosion(spellOrigin.x, spellOrigin.y, fxColor, 24);
     }
     if (["meteorShower", "timeStop", "judgment", "blackHole"].includes(activeSpell)) {
-      particleSystem.screenFlash(fxColor, 350, 0.18);
+      if (claimScreenFlash()) particleSystem.screenFlash(fxColor, 350, 0.18);
     }
   }
 
@@ -3884,7 +4359,7 @@ async function handleWizardAttack(clickPos = null) {
         500,
       );
       affectedMonsters.forEach((m) => {
-        handleHit({ source: { damage: fireballDamage }, target: m }, nowPerf);
+        handleHit({ source: { damage: fireballDamage }, target: m }, spellClock);
       });
       break;
 
@@ -3899,11 +4374,11 @@ async function handleWizardAttack(clickPos = null) {
         500,
       );
       affectedMonsters.forEach((m) => {
-        handleHit({ source: { damage: frostNovaDamage }, target: m }, nowPerf);
+        handleHit({ source: { damage: frostNovaDamage }, target: m }, spellClock);
         if (!m.isBoss)
           m.statusEffects.slowed = {
             factor: 0.1,
-            endTime: nowPerf + spell.freezeDuration,
+            endTime: spellClock + spell.freezeDuration,
           };
       });
       break;
@@ -3932,7 +4407,7 @@ async function handleWizardAttack(clickPos = null) {
         createLightningEffect(lastTargetPos, currentTarget);
         handleHit(
           { source: { damage: lightningDamage }, target: currentTarget },
-          nowPerf,
+          spellClock,
         );
         chainedMonsters.add(currentTarget.id);
         lastTargetPos = { x: currentTarget.x, y: currentTarget.y };
@@ -3973,7 +4448,7 @@ async function handleWizardAttack(clickPos = null) {
         .getNearby(wizardCenter.x, wizardCenter.y, spell.aoe)
         .filter((m) => !m.isDead && getDistanceSq(wizardCenter, m) < aoeSq)
         .forEach((m) =>
-          handleHit({ source: { damage: teleportDamage }, target: m }, nowPerf),
+          handleHit({ source: { damage: teleportDamage }, target: m }, spellClock),
         );
 
       wizardPosition.x = spellOrigin.x;
@@ -4014,7 +4489,7 @@ async function handleWizardAttack(clickPos = null) {
         pos: spellOrigin,
         aoe: spell.aoe,
         dps: blackHoleDps,
-        endTime: nowPerf + spell.duration,
+        endTime: spellClock + spell.duration,
         lastTick: 0,
         poolObj: bhPoolObj,
       });
@@ -4036,16 +4511,18 @@ async function handleWizardAttack(clickPos = null) {
               x: Math.random() * window.innerWidth,
               y: 100 + Math.random() * (window.innerHeight - 200),
             };
-        // ⚠️ 이 낙하는 게임 루프가 아니라 벽시계 setTimeout이라 **일시정지를 모른다**.
-        //    그대로 두면 정지된 화면에서 몬스터가 맞아 죽고 골드·점수까지 오른다
-        //    (교차검증 2계열이 독립 지적). 정지 중이면 떨어뜨리지 말고 **미뤘다가**
-        //    재개될 때 떨어뜨린다 — 그냥 버리면 아이가 쓴 스펠이 사라진다.
+        // v9-rev3: 벽시계 setTimeout + 폴링 재시도였던 것을 **게임 시계 지연 큐**로 옮겼다.
+        //    폴링은 일시정지만 막았을 뿐 시간축은 여전히 갈라져 있었다 — 시전 순간의
+        //    gameSpeed를 한 번 읽어 나눴기 때문에, 시전 직후 배속을 바꾸면 남은 메테오가
+        //    옛 배속으로 떨어졌다(1배속에서 쏘고 2배속으로 바꾸면 880ms 걸릴 것이 그대로 880ms).
+        //    게임 시계 큐는 일시정지·배속·히트스톱을 전부 자동으로 따라간다.
         const dropMeteor = () => {
           if (!gameRunning) return; // 판이 끝났으면 조용히 버린다
-          if (gamePaused) {
-            setTimeout(dropMeteor, 100);
-            return;
-          }
+          // v9: 착탄을 직접 센다. 예전에는 QA가 `.magic-attack` DOM 노드 생성을 세서
+          //     낙하를 판정했는데, 저사양 강등 시 createMagicEffect가 DOM을 **정상적으로**
+          //     건너뛴다(캔버스만 그린다) → 메테오는 멀쩡히 떨어지는데 게이트는
+          //     "안 떨어졌다"고 보고했다. 연출이 아니라 사건 자체를 세야 한다.
+          meteorDropCount++;
           createMagicEffect(strikePos.x, strikePos.y, spell.aoe, "magic-attack", 450);
           const hitSq = spell.aoe * spell.aoe;
           spatialGrid
@@ -4056,8 +4533,8 @@ async function handleWizardAttack(clickPos = null) {
             );
           if (particleSystem) particleSystem.explosion(strikePos.x, strikePos.y, "#ff8c42", 12);
         };
-        // 낙하 간격도 배속을 따라간다 — 안 그러면 2배속에서 메테오만 느리게 떨어진다
-        setTimeout(dropMeteor, (i * 220) / gameSpeed);
+        // 게임 시간 기준 간격이다 — gameSpeed로 나누지 않는다(게임 시계가 이미 빠르다).
+        scheduleGameDelay(i * 220, dropMeteor, "meteor");
       }
       break;
     }
@@ -4067,11 +4544,11 @@ async function handleWizardAttack(clickPos = null) {
       sfx.play("frost");
       monsters.forEach((m) => {
         if (!m.isDead) {
-          m.statusEffects.stunned = { endTime: nowPerf + spell.freezeDuration };
+          m.statusEffects.stunned = { endTime: spellClock + spell.freezeDuration };
           createMagicEffect(m.x, m.y, 25, "time-warp-effect", 400);
         }
       });
-      if (particleSystem) particleSystem.screenFlash("#66ccff", 350, 0.18);
+      if (particleSystem && claimScreenFlash()) particleSystem.screenFlash("#66ccff", 350, 0.18);
       showMessage("⏱️ 시간 정지! 모든 몬스터가 3초간 멈춥니다.");
       break;
     }
@@ -4087,11 +4564,11 @@ async function handleWizardAttack(clickPos = null) {
         if (!m.isDead && !m.isBoss) {
           m.statusEffects.slowed = {
             factor: spell.slowFactor,
-            endTime: nowPerf + spell.slowDuration,
+            endTime: spellClock + spell.slowDuration,
           };
         }
       });
-      if (particleSystem) particleSystem.screenFlash("#ffe066", 400, 0.15);
+      if (particleSystem && claimScreenFlash()) particleSystem.screenFlash("#ffe066", 400, 0.15);
       showMessage(`💛 수호의 빛! 성 체력 +${spell.heal}`);
       updateFullUI();
       break;
@@ -4104,7 +4581,7 @@ async function handleWizardAttack(clickPos = null) {
       createMagicEffect(spellOrigin.x, spellOrigin.y, spell.aoe, "teleport-effect", 600);
       const pushPoints = Math.floor(spell.pushbackPx / 5); // pathPoints는 5px 간격
       affectedMonsters.forEach((m) => {
-        handleHit({ source: { damage: tornadoDamage }, target: m }, nowPerf);
+        handleHit({ source: { damage: tornadoDamage }, target: m }, spellClock);
         if (!m.isDead && !m.isBoss) {
           m.pathIndex = Math.max(0, m.pathIndex - pushPoints);
         }
@@ -4116,7 +4593,7 @@ async function handleWizardAttack(clickPos = null) {
       // 화면 전체 대미지 (보스는 절반 수준)
       sfx.play("explosion");
       if (particleSystem) {
-        particleSystem.screenFlash("#ffffff", 500, 0.35);
+        if (claimScreenFlash()) particleSystem.screenFlash("#ffffff", 500, 0.35);
       }
       const judgeNormal = Math.floor(spell.damage * damageMultiplier);
       const judgeBoss = Math.floor(spell.bossDamage * damageMultiplier);
@@ -4125,7 +4602,7 @@ async function handleWizardAttack(clickPos = null) {
           createMagicEffect(m.x, m.y, 30, "explosion-effect", 400);
           handleHit(
             { source: { damage: m.isBoss ? judgeBoss : judgeNormal }, target: m },
-            nowPerf,
+            spellClock,
           );
         }
       });
@@ -4378,11 +4855,23 @@ function showMathProblem() {
   }
 
   // v5: 복습 문제 뱃지 (v6: 오답노트 복습은 보너스 골드 표시)
+  // v9: "맞췄는데 왜 또 나와?"에 화면이 답하게 만든다.
+  //   진행도의 진실원은 **오답노트 상자**(1·3·7·16일, 4칸)다. 세션 큐의 stage(상한 3)를
+  //   쓰면 세션에서 3번 맞힌 순간 "완전히 내 거"라고 축하해 놓고 16일 뒤 그 문제가
+  //   복습으로 다시 나온다 — 아이 입장에서는 앱이 거짓말을 한 것이 된다.
   const reviewBadge = document.getElementById("mathCombo");
   if (isReviewProblem && reviewBadge) {
-    reviewBadge.textContent = isNoteReviewProblem
-      ? "📒 지난 판 오답노트 복습! 맞히면 보너스 골드 +100"
-      : "🔁 복습 문제! 이번엔 맞혀보자";
+    const prog = learnLoop.noteProgress(problem, selectedDifficulty);
+    if (prog) {
+      // 게이지 = 채운 칸 ● + 남은 칸 ○. 숫자(1/4)보다 저학년이 읽기 쉽다.
+      const gauge = "●".repeat(prog.box) + "○".repeat(Math.max(0, prog.max - prog.box));
+      const last = prog.box === prog.max - 1;
+      reviewBadge.textContent = last
+        ? `🌟 마스터 도전 ${gauge} — 이번에 맞히면 완전히 내 거!`
+        : `🌟 마스터 도전 ${gauge} — 다시 만난 문제예요`;
+    } else {
+      reviewBadge.textContent = "🔁 다시 만난 문제! 이번엔 맞혀보자";
+    }
     reviewBadge.style.display = "block";
   }
 
@@ -4475,7 +4964,20 @@ function checkAnswer(answer, clickedBtn) {
       }
       // v5: 학습=화력 — 정답 시 마법 쿨다운 30% 감소
       // v7: 문제를 넘겨야 라이트너 상자 승급(세션 3→7→15 확장, 날짜 1→3→7→16일)이 된다
-      learnLoop.recordCorrect(currentProblem, currentWave, isReviewProblem);
+      const mastery = learnLoop.recordCorrect(currentProblem, currentWave, isReviewProblem);
+      // v9: 아이가 "왜 맞췄는데 또 나와?"라고 묻지 않게, 진행 상황을 그때그때 말해 준다.
+      //     ⚠️ 두 졸업을 구분한다 — 세션 졸업은 "오늘은 그만", 노트 졸업이 "완전히 내 것".
+      if (mastery && isReviewProblem) {
+        if (mastery.graduated) {
+          masteredThisRun++;
+          totalGold += 60;
+          showUpgradeNotification("🎓 이제 완전히 내 거! (+60골드)", "legendary");
+          sfx.play("powerup");
+          checkAchievements("review_correct", { reviewCleared: learnLoop.stats.reviewCleared });
+        } else if (mastery.sessionCleared) {
+          showMessage("👍 오늘은 이 문제 통과! 다음에 또 만나요");
+        }
+      }
       currentWeakWeights = problemSelector.weaknessWeights(
         learnLoop.getCumulative(selectedDifficulty),
       );
@@ -4513,7 +5015,7 @@ function checkAnswer(answer, clickedBtn) {
           window.innerWidth / 2,
           window.innerHeight / 2,
         );
-        particleSystem.screenFlash("#00ff88", 300, 0.15);
+        if (claimScreenFlash()) particleSystem.screenFlash("#00ff88", 300, 0.15);
       }
 
       // [V2] 업적 체크
@@ -4540,8 +5042,17 @@ function checkAnswer(answer, clickedBtn) {
     );
     resultDiv.textContent = `오답! 💡 ${hint}`;
     resultDiv.style.color = "#ff3366";
+    // v9: 3/4까지 채운 문제를 틀리면 상자가 1번으로 되돌아간다(라이트너의 핵심).
+    //     그 순간이 아이에게 가장 아픈 지점이라, 되돌아간다는 사실을 숨기지 않되
+    //     회복 문구를 함께 낸다. 진행 상황은 되돌리기 전에 읽어야 한다.
+    const beforeProg = currentProblem
+      ? learnLoop.noteProgress(currentProblem, selectedDifficulty)
+      : null;
     if (currentProblem)
       learnLoop.recordWrong(currentProblem, currentWave, isNoteReviewProblem);
+    if (isReviewProblem && beforeProg && beforeProg.box >= 2) {
+      showMessage("아쉬워요! 기본기부터 한 번 더 다져봐요 🔁");
+    }
     // v8: 방금 틀린 유형이 다음 문제부터 더 자주 나오게 가중치를 즉시 갱신한다
     currentWeakWeights = problemSelector.weaknessWeights(
       learnLoop.getCumulative(selectedDifficulty),
@@ -4559,7 +5070,7 @@ function checkAnswer(answer, clickedBtn) {
     // [V2] 콤보 브레이크 + 화면 플래시
     comboSystem.break();
     updateComboDisplay();
-    if (particleSystem) particleSystem.screenFlash("#ff3366", 400, 0.2);
+    if (particleSystem && claimScreenFlash()) particleSystem.screenFlash("#ff3366", 400, 0.2);
 
     checkGameOver();
   }
@@ -4653,7 +5164,7 @@ function handleTimeOut() {
 
   comboSystem.break();
   updateComboDisplay();
-  if (particleSystem) particleSystem.screenFlash("#ff8c00", 400, 0.2);
+  if (particleSystem && claimScreenFlash()) particleSystem.screenFlash("#ff8c00", 400, 0.2);
 
   checkGameOver();
 
@@ -4702,9 +5213,20 @@ function checkWaveCompletion() {
     }
 
     // v5: 무피해 클리어 보너스 — 성 체력 회복 (회복 루프)
+    // v9: 연속 카운트를 붙인다. 보상 수치는 그대로다(밸런스 불변) — 바뀌는 건
+    //     "잘하고 있다"는 신호가 눈에 보인다는 것뿐이다.
     if (waveDamageTaken === 0 && castleHealth > 0) {
-      castleHealth = Math.min(100, castleHealth + simCore.WAVE_CLEAR_HEAL);
-      showMessage(`🛡️ 무피해 방어! 성 체력 +${simCore.WAVE_CLEAR_HEAL}`);
+      const heal = simCore.WAVE_CLEAR_HEAL + blessing.healBonus(blessings);
+      castleHealth = Math.min(100, castleHealth + heal);
+      noDamageStreak++;
+      bestNoDamageStreak = Math.max(bestNoDamageStreak, noDamageStreak);
+      if (noDamageStreak >= 2) {
+        showUpgradeNotification(`🛡️ 무피해 ${noDamageStreak}연속! 성 체력 +${heal}`, "epic");
+      } else {
+        showMessage(`🛡️ 무피해 방어! 성 체력 +${heal}`);
+      }
+    } else if (waveDamageTaken > 0) {
+      noDamageStreak = 0;
     }
 
     // [V2] Auto-save after each wave completion
@@ -4715,14 +5237,29 @@ function checkWaveCompletion() {
     // 게임오버가 나도 이 체크포인트부터 다시 시작할 수 있다.
     if (currentWave % stageProgress.WAVES_PER_STAGE === 0) {
       const clearedStage = stageProgress.stageOfWave(currentWave);
-      const snap = buildGameState();
-      snap.currentWave = currentWave + 1;
-      stageProgress.recordCheckpoint(selectedDifficulty, clearedStage + 1, snap);
+      // 체크포인트는 **두 번 찍는다**.
+      //  ① 지금 즉시 — 축복 화면에서 탭을 닫아도 스테이지 진행은 반드시 남아야 한다.
+      //  ② 축복을 고른 뒤 다시 — 먼저 찍은 스냅샷에는 방금 받은 선물이 없어서,
+      //     그대로 두면 이 스테이지를 재도전할 때 선물이 조용히 사라진다.
+      // ⚠️ ②만 하면 "안 고르면 체크포인트가 아예 없는" 더 나쁜 상태가 된다(실측: qa-stages 실패).
+      const saveCheckpoint = () => {
+        const snap = buildGameState();
+        snap.currentWave = currentWave + 1;
+        stageProgress.recordCheckpoint(selectedDifficulty, clearedStage + 1, snap);
+      };
+      saveCheckpoint();
       showMessage(
         `🏁 스테이지 ${clearedStage} 클리어! 진행 상황 저장 완료 — 언제든 이어서 할 수 있어요.`,
       );
       sfx.play("powerup");
-      if (particleSystem) particleSystem.screenFlash("#ffd166", 500, 0.15);
+      if (particleSystem && claimScreenFlash()) particleSystem.screenFlash("#ffd166", 500, 0.15);
+      // v9: 스테이지 선물 3택 1 → 고른 뒤에 수학 문제로 넘어간다.
+      //     시간 제한 없음(고르기를 재촉하지 않는다).
+      openBlessingChooser(() => {
+        saveCheckpoint();
+        showMathProblem();
+      });
+      return;
     }
 
     showMathProblem();
@@ -4732,7 +5269,7 @@ function checkWaveCompletion() {
 function checkGameOver() {
   if (castleHealth <= 0 && gameRunning) {
     gameRunning = false;
-    if (spawnIntervalId) clearInterval(spawnIntervalId);
+    stopSpawnLoop();
     // 여기서 예외가 나면 게임 루프는 이미 멈춘 뒤라 점수 표시·게임오버 모달까지
     // 도달하지 못하고 화면이 그대로 굳는다(사파리 프라이빗 모드 등).
     // 세이브 정리 실패는 게임오버 화면을 막을 만한 일이 아니다.
@@ -4744,6 +5281,35 @@ function checkGameOver() {
     }
     document.getElementById("finalScore").textContent = score;
     document.getElementById("finalWave").textContent = currentWave;
+
+    // v9: 이번 판이 무엇을 남겼는지 **게임오버 화면에서만** 보여준다.
+    //   ⚠️ 플레이 중 "최고 기록까지 N웨이브" 카운트다운은 일부러 넣지 않았다.
+    //      그건 아이가 그만두려는 순간을 노리는 압박 장치지 학습 피드백이 아니다
+    //      (교차검증 2계열이 같은 지적을 했고, 계획서 스스로 목적을 그렇게 적고 있었다).
+    {
+      // ⚠️ achievementSystem.bestOf("wave")를 여기서 읽으면 **항상 이번 판 값**이다 —
+      //    checkWaveCompletion이 매 웨이브 checkAchievements("wave_clear", {wave})를 부르고
+      //    그 안에서 recordBest("wave")가 이미 갱신하기 때문이다(achievements.js:285).
+      //    그래서 "이전 최고"는 판이 시작될 때 찍어 둔 값을 쓴다.
+      const prevBest = bestWaveAtRunStart;
+      const isNewRecord = currentWave > prevBest;
+      const modal = gameElements.gameOverModal;
+      let runLine = modal.querySelector(".run-summary");
+      if (!runLine) {
+        runLine = document.createElement("div");
+        runLine.className = "run-summary";
+        runLine.style.cssText = "margin-top:6px;font-size:14px;color:#a8e6a1;";
+        const anchor = modal.querySelector("#finalWave")?.parentElement;
+        (anchor || modal.firstElementChild || modal).appendChild(runLine);
+      }
+      const parts = [];
+      if (isNewRecord) parts.push(`🏅 새 기록! 웨이브 ${currentWave} (이전 최고 ${prevBest})`);
+      else if (prevBest > 0) parts.push(`이번 웨이브 ${currentWave} · 내 최고 ${prevBest}`);
+      if (masteredThisRun > 0) parts.push(`🎓 완전히 내 것이 된 문제 ${masteredThisRun}개`);
+      if (bestNoDamageStreak > 0) parts.push(`🛡️ 무피해 방어 최고 ${bestNoDamageStreak}연속`);
+      runLine.textContent = parts.join(" · ");
+      runLine.style.display = parts.length ? "block" : "none";
+    }
     // v5: 학습 리포트 한 줄 (v6: 취약 유형 + 오답노트 확장)
     {
       const modal = gameElements.gameOverModal;
@@ -4846,10 +5412,7 @@ function forceNextWave(isFromError = false) {
 
   isForcedProgress = true;
 
-  if (spawnIntervalId) {
-    clearInterval(spawnIntervalId);
-    spawnIntervalId = null;
-  }
+  stopSpawnLoop();
 
   projectiles = [];
 
@@ -4898,7 +5461,7 @@ async function saveAndSubmit() {
     await submitScore(finalPlayerName, score, currentWave, selectedDifficulty);
 
     gameRunning = false;
-    if (spawnIntervalId) clearInterval(spawnIntervalId);
+    stopSpawnLoop();
     // 여기서 예외가 나면 게임 루프는 이미 멈춘 뒤라 점수 표시·게임오버 모달까지
     // 도달하지 못하고 화면이 그대로 굳는다(사파리 프라이빗 모드 등).
     // 세이브 정리 실패는 게임오버 화면을 막을 만한 일이 아니다.
@@ -4938,6 +5501,15 @@ function readSavedState() {
       if (wrapped && wrapped.version >= 5 && wrapped.data) {
         // v6: 세이브 v5(학년 표기) → v6(학기 표기) 마이그레이션
         wrapped.data.difficulty = migrateDifficulty(wrapped.data.difficulty);
+        // v9: 버전별 분기를 실제로 둔다. 구버전은 version >= 5면 그대로 돌려주고
+        //     버전 정보를 버렸다 — "무손실 마이그레이션"이라 부를 배선이 없었다.
+        //     v7 미만 세이브에는 웨이브 중간 상태가 없다. 없는 채로 두면
+        //     복원 코드가 옵셔널 가드로 걸러 웨이브 시작 상태로 이어진다(구 동작과 동일).
+        if ((wrapped.version || 0) < 7) {
+          wrapped.data.saveVersion = wrapped.version || 5;
+          wrapped.data.wave = null;         // 중간 상태 없음을 명시(undefined와 구분)
+          wrapped.data.migratedFrom = wrapped.version || 5;
+        }
         return wrapped.data;
       }
     }
@@ -5229,6 +5801,33 @@ function setupEventListeners() {
     });
   }
 
+  // ── v9: 탭을 벗어나면 자동으로 멈춘다 ──────────────────
+  // 구버전은 blur에서 눌린 키만 비웠다. rAF는 멈춰도 gamePaused가 false라
+  // 스폰 타이머는 계속 돌았고, 돌아오면 몬스터가 쌓인 화면을 보게 됐다.
+  // ⚠️ 돌아왔을 때 **자동 재개하지 않는다** — 눈을 떼는 순간 성이 깨지는 걸 막는다.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && gameRunning && !gamePaused && !isProblemModalOpen()) {
+      togglePause();
+      saveGame(true); // 조용한 저장 — 앱을 그대로 닫아도 지금 지점이 남는다
+    }
+  });
+  window.addEventListener("pagehide", () => {
+    if (gameRunning) saveGame(true);
+  });
+
+  // ── v9: 일시정지 오버레이 버튼 ────────────────────────
+  document.getElementById("pauseResumeBtn")?.addEventListener("click", () => {
+    if (gamePaused) togglePause();
+  });
+  document.getElementById("pauseSaveQuitBtn")?.addEventListener("click", () => {
+    const saved = saveGame(true);
+    showMessage(saved ? "💾 여기까지 저장했어요 — 언제든 이어서 해요" : "⚠️ 저장에 실패했어요");
+    setTimeout(() => restartGame(), saved ? 900 : 1500);
+  });
+  document.getElementById("pauseSettingsBtn")?.addEventListener("click", () => {
+    showModal(document.getElementById("settingsModal"));
+  });
+
   // --- Save button handler ---
   const saveGameBtn = document.getElementById("saveGameBtn");
   if (saveGameBtn) {
@@ -5247,8 +5846,9 @@ function setupEventListeners() {
     speedBtn.addEventListener("click", () => {
       gameSpeed = gameSpeed === 1 ? 2 : 1;
       speedBtn.textContent = gameSpeed === 1 ? "1x" : "2x";
-      // 스폰 중이면 새 배속으로 간격을 다시 잡는다(startSpawnLoop 주석 참조)
-      if (spawnIntervalId) startSpawnLoop();
+      // v9: 스폰이 게임 시계를 따르므로 배속 토글에 따로 손댈 게 없다.
+      //     (구버전은 여기서 startSpawnLoop()을 다시 불렀는데, 그러면 다음 스폰
+      //      시각이 '지금'으로 당겨져 배속을 누를 때마다 한 마리가 공짜로 나왔다.)
       sfx.play("blip");
       showMessage(`게임 속도: ${gameSpeed}x`);
     });
@@ -5268,15 +5868,200 @@ function updateFullUI() {
     focusPoints,
   };
   ui.updateUI(currentState);
+  maybeHintWizardUpgrade();
+}
+
+// v9: "마법사를 올릴 수 있다는 걸 몰랐다"는 신고. 버튼은 있었지만 ⬆️ 아이콘 하나뿐이라
+//     값도, 올리면 뭐가 열리는지도 화면 밖이었다. 처음 살 수 있게 된 그 순간에 **한 번만**
+//     알려 준다 — 매번 띄우면 잔소리가 되고, 안 띄우면 지금까지처럼 아무도 모른다.
+let wizardHintShownAtLevel = -1;
+function maybeHintWizardUpgrade() {
+  if (!gameRunning || gamePaused) return;
+  if (wizardHintShownAtLevel === wizardLevel) return;
+  if (gold < simCore.wizardUpgradeCost(wizardLevel)) return;
+  wizardHintShownAtLevel = wizardLevel;
+  const next = ui.nextSpellAtLevel(wizardLevel + 1);
+  showMessage(
+    next
+      ? `🧙‍♂️ 마법사를 Lv.${wizardLevel + 1}로 올릴 수 있어요! ` +
+        `새 마법 「${next.name}」${ui.particleFor(next.name, "이", "가")} 열려요`
+      : `🧙‍♂️ 마법사를 Lv.${wizardLevel + 1}로 올릴 수 있어요!`,
+  );
 }
 
 
+/**
+ * 수학 문제 모달이 떠 있는가.
+ *
+ * ⚠️ gamePaused는 "문제 풀이 중"과 "사용자가 멈춤"을 같은 boolean으로 쓴다.
+ *    자동 일시정지가 이걸 모르고 토글하면 **문제 화면을 되레 재개**시켜
+ *    답을 고르지도 않았는데 게임이 흘러간다(교차검증 지적).
+ *    그래서 문제 모달 중에는 일시정지 조작 자체를 받지 않는다.
+ */
+/**
+ * v9: 축복 효과를 지금 있는 것들에 실제로 반영한다.
+ *
+ * ⚠️ 타워는 생성 시점에 range/splashRadius를 복사해 갖는다(recreateTower). 그래서
+ *    축복을 얻은 순간 이미 서 있는 타워에도 다시 발라 줘야 한다 — 안 그러면
+ *    "축복을 골랐는데 아무 변화가 없다"가 된다. 원본 수치를 따로 보관해 두고
+ *    항상 **원본 × 배수**로 계산한다(누적 곱 방지).
+ */
+/**
+ * 확장하는 충격파 링처럼 **화면을 가로지르는 움직임**을 낼지 판정한다.
+ * 파편(explosion)은 제자리에서 튀는 작은 입자라 quality.low만 보지만,
+ * 링은 커지며 시야를 훑기 때문에 흔들림·전면 플래시와 같은 a11y 관문을 통과시킨다.
+ * (기존 보스 사망 링도 같은 규칙으로 맞춘다 — 한쪽만 막으면 "미사일엔 안 나오는데
+ *  보스엔 나오는" 일관성 없는 상태가 된다.)
+ */
+function heavyFxAllowed() {
+  return !quality.low && !prefersReducedMotion();
+}
+
+function applyBlessingsToTower(t, rm, sm) {
+  // ⚠️ TOWER_STATS에서 **재계산하지 않는다.** 레벨업(×1.1)·각성(×1.1)이 사거리를
+  //    곱셈으로 올리므로 원본에서 다시 세우면 그 투자분이 통째로 사라진다.
+  //    실측: 레벨10·각성6 대포는 사거리 590인데 재계산하면 252가 나왔다(42.7%) —
+  //    "멀리 보는 눈"을 고르면 사거리가 절반 이하로 **줄어드는** 정반대 동작이었다.
+  //    배수는 곱셈을 통과해도 살아남으므로((base×rm)×1.1 == (base×1.1)×rm),
+  //    지금 발라져 있는 배수를 나눈 뒤 새 배수를 곱한다.
+  const prevR = t._blessRange || 1;
+  if (prevR !== rm) {
+    t.range = (t.range / prevR) * rm;
+    t.rangeSq = t.range * t.range;
+    t._blessRange = rm;
+  }
+  const prevS = t._blessSplash || 1;
+  if (t.splashRadius > 0 && prevS !== sm) {
+    t.splashRadius = (t.splashRadius / prevS) * sm;
+    t.splashRadiusSq = t.splashRadius * t.splashRadius;
+    t._blessSplash = sm;
+  }
+  return t;
+}
+
+/** 방금 만든 타워 한 대에 이번 판 축복을 바른다(건설·상자 개봉 공통). */
+function applyBlessingsToNewTower(t) {
+  return applyBlessingsToTower(
+    t,
+    blessing.rangeMult(blessings),
+    blessing.splashMult(blessings),
+  );
+}
+
+function applyBlessingsToWorld() {
+  const rm = blessing.rangeMult(blessings);
+  const sm = blessing.splashMult(blessings);
+  for (const t of towers) applyBlessingsToTower(t, rm, sm);
+  // 마법사 자동공격 속도(쿨다운이 짧아진다)
+  WIZARD_AUTO_ATTACK_STATS.cooldown =
+    WIZARD_AUTO_ATTACK_STATS.initialCooldown / blessing.wizardSpeedMult(blessings);
+}
+
+/** 스테이지 클리어 시 3택 1. 고르면 onDone()으로 원래 흐름(수학 문제)에 넘긴다. */
+function openBlessingChooser(onDone) {
+  const ov = document.getElementById("blessingOverlay");
+  const cards = document.getElementById("blessingCards");
+  const owned = document.getElementById("blessingOwned");
+  const offers = blessing.offer(blessings, Math.random, 3);
+  if (!ov || !cards || offers.length === 0) { onDone(); return; }
+
+  blessingOpen = true;
+  gamePaused = true;
+  cards.innerHTML = "";
+  const focusOnOpen = () => focusIntoDialog(ov);
+  for (const b of offers) {
+    const el = document.createElement("button");
+    el.className = "blessing-card";
+    el.dataset.blessingId = b.id;
+    const lv = blessings[b.id] || 0;
+    // CSP(style-src 'self')가 인라인 style을 막으므로 전부 클래스로만 꾸민다.
+    el.innerHTML =
+      `<div class="blessing-card-icon">${b.icon}</div>` +
+      `<div class="blessing-card-title">${b.title}</div>` +
+      `<div class="blessing-card-desc">${b.desc}</div>` +
+      `<div class="blessing-card-level">${lv > 0 ? `지금 ${lv}단계 → ${lv + 1}단계` : "새로 배워요"}</div>`;
+    el.addEventListener("click", () => {
+      blessings = blessing.apply(blessings, b.id);
+      applyBlessingsToWorld();
+      ov.hidden = true;
+      restoreFocusAfterDialog();
+      blessingOpen = false;
+      gamePaused = false;
+      sfx.play("powerup");
+      showUpgradeNotification(`${b.icon} ${b.title} — ${b.desc}`, "epic");
+      onDone();
+    });
+    cards.appendChild(el);
+  }
+  const have = blessing.summary(blessings);
+  owned.textContent = have.length
+    ? "지금 가진 선물: " + have.map((h) => `${h.icon} ${h.title} ${h.level}단계`).join(" · ")
+    : "";
+  ov.hidden = false;
+  focusOnOpen();
+}
+
+function isProblemModalOpen() {
+  return !!document.getElementById("mathModal")?.classList.contains("show");
+}
+
+/** 일시정지 오버레이 표시/숨김 + 요약 채우기 */
+// ── v9 a11y: aria-modal 다이얼로그 포커스 이동 ─────────────────────────────
+// aria-modal="true"만 선언하고 포커스를 옮기지 않으면 스크린리더·키보드 사용자에게는
+// 포커스가 배경에 남아 "열렸다"는 사실 자체가 전달되지 않는다.
+let focusBeforeDialog = null;
+
+function focusIntoDialog(ov) {
+  focusBeforeDialog = document.activeElement;
+  const first = ov.querySelector(
+    'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+  );
+  if (first) first.focus();
+}
+
+function restoreFocusAfterDialog() {
+  const el = focusBeforeDialog;
+  focusBeforeDialog = null;
+  // 오버레이 안에 있던 버튼이면 되돌리지 않는다(숨겨진 요소로 포커스가 가면 사라진다).
+  if (el && typeof el.focus === "function" && document.contains(el) && el.offsetParent !== null) {
+    el.focus();
+  }
+}
+
+function renderPauseOverlay(show) {
+  const ov = document.getElementById("pauseOverlay");
+  if (!ov) return;
+  if (show) {
+    const stats = document.getElementById("pauseStats");
+    if (stats) {
+      stats.innerHTML =
+        `<span class="pause-stat">🌊 웨이브 ${currentWave}</span>` +
+        `<span class="pause-stat">💰 ${gold}</span>` +
+        `<span class="pause-stat">❤️ ${castleHealth}</span>` +
+        `<span class="pause-stat">🎯 집중력 +${Math.round((simCore.focusDamageMultiplier(focusPoints) - 1) * 100)}%</span>`;
+    }
+    const sub = document.getElementById("pauseSub");
+    if (sub) sub.textContent = waveInProgress ? "몬스터가 기다리고 있어요" : "다음 웨이브 준비 중";
+    const wasHidden = ov.hidden;
+    ov.hidden = false;
+    if (wasHidden) focusIntoDialog(ov);
+  } else {
+    const wasShown = !ov.hidden;
+    ov.hidden = true;
+    if (wasShown) restoreFocusAfterDialog();
+  }
+}
+
 function togglePause() {
+  // 문제 화면·축복 선택 중에는 일시정지를 받지 않는다(위 주석 참고).
+  // 축복 화면에서 P를 누르면 고르지도 않았는데 게임이 흘러가 버린다.
+  if (isProblemModalOpen() || blessingOpen) return;
   sfx.play("blip");
   gamePaused = !gamePaused;
   document.getElementById("pauseBtn").textContent = gamePaused
     ? "▶️"
     : "⏸️ 일시정지";
+  renderPauseOverlay(gamePaused);
 
   if (gamePaused) {
     pauseStartTimePerf = performance.now();
@@ -5327,6 +6112,11 @@ function openStageSelect(difficulty, progress) {
 }
 
 function restartGame() {
+  // v9: 오버레이·흔들림 잔재를 지운다. 안 지우면 메뉴 위에 반투명 판이 남거나
+  //     화면이 비뚤어진 채로 시작한다.
+  renderPauseOverlay(false);
+  impactFx.resetShake();
+  resetFlashBudget();
   renderDailyPanel(); // v8: 오늘의 도전 진행이 바뀌었을 수 있다
   hideModal(gameElements.gameOverModal);
   hideModal(document.getElementById("stageSelectModal"));
@@ -5361,6 +6151,23 @@ function restartGame() {
   totalKillCount = 0;
   totalBossKills = 0;
   totalTowersBuilt = 0;
+
+  // v9: 판을 넘어 새면 안 되는 것들.
+  //   · delayedTasks — 개봉 대기 중이던 상자가 메뉴 화면에서 터져 타워가 생긴다
+  //   · pendingBoxes — 위와 짝
+  //   · 히트스톱 잔여 — 새 판 첫 프레임이 슬로모션으로 시작한다
+  //   · 스포너 — gameClock은 판을 넘어 이어지므로 nextSpawnAt이 과거로 남으면
+  //     새 판 시작과 동시에 따라잡기 스폰이 터진다
+  delayedTasks.length = 0;
+  pendingBoxes.length = 0;
+  wizardHintShownAtLevel = -1;
+  hitstopRemainingMs = 0;
+  hitstopUsedInWindow = 0;
+  hitstopWindowElapsed = 0;
+  stopSpawnLoop();
+  blessingOpen = false;
+  const blessOv = document.getElementById("blessingOverlay");
+  if (blessOv) blessOv.hidden = true;
   const speedBtn = document.getElementById("speedBtn");
   if (speedBtn) speedBtn.textContent = "1x";
 }
@@ -5496,7 +6303,129 @@ function safeCleanupAllElements() {
 }
 
 // --- 게임 저장 및 불러오기 ---
+/**
+ * v9: 웨이브 **도중**의 몬스터까지 저장한다.
+ *
+ * 왜 필요한가 — 두 가지가 한꺼번에 풀린다:
+ *  ① 사용자가 요청한 "이어서 게임"이 문자 그대로 성립한다. 구버전 오토세이브는
+ *     웨이브 완료 시점 1회뿐이라, 웨이브 도중에 나가면 그 웨이브가 통째로 날아갔다.
+ *  ② **랜덤 상자 재추첨 구멍이 막힌다.** 저장 지점이 "웨이브 시작"이면,
+ *     상자를 사서 나쁜 게 나왔을 때 나갔다 들어와 골드를 되돌려 다시 뽑을 수 있다
+ *     (교차검증이 지적, 코드로 확인: 웨이브 중에도 상자 구매가 열려 있다).
+ *     되감기 자체를 없애면 그 구멍이 원천적으로 사라진다.
+ *
+ * 좌표(x,y)는 저장하지 않는다 — 창 크기가 바뀌면 경로가 다시 그려지므로
+ * pathIndex(경로상 위치)만 남기고 복원 때 그 자리에서 다시 계산한다.
+ * 발사체는 저장하지 않는다(수백 ms 수명이라 복원 이득이 없다).
+ */
+// 몬스터가 들고 다니는 게임시계 절대시각 필드들. 저장 시 잔여로 바꾸고 복원 시 되돌린다.
+const TIMER_KEYS = [
+  "lastSummonTime", "lastHealTime", "lastShieldTime", "lastTeleportTime",
+  "lastDisruptTime", "lastTimeWarpTime", "lastStealthTime", "hideUntil",
+];
+
+function serializeMonsters() {
+  return monsters
+    .filter((m) => !m.isDead)
+    .map((m) => {
+      const se = {};
+      for (const [k, v] of Object.entries(m.statusEffects || {})) {
+        // 지속시간은 절대시각이 아니라 **남은 시간**으로 저장한다.
+        // 절대값을 그대로 두면 새 판의 게임 시계에서 이미 지난 시각이 되거나
+        // 영영 안 끝나는 상태이상이 된다.
+        if (v && typeof v.endTime === "number") se[k] = { ...v, remain: Math.max(0, v.endTime - gameClock) };
+        else se[k] = v;
+      }
+      // 고유 능력 타이머(소환·힐·보호막·순간이동·방해·시간왜곡·은신)는 전부 게임 시계의
+      // **절대시각**이라 그대로 저장하면 새 판에서 의미가 없다. 상태이상과 같은 규칙으로
+      // 남은 시간을 적는다. 이게 없으면 불러오자마자 소환사가 박쥐를 다시 뱉는다.
+      const tm = {};
+      for (const k of TIMER_KEYS) {
+        if (typeof m[k] === "number") tm[k] = m[k] - gameClock; // 과거면 음수 그대로(=이미 지남)
+      }
+      return {
+        k: m.monsterKey,
+        hp: m.hp,
+        maxHp: m.maxHp,
+        gold: m.gold,
+        pathIndex: m.pathIndex,
+        // 경로점 개수는 화면 크기에 따라 달라진다(5px 간격). 인덱스를 그대로 쓰면
+        // 작은 화면에서 불러올 때 전부 마지막 인덱스로 잘려 **성 앞에 쏟아진다**.
+        pathLen: pathPoints.length,
+        isElite: !!m.isElite,
+        isStealthed: !!m.isStealthed,
+        baseSpeed: m.baseSpeed,
+        currentSpeed: m.currentSpeed,
+        direction: m.direction,
+        animPhase: m.animPhase,
+        se,
+        tm,
+      };
+    });
+}
+
+function restoreMonsters(list) {
+  if (!Array.isArray(list) || pathPoints.length === 0) return 0;
+  let n = 0;
+  for (const d of list) {
+    const stats = MONSTER_STATS[d.k];
+    if (!stats) continue; // 삭제된 몬스터 종류 — 조용히 건너뛴다(복원이 막히면 안 된다)
+    // 저장 당시 경로 길이가 다르면 **비율로 환산**한다. 클램프만 하면 긴 화면에서
+    // 저장한 몬스터가 짧은 화면에서 전부 성 앞(마지막 인덱스)에 놓여 즉시 누수된다.
+    const savedLen = typeof d.pathLen === "number" && d.pathLen > 1 ? d.pathLen : null;
+    const raw = savedLen && pathPoints.length > 1
+      ? (d.pathIndex || 0) * ((pathPoints.length - 1) / (savedLen - 1))
+      : (d.pathIndex || 0);
+    const idx = Math.max(0, Math.min(pathPoints.length - 1, raw));
+    const pt = pathPoints[Math.floor(idx)] || pathPoints[0];
+    const se = {};
+    for (const [k, v] of Object.entries(d.se || {})) {
+      if (v && typeof v.remain === "number") {
+        const { remain, ...rest } = v;
+        se[k] = { ...rest, endTime: gameClock + remain };
+      } else se[k] = v;
+    }
+    monsters.push({
+      ...stats,
+      id: Date.now() + Math.random(),
+      monsterKey: d.k,
+      maxHp: d.maxHp,
+      hp: d.hp,
+      gold: d.gold,
+      isDead: false,
+      isStealthed: !!d.isStealthed,
+      baseSpeed: d.baseSpeed ?? stats.speed,
+      currentSpeed: d.currentSpeed ?? d.baseSpeed ?? stats.speed,
+      isElite: !!d.isElite,
+      x: pt.x,
+      y: pt.y,
+      pathIndex: idx,
+      statusEffects: se,
+      direction: d.direction || 0,
+      animFrame: 0,
+      animTimer: 0,
+      animPhase: d.animPhase ?? Math.random() * Math.PI * 2,
+      prevX: 0,
+      prevY: 0,
+      defenseAuraSq: (stats.defenseAuraRadius || 0) ** 2,
+      healRadiusSq: (stats.healRadius || 0) ** 2,
+      shieldRadiusSq: (stats.shieldRadius || 0) ** 2,
+    });
+    // 능력 타이머를 잔여 → 새 시계의 절대시각으로 되돌린다.
+    // 저장이 없던 v7 이전 세이브면 tm이 비어 있고, 그때는 종전대로 stats 기본값이 남는다.
+    const restored = monsters[monsters.length - 1];
+    for (const [k, v] of Object.entries(d.tm || {})) {
+      if (typeof v === "number") restored[k] = gameClock + v;
+    }
+    n++;
+  }
+  return n;
+}
+
 function buildGameState() {
+  // 개봉 대기 중인 상자를 먼저 터뜨린다. 안 그러면 골드는 이미 깎였는데 타워는
+  // 아직 없는 창(최대 1.2초)에 저장이 끼어 **골드만 사라진 세이브**가 만들어진다.
+  flushPendingBoxes();
   return {
     difficulty: selectedDifficulty,
     gold,
@@ -5515,6 +6444,10 @@ function buildGameState() {
         x: parseInt(tower.el.style.left),
         y: parseInt(tower.el.style.top),
       },
+      // 방해자·대악마가 건 디버프의 **남은 시간**. 저장 안 하면 불러오는 순간 풀려서
+      // "저장하고 다시 불러오면 디버프가 사라지는" 우회로가 된다.
+      dis: Math.max(0, (tower.disabledUntil || 0) - gameClock) || undefined,
+      tw: Math.max(0, (tower.timeWarpedUntil || 0) - gameClock) || undefined,
     })),
     // --- Extended save data ---
     activeSpell,
@@ -5529,6 +6462,33 @@ function buildGameState() {
       .map((a) => a.id),
     shownProblemIds: shownProblemIds ? [...shownProblemIds] : [],
     gameSpeed,
+
+    // ── v7 세이브: 웨이브 도중까지 이어붙이기 ──────────────
+    saveVersion: 7,
+    masteredThisRun,
+    blessings,
+    // 타워 쿨다운은 **남은 시간**으로 (절대 게임시각을 그대로 저장하면 새 판에서
+    // 이미 지난 값이 되거나 미래에 박혀 타워가 영영 안 쏜다 — 기록된 결함 1번과 같은 계열)
+    towerCooldownLeft: towers.map((t) => Math.max(0, (t.cooldownUntil || 0) - gameClock)),
+    wizardCooldownLeft: Object.fromEntries(
+      Object.entries(wizardCooldowns || {}).map(([k, v]) => [k, Math.max(0, v - gameClock)]),
+    ),
+    wizardAutoCooldownLeft: Math.max(0, (WIZARD_AUTO_ATTACK_STATS.cooldownUntil || 0) - gameClock),
+    wave: {
+      inProgress: waveInProgress,
+      composition: waveComposition,
+      monstersInWave,
+      monstersSpawned,
+      spawnCount,
+      spawnActive,
+      spawnInLeft: Math.max(0, nextSpawnAt - gameClock),
+      // 이 웨이브를 지금까지 몇 초 끌었는지. 복원 시 0으로 리셋하면 20초 싸우다 저장하고
+      // 불러와 1초 만에 끝냈을 때 "15초 이내 클리어" 업적이 거짓으로 열린다.
+      elapsed: Math.max(0, gameClock - waveStartTime),
+      damageTaken: waveDamageTaken,
+      modifier: currentWaveModifier,
+      monsters: serializeMonsters(),
+    },
   };
 }
 
@@ -5544,7 +6504,7 @@ function saveGame(silent = false) {
     // v5: 게임ID 네임스페이스 + 버전 래퍼 (마이그레이션 체인용)
     localStorage.setItem(
       "mathcastle:save",
-      JSON.stringify({ version: 6, data: gameState }),
+      JSON.stringify({ version: 7, data: gameState }),
     );
     localStorage.removeItem("towerDefenseSave"); // 구 키 정리
     if (!silent) {

@@ -200,6 +200,37 @@
                 </div>
             </div>
 
+            <!-- ===== v9: 일시정지 오버레이 =====
+                 ⚠️ class="modal" 을 쓰면 안 된다. main.js의 키 가드가
+                 `document.querySelector(".modal.show")` 로 모달 여부를 판정해
+                 단축키를 전부 막는데, 그러면 오버레이를 연 순간 P·ESC 로 다시
+                 못 나온다(교차검증이 실제 코드에서 확인). 별도 클래스를 쓴다. -->
+            <div class="pause-overlay" id="pauseOverlay" role="dialog" aria-modal="true" aria-labelledby="pauseTitle" hidden>
+                <div class="pause-panel">
+                    <h2 class="pause-title" id="pauseTitle">⏸️ 잠깐 쉬는 중</h2>
+                    <p class="pause-sub" id="pauseSub"></p>
+                    <div class="pause-stats" id="pauseStats"></div>
+                    <div class="pause-actions">
+                        <button class="pause-btn primary" id="pauseResumeBtn">▶️ 계속하기</button>
+                        <button class="pause-btn" id="pauseSaveQuitBtn">💾 저장하고 나가기</button>
+                        <button class="pause-btn" id="pauseSettingsBtn">⚙️ 설정</button>
+                    </div>
+                    <p class="pause-note">저장하면 지금 이 순간 그대로 다시 시작할 수 있어요.</p>
+                </div>
+            </div>
+
+            <!-- ===== v9: 스테이지 축복 3택 1 =====
+                 .modal 을 쓰지 않는 이유는 위 일시정지 오버레이와 같다(키 가드 충돌).
+                 ⚠️ 시간 제한을 두지 않는다 — 고르는 데 쫓기게 만들면 압박 장치가 된다. -->
+            <div class="pause-overlay blessing-overlay" id="blessingOverlay" role="dialog" aria-modal="true" aria-labelledby="blessingTitle" hidden>
+                <div class="pause-panel blessing-panel">
+                    <h2 class="pause-title" id="blessingTitle">🎁 스테이지 클리어 선물</h2>
+                    <p class="pause-sub">하나를 골라요. 이번 판 동안 계속 도와줘요!</p>
+                    <div class="blessing-cards" id="blessingCards"></div>
+                    <p class="pause-note" id="blessingOwned"></p>
+                </div>
+            </div>
+
             <!-- 타워 선택기 -->
             <div class="tower-selector" id="towerSelector"></div>
             <div id="spellSelector"></div>

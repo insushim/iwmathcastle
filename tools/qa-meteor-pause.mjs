@@ -40,17 +40,22 @@ await p.evaluate(()=>{const h=window.__mathcastle;h.qaSetWave(20);h.qaAddGold(50
 await p.click("#startWaveBtn");
 await new Promise(r=>setTimeout(r,4000));
 const R=await p.evaluate(async()=>{
-  window.__strikes=0;
+  // ⚠️ 낙하 판정을 `.magic-attack` DOM 노드로 세면 안 된다. 저사양 강등(quality.low)에서
+  //    createMagicEffect가 DOM 이펙트를 **정상적으로** 건너뛰므로(캔버스만 그린다),
+  //    메테오가 멀쩡히 떨어져도 0발로 읽힌다 — 실제로 부하가 걸린 전체 스위트 실행에서
+  //    이 게이트만 "회귀"로 오판됐다. 착탄 자체를 세는 훅으로 바꾼다.
+  const strikes = () => window.__mathcastle.qaMeteorDrops();
+  const base = strikes();
   const t=window.__mathcastle.qaGetMonsters()[0];
   window.__mathcastle.qaCastSpell("meteorShower", t?t.x:innerWidth/2, t?t.y:innerHeight/2);
   await new Promise(r=>setTimeout(r,60));
   document.getElementById("pauseBtn").click();
-  const atPause=window.__strikes;
+  const atPause=strikes()-base;
   await new Promise(r=>setTimeout(r,3000));
-  const duringPause=window.__strikes;
+  const duringPause=strikes()-base;
   document.getElementById("pauseBtn").click();
   await new Promise(r=>setTimeout(r,3000));
-  return {atPause, duringPause, afterResume:window.__strikes};
+  return {atPause, duringPause, afterResume:strikes()-base};
 });
 console.log(`  정지 시점 ${R.atPause}발 → 정지 3초 후 ${R.duringPause}발 → 재개 3초 후 ${R.afterResume}발`);
 console.log(`  ${R.duringPause===R.atPause ? "✅ 정지 중 낙하 없음" : "❌ 정지 중에도 "+(R.duringPause-R.atPause)+"발 떨어짐"}`);

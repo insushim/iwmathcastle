@@ -317,10 +317,18 @@ export class MonsterRenderer {
     const walkKey = hasWalkSheet
       ? `${spriteKey}_walk_${((Math.floor(wp * frameHz) % 4) + 4) % 4}`
       : spriteKey;
-    if (
-      drawSpriteCentered(ctx, walkKey, 0, 0, drawSize * 1.25) ||
-      drawSpriteCentered(ctx, spriteKey, 0, 0, drawSize * 1.25)
-    ) {
+    // v9: 히트 플래시가 "무엇을 하얗게 칠할지" 알아야 하므로, 어느 키가 실제로
+    //     그려졌는지 먼저 확정한다(구버전은 || 단락평가로 결과를 버렸다).
+    const usedKey = getSprite(walkKey) ? walkKey : getSprite(spriteKey) ? spriteKey : null;
+    if (usedKey && drawSpriteCentered(ctx, usedKey, 0, 0, drawSize * 1.25)) {
+      if (options.hitFlash > 0) {
+        const img = getSprite(usedKey);
+        const sc = (drawSize * 1.25) / Math.max(img.width, img.height);
+        options._flashSrc = img;
+        options._flashW = img.width * sc;
+        options._flashH = img.height * sc;
+        options._flashKey = usedKey;
+      }
       this._afterBody(ctx, drawSize, monsterKey, f, isBoss, options);
       ctx.restore();
       if (hp != null && maxHp != null && hp < maxHp) {
@@ -347,6 +355,17 @@ export class MonsterRenderer {
       this._bodyCache.set(cacheKey, bodyCv);
     }
     ctx.drawImage(bodyCv, -half - pad, -half - pad);
+
+    // v9: 히트 플래시(절차 그림 경로). 몸체 캐시 캔버스가 그대로 실루엣 원본이 된다.
+    if (options.hitFlash > 0) {
+      const sil = this._flashSilhouette(bodyCv, bodyCv.width, bodyCv.height, cacheKey);
+      if (sil) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(0.85, options.hitFlash * 0.85);
+        ctx.drawImage(sil, -half - pad, -half - pad);
+        ctx.restore();
+      }
+    }
 
     // --- Universal Animated Outline Glow ---
     this._drawUniversalOutlineGlow(ctx, drawSize, monsterKey, f, isBoss);
@@ -393,6 +412,17 @@ export class MonsterRenderer {
 
   // v5: 스프라이트 경로에서 몸체 이후 공통 오버레이 (글로우·상태)
   _afterBody(ctx, drawSize, monsterKey, f, isBoss, options) {
+    if (options.hitFlash > 0 && options._flashSrc) {
+      const sil = this._flashSilhouette(
+        options._flashSrc, options._flashW, options._flashH, options._flashKey,
+      );
+      if (sil) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(0.85, options.hitFlash * 0.85);
+        ctx.drawImage(sil, -options._flashW / 2, -options._flashH / 2);
+        ctx.restore();
+      }
+    }
     if (options.isElite) this._drawEliteRing(ctx, drawSize, f);
     // v5.2: AI 스프라이트에는 타입색 외곽 글로우 미적용 — 스프라이트 위에서 초록 링 아티팩트로 보임 (실측)
     if (options.isShielded) this._drawShieldEffect(ctx, drawSize);
@@ -400,6 +430,38 @@ export class MonsterRenderer {
     if (options.isSlowed) this._drawFrostEffect(ctx, drawSize, f);
     if (options.isStunned) this._drawStunEffect(ctx, drawSize, f);
   }
+  /**
+   * v9: 히트 플래시 — 맞은 개체를 하얗게 번쩍인다.
+   *
+   * 왜 실루엣 캐시인가: 캔버스에서 비트맵을 "하얗게" 만들려면 source-atop 합성이
+   * 필요한데, 그걸 메인 캔버스에서 하면 이미 그려 둔 배경·다른 몬스터까지 물든다.
+   * 그래서 오프스크린에 (스프라이트 → 흰색 채우기) 실루엣을 한 번 만들어 캐시하고,
+   * 이후에는 알파만 바꿔 겹쳐 그린다. 첫 1회만 비용이 든다.
+   * 'lighter'(가산) 재드로우는 어두운 스프라이트에서 흰색이 안 나와 쓰지 않는다.
+   */
+  _flashSilhouette(src, w, h, key) {
+    if (!this._flashCache) this._flashCache = new Map();
+    const ck = `${key}|${Math.round(w)}|${Math.round(h)}`;
+    let cv = this._flashCache.get(ck);
+    if (!cv) {
+      cv = document.createElement("canvas");
+      cv.width = Math.max(1, Math.ceil(w));
+      cv.height = Math.max(1, Math.ceil(h));
+      const c = cv.getContext("2d");
+      try {
+        c.drawImage(src, 0, 0, cv.width, cv.height);
+        c.globalCompositeOperation = "source-atop";
+        c.fillStyle = "#ffffff";
+        c.fillRect(0, 0, cv.width, cv.height);
+      } catch {
+        return null; // 오염된 캔버스 등 — 플래시를 포기해도 게임은 돈다
+      }
+      if (this._flashCache.size > 200) this._flashCache.clear();
+      this._flashCache.set(ck, cv);
+    }
+    return cv;
+  }
+
   // v5: 몸체 스위치 (캐시 빌드 전용 — 좌상단 원점 기준)
   _drawBody(ctx, monsterKey, drawSize, f, hp, maxHp) {
     switch (monsterKey) {

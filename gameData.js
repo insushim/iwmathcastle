@@ -711,6 +711,9 @@ export const WIZARD_AUTO_ATTACK_STATS = {
   rangeSq: 120 * 120,
   initialDamage: 1.5,
   damage: 1.5,
+  // v9: 축복(빠른 주문)이 cooldown을 줄이므로 "원래 값"을 따로 둔다.
+  //     사본을 main.js에 리터럴로 박으면 밸런스 패치가 한쪽에만 먹는다.
+  initialCooldown: 600,
   cooldown: 600,
   cooldownUntil: 0,
 };
