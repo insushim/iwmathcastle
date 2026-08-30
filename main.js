@@ -40,6 +40,7 @@ import {
   initializeFirebase,
   submitScore,
   fetchAndShowRankings,
+  refreshRankingPanel,
   startGameSession,
 } from "./firebase.js";
 import * as ui from "./ui.js";
@@ -710,6 +711,32 @@ function renderDailyPanel() {
     : "도전 하나를 깰 때마다 다음 판 집중력이 올라가요.";
 }
 
+// ---------- v10: 첫 화면 랭킹 패널 ----------
+// 「항상 보이게」라서 갱신도 계속 돌 뻔했다. 그런데 방치된 탭이 조용히 API 를 때리는 것은
+// 이 저장소 계열에서 이미 값을 치른 버그다 — **메뉴가 떠 있고 탭이 보일 때만** 돈다.
+const RANK_PANEL_POLL_MS = 90e3;
+let rankPanelTimer = null;
+
+function menuIsOnScreen() {
+  const m = document.getElementById("difficultyModal");
+  return !!m && m.style.display !== "none" && !m.hidden;
+}
+
+function tickRankingPanel() {
+  if (document.visibilityState !== "visible") return; // 백그라운드에선 건너뛴다
+  if (!menuIsOnScreen()) return; // 게임 중엔 안 본다
+  refreshRankingPanel({ maxAgeMs: RANK_PANEL_POLL_MS - 5e3 });
+}
+
+function startRankingPanelAutoRefresh() {
+  if (rankPanelTimer) return;
+  rankPanelTimer = setInterval(tickRankingPanel, RANK_PANEL_POLL_MS);
+  // 탭으로 돌아왔을 때는 다음 주기를 기다리지 않는다 — 그동안 순위가 바뀌었을 수 있다.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") tickRankingPanel();
+  });
+}
+
 // ---------- v8: 학습 기록 ----------
 function setupReportModal() {
   const showBtn = document.getElementById("showReportBtn");
@@ -1156,7 +1183,16 @@ window.addEventListener("DOMContentLoaded", () => {
 
   initializeFirebase((isReady) => {
     document.getElementById("showRankingBtn").disabled = !isReady;
+    // 같은 모달을 여는 버튼이 둘인데 한쪽만 잠그면 잠금이 아니다(grok 교차검증 지적)
+    const more = document.getElementById("rankPanelMore");
+    if (more) more.disabled = !isReady;
   });
+
+  // v10: 첫 화면 랭킹 패널. **초기화 준비 플래그에 매달지 않는다**(codex 교차검증 지적) —
+  //      /api/rankings 는 인증이 필요 없는 읽기 API다. 여기에 묶어 두면 나중에 초기화가
+  //      실패하도록 바뀌는 날, 멀쩡히 뜨는 랭킹이 「불러오는 중…」에서 영영 멈춘다.
+  refreshRankingPanel();
+  startRankingPanelAutoRefresh();
 
   // [V2] 메뉴 파티클 & 음악
   initMenuParticles();
@@ -5550,6 +5586,11 @@ function setupEventListeners() {
     sfx.init().then(() => sfx.play("blip"));
     fetchAndShowRankings();
   });
+  // v10: 패널의 「전체 보기」도 같은 모달로 — 주간·월간·학년 필터는 거기 있다
+  document.getElementById("rankPanelMore")?.addEventListener("click", () => {
+    sfx.init().then(() => sfx.play("blip"));
+    fetchAndShowRankings();
+  });
   document.querySelectorAll(".difficulty-btn").forEach((btn) =>
     btn.addEventListener("click", (e) => {
       if (gameInitialized) return;
@@ -6118,6 +6159,8 @@ function restartGame() {
   impactFx.resetShake();
   resetFlashBudget();
   renderDailyPanel(); // v8: 오늘의 도전 진행이 바뀌었을 수 있다
+  // v10: 방금 내 점수가 올라갔을 수 있다 — 캐시를 건너뛰고 새로 받는다
+  refreshRankingPanel();
   hideModal(gameElements.gameOverModal);
   hideModal(document.getElementById("stageSelectModal"));
   hideModal(gameElements.rankingModal);

@@ -3950,6 +3950,104 @@ body.is-touch kbd {
     color: #9fb3cc;
 }
 
+/* ---------- v10: 첫 화면 상주 랭킹 패널 ---------- */
+.rank-panel {
+    margin: 10px auto 6px;
+    padding: 12px 14px;
+    max-width: 460px;
+    background: rgba(15, 22, 45, 0.7);
+    border: 1px solid rgba(255, 209, 102, 0.3);
+    border-radius: 14px;
+    text-align: left;
+}
+
+.rank-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.rank-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #ffd166;
+}
+
+.rank-more {
+    background: rgba(255, 209, 102, 0.14);
+    border: 1px solid rgba(255, 209, 102, 0.4);
+    color: #ffd166;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.rank-more:hover { background: rgba(255, 209, 102, 0.26); }
+
+.rank-more:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.rank-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.rank-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 14px;
+    color: #dbe4f0;
+}
+
+/* 등수 자리를 고정폭으로 잡아야 메달과 숫자가 섞여도 이름 줄이 안 흔들린다 */
+.rank-no {
+    flex: 0 0 24px;
+    text-align: center;
+    font-weight: 700;
+    color: #9fb3cc;
+}
+
+.rank-row.top .rank-no { font-size: 15px; }
+
+/* 긴 닉네임이 점수를 밀어내지 않게 — 줄이는 쪽은 언제나 이름이다 */
+.rank-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rank-score {
+    flex: 0 0 auto;
+    font-weight: 700;
+    color: #7ee8a2;
+    font-size: 13px;
+}
+
+.rank-empty {
+    font-size: 13.5px;
+    color: #9fb3cc;
+    padding: 2px 0;
+}
+
+.rank-note {
+    margin: 8px 0 0;
+    font-size: 12.5px;
+    color: #9fb3cc;
+}
+
 /* ---------- 학습 기록 ---------- */
 .report-modal {
     max-width: 560px;

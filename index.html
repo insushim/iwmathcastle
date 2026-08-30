@@ -86,6 +86,17 @@
                     <ul class="daily-list" id="dailyList"></ul>
                     <p class="daily-note" id="dailyNote"></p>
                 </div>
+                <!-- v10: 랭킹을 첫 화면에 상주시킨다. 예전엔 「🏆 랭킹 보기」를 눌러야 모달이
+                     떴는데, 누르지 않은 아이에겐 랭킹이 없는 게임이었다. 여기 top 5 를 늘
+                     띄워 두고, 자세한 순위(주간·월간·학년 필터)는 그대로 모달이 맡는다. -->
+                <div class="rank-panel" id="rankPanel">
+                    <div class="rank-head">
+                        <span class="rank-title" id="rankPanelTitle">🏆 오늘의 랭킹</span>
+                        <button class="rank-more" id="rankPanelMore" type="button">전체 보기</button>
+                    </div>
+                    <ol class="rank-list" id="rankPanelList"></ol>
+                    <p class="rank-note" id="rankPanelNote">불러오는 중…</p>
+                </div>
                 <div class="menu-actions">
                     <button class="menu-btn" id="showReportBtn">
                         <span class="btn-icon">📊</span> 학습 기록

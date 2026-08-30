@@ -854,6 +854,74 @@ function renderRankings() {
   updateRankingTimer(nextUpdateTime);
 }
 
+// ---------- v10: 첫 화면 상주 랭킹 패널 ----------
+// 모달과 달리 이건 **늘 떠 있다.** 그래서 두 가지가 다르다:
+//  ① 비어 있어도 의미가 있어야 한다 → 오늘 기록이 없으면 명예의 전당으로 갈아 끼운다.
+//  ② 이름은 남이 넣은 값이다 → innerHTML 을 아예 안 쓴다(textContent 조립).
+const RANK_PANEL_TOP_N = 5;
+
+export function renderRankingPanel(data) {
+  const list = document.getElementById("rankPanelList");
+  const titleEl = document.getElementById("rankPanelTitle");
+  const noteEl = document.getElementById("rankPanelNote");
+  if (!list || !data) return;
+
+  const today = Array.isArray(data.today) ? data.today : [];
+  const hof = Array.isArray(data.hallOfFame) ? data.hallOfFame : [];
+  const useToday = today.length > 0;
+  const rows = (useToday ? today : hof).slice(0, RANK_PANEL_TOP_N);
+
+  if (titleEl) titleEl.textContent = useToday ? "🏆 오늘의 랭킹" : "🏆 명예의 전당";
+
+  list.textContent = "";
+  if (rows.length === 0) {
+    const li = document.createElement("li");
+    li.className = "rank-empty";
+    li.textContent = "아직 기록이 없어요. 첫 번째 수호자가 되어 보세요!";
+    list.appendChild(li);
+  } else {
+    const medals = ["🥇", "🥈", "🥉"];
+    rows.forEach((d, i) => {
+      const li = document.createElement("li");
+      li.className = "rank-row" + (i < 3 ? " top" : "");
+
+      const rank = document.createElement("span");
+      rank.className = "rank-no";
+      rank.textContent = i < 3 ? medals[i] : `${i + 1}`;
+
+      const name = document.createElement("span");
+      name.className = "rank-name";
+      name.textContent = String(d?.name ?? "");
+
+      const score = document.createElement("span");
+      score.className = "rank-score";
+      const badge = d?.difficulty ? ` · ${difficultyBadge(d.difficulty)}` : "";
+      score.textContent = `${Number(d?.score) || 0}점${badge}`;
+
+      li.append(rank, name, score);
+      list.appendChild(li);
+    });
+  }
+
+  if (noteEl) {
+    noteEl.textContent = useToday
+      ? "오전 8:50에 새 랭킹이 시작돼요."
+      : "오늘 기록이 아직 없어 역대 최고 기록을 보여 주고 있어요.";
+  }
+}
+
+export function renderRankingPanelError() {
+  const list = document.getElementById("rankPanelList");
+  const noteEl = document.getElementById("rankPanelNote");
+  if (!list) return;
+  list.textContent = "";
+  const li = document.createElement("li");
+  li.className = "rank-empty";
+  li.textContent = "랭킹을 불러오지 못했어요.";
+  list.appendChild(li);
+  if (noteEl) noteEl.textContent = "인터넷이 연결되면 자동으로 다시 불러와요.";
+}
+
 export function showRankingModal(isLoading = false) {
   const { difficultyModal, rankingModal } = gameElements;
   difficultyModal.style.display = "none";
